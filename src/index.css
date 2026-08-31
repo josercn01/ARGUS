@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-main: #f8f9fa;
+  --bg-card: #ffffff;
+  --primary: #0078d4;
+  --primary-hover: #005a9e;
+  --border-color: #e1dfdd;
+  --text-main: #323130;
+  --text-secondary: #605e5c;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-main) !important;
+  color: var(--text-main);
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Forçar scrollbar limpa estilo Windows/M365 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c8c6c4;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #979593;
+}

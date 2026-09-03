@@ -1,191 +1,213 @@
-import { Users, CheckCircle, FileText, Clock, Package, AlertCircle } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+import { useMemo } from 'react';
+import { Package, Users, CheckCircle2, Sparkles, Layers, AlertTriangle } from 'lucide-react';
 import type { LicencaUsuario, Software } from '@/types';
 
 interface MetricsCardsProps {
   data: LicencaUsuario[];
-  softwares?: Software[];
+  softwares: Software[];
 }
 
-export function MetricsCards({ data, softwares }: MetricsCardsProps) {
-  const total = data.length;
-  const ativas = data.filter((l) => l.status === 'Ativo').length;
-  const pendentes = data.filter((l) => l.status === 'Pendente').length;
-  const semLicenca = data.filter((l) => !l.possui_licenca).length;
+interface SoftwareMetric {
+  id: string;
+  nome: string;
+  fabricante?: string;
+  total: number;
+  emUso: number;
+  livre: number;
+  percentual: number;
+}
 
-  const cards = [
-    {
-      label: 'Total de Usuários',
-      value: total,
-      icon: Users,
-      color: 'text-[#D4AF37]',
-      bg: 'bg-[#D4AF37]/10',
-      border: 'border-[#D4AF37]/20',
-    },
-    {
-      label: 'Licenças Ativas',
-      value: ativas,
-      icon: CheckCircle,
-      color: 'text-emerald-400',
-      bg: 'bg-emerald-500/10',
-      border: 'border-emerald-500/20',
-    },
-    {
-      label: 'Pendentes',
-      value: pendentes,
-      icon: Clock,
-      color: 'text-amber-400',
-      bg: 'bg-amber-500/10',
-      border: 'border-amber-500/20',
-    },
-    {
-      label: 'Sem Licença',
-      value: semLicenca,
-      icon: AlertCircle,
-      color: 'text-red-400',
-      bg: 'bg-red-500/10',
-      border: 'border-red-500/20',
-    },
-  ];
+export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
+  // Cálculo automatizado do Inventário Global e Individual por Software
+  const { metrics, totalGlobal, emUsoGlobal, livreGlobal, ocupacaoGlobal } = useMemo(() => {
+    let globalTotal = 0;
+    let globalEmUso = 0;
 
-  // Chart data: top softwares by assigned licenses
-  const chartData = (softwares ?? [])
-    .map((sw) => {
-      const assigned = data.filter(
-        (l) => l.possui_licenca && (
-          l.tipo_licenca?.toLowerCase() === sw.nome.toLowerCase() ||
-          l.produto?.toLowerCase() === (sw.produto ?? sw.nome).toLowerCase()
-        )
-      ).length;
+    const listMetrics: SoftwareMetric[] = softwares.map((sw) => {
+      // 1. Quantidade Total comprada/cadastrada no inventário do software
+      const total = Number(sw.quantidade_total || sw.quantidade || 0);
+
+      // 2. Busca usuários vinculados a este software/produto
+      const emUso = usuarios.filter((u) => {
+        if (!u.possui_licenca) return false;
+        const prodUser = `${u.produto || ''} ${u.tipo_licenca || ''}`.toLowerCase().trim();
+        const swNome = (sw.nome || '').toLowerCase().trim();
+        return prodUser.includes(swNome) || swNome.includes(prodUser);
+      }).length;
+
+      const livre = Math.max(0, total - emUso);
+      const percentual = total > 0 ? Math.min(100, Math.round((emUso / total) * 100)) : 0;
+
+      globalTotal += total;
+      globalEmUso += emUso;
+
       return {
-        name: sw.produto ?? sw.nome,
-        atribuidas: assigned,
-        total: sw.qtd_licencas,
+        id: sw.id,
+        nome: sw.nome,
+        fabricante: sw.fabricante || sw.tipo_licenca,
+        total,
+        emUso,
+        livre,
+        percentual,
       };
-    })
-    .sort((a, b) => b.atribuidas - a.atribuidas)
-    .slice(0, 10);
+    });
+
+    const globalLivre = Math.max(0, globalTotal - globalEmUso);
+    const globalOcupacao = globalTotal > 0 ? Math.round((globalEmUso / globalTotal) * 100) : 0;
+
+    return {
+      metrics: listMetrics,
+      totalGlobal: globalTotal,
+      emUsoGlobal: globalEmUso,
+      livreGlobal: globalLivre,
+      ocupacaoGlobal: globalOcupacao,
+    };
+  }, [usuarios, softwares]);
 
   return (
-    <div className="space-y-4">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {cards.map((card) => (
-          <div
-            key={card.label}
-            className={`bg-[#001E33] border ${card.border} rounded-xl p-4 shadow-lg flex items-center gap-3 transition-transform hover:-translate-y-0.5 duration-200`}
-          >
-            <div className={`p-2.5 rounded-lg ${card.bg}`}>
-              <card.icon className={`w-5 h-5 ${card.color}`} />
-            </div>
+    <div className="space-y-6">
+      {/* 1. CARDS DE RESUMO GLOBAL */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Contratado */}
+        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-[#94a3b8] text-xs font-medium">{card.label}</p>
-              <p className="text-white text-xl font-bold mt-0.5">{card.value.toLocaleString('pt-BR')}</p>
+              <p className="text-[#94a3b8] text-xs font-semibold uppercase tracking-wider">Total Contratado</p>
+              <h3 className="text-3xl font-bold text-white mt-1.5">{totalGlobal}</h3>
+            </div>
+            <div className="p-3 bg-[#001726] border border-[#1e293b] rounded-xl text-[#0078D4]">
+              <Package className="w-6 h-6" />
             </div>
           </div>
-        ))}
-        {/* Softwares count card */}
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 shadow-lg flex items-center gap-3 transition-transform hover:-translate-y-0.5 duration-200">
-          <div className="p-2.5 rounded-lg bg-sky-500/10">
-            <Package className="w-5 h-5 text-sky-400" />
+          <p className="text-xs text-[#94a3b8] mt-3 flex items-center gap-1">
+            <Layers className="w-3.5 h-3.5 text-[#0078D4]" /> Soma do inventário cadastrado
+          </p>
+        </div>
+
+        {/* Em Uso */}
+        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[#94a3b8] text-xs font-semibold uppercase tracking-wider">Em Uso</p>
+              <h3 className="text-3xl font-bold text-emerald-400 mt-1.5">{emUsoGlobal}</h3>
+            </div>
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+              <Users className="w-6 h-6" />
+            </div>
           </div>
-          <div>
-            <p className="text-[#94a3b8] text-xs font-medium">Softwares</p>
-            <p className="text-white text-xl font-bold mt-0.5">{(softwares ?? []).length}</p>
+          <p className="text-xs text-[#94a3b8] mt-3">Atribuídas aos usuários</p>
+        </div>
+
+        {/* Disponíveis (Livres) */}
+        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[#94a3b8] text-xs font-semibold uppercase tracking-wider">Disponíveis (Livre)</p>
+              <h3 className="text-3xl font-bold text-sky-400 mt-1.5">{livreGlobal}</h3>
+            </div>
+            <div className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-xl text-sky-400">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+          </div>
+          <p className="text-xs text-[#94a3b8] mt-3">Estoque pronto para alocação</p>
+        </div>
+
+        {/* Taxa de Utilização */}
+        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[#94a3b8] text-xs font-semibold uppercase tracking-wider">Taxa de Utilização</p>
+              <h3 className="text-3xl font-bold text-[#D4AF37] mt-1.5">{ocupacaoGlobal}%</h3>
+            </div>
+            <div className="p-3 bg-[#D4AF37]/10 border border-[#D4AF37]/20 rounded-xl text-[#D4AF37]">
+              <Sparkles className="w-6 h-6" />
+            </div>
+          </div>
+          <div className="w-full bg-[#001726] h-2 rounded-full mt-3 overflow-hidden border border-[#1e293b]">
+            <div
+              className="bg-[#D4AF37] h-full transition-all duration-500"
+              style={{ width: `${ocupacaoGlobal}%` }}
+            />
           </div>
         </div>
       </div>
 
-      {/* Chart: Licenses by Software */}
-      {chartData.length > 0 && (
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-xl">
-          <h3 className="text-white text-sm font-semibold mb-4 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#D4AF37]" />
-            Licenças Atribuídas por Produto (Top 10)
-          </h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis
-                dataKey="name"
-                tick={{ fill: '#94a3b8', fontSize: 11 }}
-                interval={0}
-                angle={-25}
-                textAnchor="end"
-                height={70}
-              />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <Tooltip
-                cursor={{ fill: '#001726' }}
-                contentStyle={{
-                  background: '#001E33',
-                  border: '1px solid #1e293b',
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                  fontSize: '12px',
-                  color: '#ffffff',
-                }}
-                labelStyle={{ color: '#D4AF37', fontWeight: 600 }}
-              />
-              <Bar dataKey="atribuidas" radius={[4, 4, 0, 0]} maxBarSize={48}>
-                {chartData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.atribuidas > entry.total ? '#ef4444' : '#D4AF37'}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {/* 2. CARDS VISUAIS INDIVIDUAIS POR SOFTWARE */}
+      {metrics.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[#94a3b8] uppercase tracking-wider">
+              Disponibilidade por Software
+            </h2>
+            <span className="text-xs text-[#94a3b8]">
+              {metrics.length} software(s) cadastrado(s)
+            </span>
+          </div>
 
-      {/* Per-software breakdown */}
-      {softwares && softwares.length > 0 && (
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 shadow-xl">
-          <h3 className="text-white text-sm font-semibold mb-3 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#D4AF37]" />
-            Capacidade por Software
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {softwares.map((sw) => {
-              const assigned = data.filter(
-                (l) => l.possui_licenca && (
-                  l.tipo_licenca?.toLowerCase() === sw.nome.toLowerCase() ||
-                  l.produto?.toLowerCase() === (sw.produto ?? sw.nome).toLowerCase()
-                )
-              ).length;
-              const available = sw.qtd_licencas - assigned;
-              const pct = sw.qtd_licencas > 0 ? Math.min((assigned / sw.qtd_licencas) * 100, 100) : 0;
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {metrics.map((sw) => {
+              const isEsgotado = sw.livre === 0 && sw.total > 0;
+              const isCritico = sw.percentual >= 85 && !isEsgotado;
+
               return (
-                <div key={sw.id} className="bg-[#001726] border border-[#1e293b] rounded-lg p-3">
-                  <p className="text-white text-sm font-medium truncate">{sw.nome}</p>
-                  {sw.produto && (
-                    <p className="text-[#D4AF37] text-xs truncate mt-0.5">{sw.produto}</p>
-                  )}
-                  {sw.tipo_produto && (
-                    <p className="text-[#64748b] text-xs truncate">{sw.tipo_produto}</p>
-                  )}
-                  {/* Capacity bar */}
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-[#94a3b8]">{assigned} usadas</span>
-                      <span className="text-[#94a3b8]">/ {sw.qtd_licencas}</span>
+                <div
+                  key={sw.id}
+                  className="bg-[#001E33] border border-[#1e293b] hover:border-[#D4AF37]/40 rounded-xl p-4 transition-all shadow-md flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-semibold text-white text-base leading-tight">{sw.nome}</h4>
+                        {sw.fabricante && (
+                          <span className="text-xs text-[#94a3b8] block mt-0.5">{sw.fabricante}</span>
+                        )}
+                      </div>
+                      {isEsgotado ? (
+                        <span className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold uppercase flex items-center gap-1 shrink-0">
+                          <AlertTriangle className="w-3 h-3" /> Esgotado
+                        </span>
+                      ) : isCritico ? (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold uppercase shrink-0">
+                          Poucas vagas
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase shrink-0">
+                          Normal
+                        </span>
+                      )}
                     </div>
-                    <div className="w-full bg-[#001E33] border border-[#1e293b] rounded-full h-1.5 overflow-hidden">
+
+                    {/* Grade Interna de Contagem */}
+                    <div className="grid grid-cols-3 gap-2 my-3 bg-[#001726] border border-[#1e293b] rounded-lg p-2.5 text-center">
+                      <div>
+                        <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Total</p>
+                        <p className="text-base font-bold text-white">{sw.total}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Em Uso</p>
+                        <p className="text-base font-bold text-emerald-400">{sw.emUso}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Livre</p>
+                        <p className="text-base font-bold text-sky-400">{sw.livre}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barra Visual de Ocupação */}
+                  <div>
+                    <div className="flex justify-between items-center text-xs mb-1">
+                      <span className="text-[#94a3b8]">Ocupação</span>
+                      <span className="font-semibold text-white">{sw.percentual}%</span>
+                    </div>
+                    <div className="w-full bg-[#001726] h-1.5 rounded-full overflow-hidden border border-[#1e293b]">
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          available < 0 ? 'bg-red-500' : available <= 5 && sw.qtd_licencas > 0 ? 'bg-amber-500' : 'bg-[#D4AF37]'
+                        className={`h-full transition-all duration-500 ${
+                          isEsgotado ? 'bg-rose-500' : isCritico ? 'bg-amber-400' : 'bg-[#0078D4]'
                         }`}
-                        style={{ width: `${pct}%` }}
+                        style={{ width: `${sw.percentual}%` }}
                       />
                     </div>
-                    {available < 0 && (
-                      <span className="text-red-400 text-xs mt-1 block">Excedido em {Math.abs(available)}</span>
-                    )}
-                    {available >= 0 && available <= 5 && sw.qtd_licencas > 0 && (
-                      <span className="text-amber-400 text-xs mt-1 block">{available} restantes</span>
-                    )}
                   </div>
                 </div>
               );

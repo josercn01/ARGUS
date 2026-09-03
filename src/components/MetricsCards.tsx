@@ -18,21 +18,23 @@ interface SoftwareMetric {
 }
 
 export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
-  // Cálculo automatizado do Inventário Global e Individual por Software
   const { metrics, totalGlobal, emUsoGlobal, livreGlobal, ocupacaoGlobal } = useMemo(() => {
     let globalTotal = 0;
     let globalEmUso = 0;
 
     const listMetrics: SoftwareMetric[] = softwares.map((sw) => {
-      // 1. Quantidade Total comprada/cadastrada no inventário do software
-      const total = Number(sw.quantidade_total || sw.quantidade || 0);
+      const total = Number(sw.qtd_licencas || sw.quantidade_total || sw.quantidade || 0);
 
-      // 2. Busca usuários vinculados a este software/produto
       const emUso = usuarios.filter((u) => {
         if (!u.possui_licenca) return false;
         const prodUser = `${u.produto || ''} ${u.tipo_licenca || ''}`.toLowerCase().trim();
         const swNome = (sw.nome || '').toLowerCase().trim();
-        return prodUser.includes(swNome) || swNome.includes(prodUser);
+        const swProd = (sw.produto || '').toLowerCase().trim();
+        return (
+          (swNome && prodUser.includes(swNome)) ||
+          (swProd && prodUser.includes(swProd)) ||
+          (swNome && swNome.includes(prodUser))
+        );
       }).length;
 
       const livre = Math.max(0, total - emUso);
@@ -44,7 +46,7 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
       return {
         id: sw.id,
         nome: sw.nome,
-        fabricante: sw.fabricante || sw.tipo_licenca,
+        fabricante: sw.fabricante || sw.tipo_produto,
         total,
         emUso,
         livre,
@@ -66,9 +68,7 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
 
   return (
     <div className="space-y-6">
-      {/* 1. CARDS DE RESUMO GLOBAL */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Contratado */}
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
@@ -80,11 +80,10 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
             </div>
           </div>
           <p className="text-xs text-[#94a3b8] mt-3 flex items-center gap-1">
-            <Layers className="w-3.5 h-3.5 text-[#0078D4]" /> Soma do inventário cadastrado
+            <Layers className="w-3.5 h-3.5 text-[#0078D4]" /> Soma dos softwares cadastrados
           </p>
         </div>
 
-        {/* Em Uso */}
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
@@ -98,7 +97,6 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
           <p className="text-xs text-[#94a3b8] mt-3">Atribuídas aos usuários</p>
         </div>
 
-        {/* Disponíveis (Livres) */}
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
@@ -112,7 +110,6 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
           <p className="text-xs text-[#94a3b8] mt-3">Estoque pronto para alocação</p>
         </div>
 
-        {/* Taxa de Utilização */}
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
@@ -132,16 +129,13 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
         </div>
       </div>
 
-      {/* 2. CARDS VISUAIS INDIVIDUAIS POR SOFTWARE */}
       {metrics.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#94a3b8] uppercase tracking-wider">
               Disponibilidade por Software
             </h2>
-            <span className="text-xs text-[#94a3b8]">
-              {metrics.length} software(s) cadastrado(s)
-            </span>
+            <span className="text-xs text-[#94a3b8]">{metrics.length} software(s) cadastrado(s)</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -177,7 +171,6 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
                       )}
                     </div>
 
-                    {/* Grade Interna de Contagem */}
                     <div className="grid grid-cols-3 gap-2 my-3 bg-[#001726] border border-[#1e293b] rounded-lg p-2.5 text-center">
                       <div>
                         <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Total</p>
@@ -194,7 +187,6 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
                     </div>
                   </div>
 
-                  {/* Barra Visual de Ocupação */}
                   <div>
                     <div className="flex justify-between items-center text-xs mb-1">
                       <span className="text-[#94a3b8]">Ocupação</span>

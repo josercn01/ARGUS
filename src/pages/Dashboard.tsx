@@ -1,330 +1,187 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect } from 'react';
 import { 
-  BarChart3, 
+  Building2, 
   Users, 
   Package, 
-  FileSpreadsheet, 
-  ShieldAlert, 
-  UserCheck, 
-  Plus, 
-  Search, 
-  Download, 
-  LogOut, 
+  CheckCircle2, 
+  AlertTriangle, 
   RefreshCw,
-  SlidersHorizontal,
-  CheckCircle2,
-  XCircle,
-  AlertCircle
+  FileSpreadsheet
 } from 'lucide-react';
-import { MetricsCards } from '../components/MetricsCards';
-import { LicencasTable } from '../components/LicencasTable';
-import { SoftwareModal } from '../components/SoftwareModal';
-import { ImportModal } from '../components/ImportModal';
-import { AdminLocais } from '../components/AdminLocais';
-import { GestaoAcessos } from '../components/GestaoAcessos';
-import type { LicencaUsuario, Software, UserProfile } from '../types';
+
+// ✅ IMPORT CORRETO DO MODAL (Verifique se o caminho e o nome do arquivo batem exatamente)
+import { SoftwareModal } from '../components/SoftwareModal'; 
+
+// Import do cliente do Supabase (ou da sua camada de serviços/banco)
+import { supabase } from '../lib/supabase';
+
+// Tipagem básica das tabelas/softwares
+interface SoftwareItem {
+  id: string;
+  name: string;
+  category?: string;
+  total_licenses: number;
+  used_licenses: number;
+  created_at?: string;
+}
 
 export function Dashboard() {
-  const [tab, setTab] = useState<'licencas' | 'softwares' | 'importar' | 'admin_locais' | 'acessos'>('licencas');
-  const [licencas, setLicencas] = useState<LicencaUsuario[]>([]);
-  const [softwares, setSoftwares] = useState<Software[]>([]);
+  const [softwares, setSoftwares] = useState<SoftwareItem[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedSoftware, setSelectedSoftware] = useState<SoftwareItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterSoftware, setFilterSoftware] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [isSoftwareModalOpen, setIsSoftwareModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Função para buscar os dados das tabelas de software / licenças
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Ajuste o nome da tabela conforme configurado no Supabase (ex: 'softwares' ou 'licenses')
+      const { data, error } = await supabase
+        .from('softwares')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Erro ao buscar dados das tabelas:', error);
+      } else if (data) {
+        setSoftwares(data);
+      }
+    } catch (err) {
+      console.error('Falha na requisição:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    loadInitialData();
+    fetchDashboardData();
   }, []);
 
-  async function loadInitialData() {
-    setLoading(true);
-    await Promise.all([
-      fetchUserProfile(),
-      fetchLicencas(),
-      fetchSoftwares()
-    ]);
-    setLoading(false);
-  }
+  const handleOpenNewModal = () => {
+    setSelectedSoftware(null);
+    setIsModalOpen(true);
+  };
 
-  async function fetchUserProfile() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      if (data) setUserProfile(data);
-    }
-  }
-
-  async function fetchLicencas() {
-    const { data, error } = await supabase
-      .from('licencas_usuarios')
-      .select('*')
-      .order('nome');
-
-    if (!error && data) {
-      setLicencas(data);
-    }
-  }
-
-  async function fetchSoftwares() {
-    const { data, error } = await supabase
-      .from('softwares')
-      .select('*')
-      .order('nome');
-
-    if (!error && data) {
-      setSoftwares(data);
-    }
-  }
-
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-  }
-
-  // Filtros aplicados na listagem de licenças
-  const filteredLicencas = licencas.filter(item => {
-    const matchesSearch = 
-      item.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.login?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.lotacao?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesSoftware = filterSoftware === 'all' || item.produto === filterSoftware;
-    const matchesStatus = filterStatus === 'all' || 
-      (filterStatus === 'ativa' && item.possui_licenca) ||
-      (filterStatus === 'inativa' && !item.possui_licenca);
-
-    return matchesSearch && matchesSoftware && matchesStatus;
-  });
+  const handleEditSoftware = (item: SoftwareItem) => {
+    setSelectedSoftware(item);
+    setIsModalOpen(true);
+  };
 
   return (
-    <div className="min-h-screen bg-[#001726] text-slate-100 flex">
-      {/* 1. SIDEBAR LATERAL DE NAVEGAÇÃO */}
-      <aside className="w-60 bg-[#001726] border-r border-[#1e293b] flex flex-col justify-between shrink-0">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Cabeçalho */}
+      <div className="flex justify-between items-center">
         <div>
-          {/* Topo / Logo */}
-          <div className="p-6 border-b border-[#1e293b]">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-[#001E33] border border-[#D4AF37]/30 rounded-lg">
-                <ShieldAlert className="w-6 h-6 text-[#D4AF37]" />
-              </div>
-              <div>
-                <h1 className="font-bold text-lg text-white tracking-wide">ARGUS</h1>
-                <p className="text-[10px] text-[#94a3b8] uppercase tracking-wider font-semibold">Controle de Ativos</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Menu de Navegação */}
-          <nav className="p-4 space-y-1.5">
-            <button
-              onClick={() => setTab('licencas')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                tab === 'licencas'
-                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
-                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              Licenças
-            </button>
-
-            <button
-              onClick={() => setTab('softwares')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                tab === 'softwares'
-                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
-                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              Softwares
-            </button>
-
-            <button
-              onClick={() => setTab('importar')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                tab === 'importar'
-                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
-                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
-              }`}
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Importar Dados
-            </button>
-
-            <button
-              onClick={() => setTab('admin_locais')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                tab === 'admin_locais'
-                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
-                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              Admins Locais
-            </button>
-
-            {userProfile?.role === 'super_admin' && (
-              <button
-                onClick={() => setTab('acessos')}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                  tab === 'acessos'
-                    ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
-                    : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                Gestão de Acessos
-              </button>
-            )}
-          </nav>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard de Licenças e Softwares</h1>
+          <p className="text-sm text-gray-500">Visão geral do inventário e controle de atribuições</p>
         </div>
-
-        {/* Rodapé da Sidebar / Perfil do Usuário */}
-        <div className="p-4 border-t border-[#1e293b]">
-          <div className="flex items-center justify-between">
-            <div className="truncate pr-2">
-              <p className="text-xs font-semibold text-white truncate">{userProfile?.email || 'Usuário'}</p>
-              <p className="text-[10px] text-[#94a3b8] capitalize">{userProfile?.role || 'Operador'}</p>
-            </div>
-            <button
-              onClick={handleSignOut}
-              title="Sair da Conta"
-              className="p-2 text-[#94a3b8] hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="flex gap-3">
+          <button
+            onClick={fetchDashboardData}
+            className="flex items-center gap-2 px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+          <button
+            onClick={handleOpenNewModal}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Package className="w-4 h-4" />
+            Novo Software
+          </button>
         </div>
-      </aside>
+      </div>
 
-      {/* 2. CONTEÚDO PRINCIPAL (MUDANÇA DE ABAS) */}
-      <main className="flex-1 overflow-y-auto p-8 space-y-6">
-        {/* TAB 1: LICENÇAS */}
-        {tab === 'licencas' && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Topo / Métricas */}
-            <MetricsCards data={licencas} softwares={softwares} />
+      {/* Resumo de Métricas / Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+          <p className="text-sm font-medium text-gray-500">Total de Softwares</p>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{softwares.length}</p>
+        </div>
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+          <p className="text-sm font-medium text-gray-500">Licenças Alocadas</p>
+          <p className="text-2xl font-semibold text-blue-600 mt-1">
+            {softwares.reduce((acc, item) => acc + (item.used_licenses || 0), 0)}
+          </p>
+        </div>
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+          <p className="text-sm font-medium text-gray-500">Licenças Disponíveis</p>
+          <p className="text-2xl font-semibold text-green-600 mt-1">
+            {softwares.reduce((acc, item) => acc + ((item.total_licenses || 0) - (item.used_licenses || 0)), 0)}
+          </p>
+        </div>
+      </div>
 
-            {/* Filtros e Busca */}
-            <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="relative w-full md:w-80">
-                <Search className="w-4 h-4 text-[#94a3b8] absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Buscar por nome, login, e-mail ou lotação..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] focus:border-[#0078D4] text-white text-xs rounded-lg pl-9 pr-[#0078D4] py-2.5 outline-none"
-                />
-              </div>
+      {/* Tabela Principal de Dados */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+          <h2 className="font-semibold text-gray-800">Softwares Cadastrados</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-gray-600">
+            <thead className="bg-gray-50 text-gray-700 uppercase text-xs font-semibold">
+              <tr>
+                <th className="px-6 py-3">Software / Categoria</th>
+                <th className="px-6 py-3">Total Licenças</th>
+                <th className="px-6 py-3">Em Uso</th>
+                <th className="px-6 py-3">Disponíveis</th>
+                <th className="px-6 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {softwares.map((item) => {
+                const disponivel = (item.total_licenses || 0) - (item.used_licenses || 0);
+                return (
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-gray-900">
+                      {item.name}
+                      {item.category && (
+                        <span className="block text-xs text-gray-400">{item.category}</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">{item.total_licenses}</td>
+                    <td className="px-6 py-4 text-blue-600 font-medium">{item.used_licenses}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        disponivel > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                      }`}>
+                        {disponivel}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleEditSoftware(item)}
+                        className="text-blue-600 hover:text-blue-800 font-medium text-xs"
+                      >
+                        Editar / Gerenciar
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {softwares.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                    Nenhum software registrado nas tabelas até o momento.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                <select
-                  value={filterSoftware}
-                  onChange={(e) => setFilterSoftware(e.target.value)}
-                  className="bg-[#001726] border border-[#1e293b] text-xs text-white rounded-lg px-3 py-2.5 outline-none"
-                >
-                  <option value="all">Todos os Softwares</option>
-                  {softwares.map(sw => (
-                    <option key={sw.id} value={sw.nome}>{sw.nome}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="bg-[#001726] border border-[#1e293b] text-xs text-white rounded-lg px-3 py-2.5 outline-none"
-                >
-                  <option value="all">Todos os Status</option>
-                  <option value="ativa">Licença Ativa</option>
-                  <option value="inativa">Sem Licença</option>
-                </select>
-
-                <button
-                  onClick={loadInitialData}
-                  disabled={loading}
-                  className="p-2.5 bg-[#001726] border border-[#1e293b] hover:border-[#0078D4] text-white rounded-lg transition-colors"
-                >
-                  <RefreshCw className={`w-4 h-4 text-[#0078D4] ${loading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Tabela Principal */}
-            <LicencasTable data={filteredLicencas} onRefresh={fetchLicencas} />
-          </div>
-        )}
-
-        {/* TAB 2: SOFTWARES */}
-        {tab === 'softwares' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Inventário de Softwares</h2>
-                <p className="text-xs text-[#94a3b8] mt-1">Gerencie a quantidade contratada e os tipos de licença.</p>
-              </div>
-              <button
-                onClick={() => setIsSoftwareModalOpen(true)}
-                className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#0063b1] text-white font-semibold text-xs px-4 py-2.5 rounded-lg transition-colors shadow-md"
-              >
-                <Plus className="w-4 h-4" /> Novo Software
-              </button>
-            </div>
-
-            {/* Grid/Lista de Softwares cadastrados */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {softwares.map(sw => (
-                <div key={sw.id} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-md">
-                  <h3 className="font-bold text-white text-base">{sw.nome}</h3>
-                  <p className="text-xs text-[#94a3b8] mt-0.5">{sw.fabricante || 'Fabricante N/A'}</p>
-                  <div className="mt-4 pt-4 border-t border-[#1e293b] flex justify-between items-center text-xs">
-                    <span className="text-[#94a3b8]">Quantidade Total:</span>
-                    <span className="font-bold text-white text-sm">{sw.quantidade_total || sw.quantidade || 0}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: IMPORTAR DADOS */}
-        {tab === 'importar' && (
-          <div className="animate-fade-in">
-            <ImportModal onImportSuccess={loadInitialData} />
-          </div>
-        )}
-
-        {/* TAB 4: ADMIN LOCAIS */}
-        {tab === 'admin_locais' && (
-          <div className="animate-fade-in">
-            <AdminLocais />
-          </div>
-        )}
-
-        {/* TAB 5: GESTÃO DE ACESSOS (APENAS SUPER ADMIN) */}
-        {tab === 'acessos' && userProfile?.role === 'super_admin' && (
-          <div className="animate-fade-in">
-            <GestaoAcessos />
-          </div>
-        )}
-      </main>
-
-      {/* MODAL DE SOFTWARE */}
-      {isSoftwareModalOpen && (
+      {/* Renderização do Modal de Cadastro / Edição */}
+      {isModalOpen && (
         <SoftwareModal
-          isOpen={isSoftwareModalOpen}
-          onClose={() => setIsSoftwareModalOpen(false)}
-          onSuccess={fetchSoftwares}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          software={selectedSoftware}
+          onSuccess={() => {
+            setIsModalOpen(false);
+            fetchDashboardData();
+          }}
         />
       )}
     </div>

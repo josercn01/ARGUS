@@ -1,520 +1,332 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-
-import { useAuth } from '@/contexts/AuthContext';
-
+import { 
+  BarChart3, 
+  Users, 
+  Package, 
+  FileSpreadsheet, 
+  ShieldAlert, 
+  UserCheck, 
+  Plus, 
+  Search, 
+  Download, 
+  LogOut, 
+  RefreshCw,
+  SlidersHorizontal,
+  CheckCircle2,
+  XCircle,
+  AlertCircle
+} from 'lucide-react';
 import { MetricsCards } from '@/components/MetricsCards';
-
-import { FiltersBar } from '@/components/FiltersBar';
-
 import { LicencasTable } from '@/components/LicencasTable';
-
-import { LicencaModal } from '@/components/LicencaModal';
-
-import { ImportCSV } from '@/components/ImportCSV';
-
-import { AccessManagement } from '@/components/AccessManagement';
-
-import { SoftwareManagement } from '@/components/SoftwareManagement';
-
+import { SoftwareModal } from '@/components/SoftwareModal';
+import { ImportModal } from '@/components/ImportModal';
 import { AdminLocais } from '@/components/AdminLocais';
-
-import { LayoutDashboard, Upload, Shield, Package, Monitor, RefreshCw } from 'lucide-react';
-
-import type { LicencaUsuario, Software } from '@/types';
-
-
-
-type Tab = 'dashboard' | 'softwares' | 'import' | 'admin_locais' | 'access';
-
-
+import { GestaoAcessos } from '@/components/GestaoAcessos';
+import type { LicencaUsuario, Software, UserProfile } from '@/types';
 
 export function Dashboard() {
-
-  const { user } = useAuth();
-
+  const [tab, setTab] = useState<'licencas' | 'softwares' | 'importar' | 'admin_locais' | 'acessos'>('licencas');
   const [licencas, setLicencas] = useState<LicencaUsuario[]>([]);
-
   const [softwares, setSoftwares] = useState<Software[]>([]);
-
   const [loading, setLoading] = useState(true);
-
-  const [tab, setTab] = useState<Tab>('dashboard');
-
-  const [search, setSearch] = useState('');
-
-  const [depRaiz, setDepRaiz] = useState('');
-
-  const [subDep, setSubDep] = useState('');
-
-  const [modalItem, setModalItem] = useState<Partial<LicencaUsuario> | null | undefined>(undefined);
-
-
-
-  const canWrite = user?.role === 'editor' || user?.role === 'admin' || user?.role === 'super_admin';
-
-  const isSuperAdmin = user?.role === 'super_admin';
-
-
-
-  const fetchLicencas = useCallback(async () => {
-
-    setLoading(true);
-
-    const PAGE_SIZE = 1000;
-
-    let offset = 0;
-
-    let allRows: LicencaUsuario[] = [];
-
-    let hasMore = true;
-
-    while (hasMore) {
-
-      const { data, error } = await supabase
-
-        .from('licencas_usuarios')
-
-        .select('*')
-
-        .order('nome')
-
-        .range(offset, offset + PAGE_SIZE - 1);
-
-      if (error) { setLoading(false); return; }
-
-      if (data && data.length > 0) allRows = [...allRows, ...(data as LicencaUsuario[])];
-
-      hasMore = data ? data.length === PAGE_SIZE : false;
-
-      offset += PAGE_SIZE;
-
-    }
-
-    setLicencas(allRows);
-
-    setLoading(false);
-
-  }, []);
-
-
-
-  const fetchSoftwares = useCallback(async () => {
-
-    const { data, error } = await supabase
-
-      .from('softwares')
-
-      .select('*')
-
-      .order('nome');
-
-    if (!error && data) setSoftwares(data as Software[]);
-
-  }, []);
-
-
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterSoftware, setFilterSoftware] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [isSoftwareModalOpen, setIsSoftwareModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   useEffect(() => {
+    loadInitialData();
+  }, []);
 
-    fetchLicencas();
+  async function loadInitialData() {
+    setLoading(true);
+    await Promise.all([
+      fetchUserProfile(),
+      fetchLicencas(),
+      fetchSoftwares()
+    ]);
+    setLoading(false);
+  }
 
-    fetchSoftwares();
-
-  }, [fetchLicencas, fetchSoftwares]);
-
-
-
-  const depRaizOptions = useMemo(() =>
-
-    [...new Set(licencas.map((l) => l.departamento_raiz).filter(Boolean) as string[])].sort(),
-
-    [licencas]
-
-  );
-
-
-
-  const subDepOptions = useMemo(() => {
-
-    if (!depRaiz) return [];
-
-    return [...new Set(
-
-      licencas
-
-        .filter((l) => l.departamento_raiz === depRaiz)
-
-        .map((l) => l.sub_departamento)
-
-        .filter(Boolean) as string[]
-
-    )].sort();
-
-  }, [licencas, depRaiz]);
-
-
-
-  const filtered = useMemo(() => {
-
-    const q = search.toLowerCase();
-
-    return licencas.filter((l) => {
-
-      const matchSearch = !q || [l.nome, l.email, l.matricula, l.tipo_licenca, l.produto].some((v) => v?.toLowerCase().includes(q));
-
-      const matchDep = !depRaiz || l.departamento_raiz === depRaiz;
-
-      const matchSub = !subDep || l.sub_departamento === subDep;
-
-      return matchSearch && matchDep && matchSub;
-
-    });
-
-  }, [licencas, search, depRaiz, subDep]);
-
-
-
-  async function handleSave(data: Partial<LicencaUsuario>) {
-
-    const payload = {
-
-      ...data,
-
-      atualizado_por: user?.email,
-
-      atualizado_em: new Date().toISOString(),
-
-    };
-
-    if (data.id) {
-
-      const { error } = await supabase.from('licencas_usuarios').update(payload).eq('id', data.id);
-
-      if (error) throw new Error(error.message);
-
-    } else {
-
-      const { error } = await supabase.from('licencas_usuarios').insert(payload);
-
-      if (error) throw new Error(error.message);
-
+  async function fetchUserProfile() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (data) setUserProfile(data);
     }
-
-    setModalItem(undefined);
-
-    await fetchLicencas();
-
   }
 
+  async function fetchLicencas() {
+    const { data, error } = await supabase
+      .from('licencas_usuarios')
+      .select('*')
+      .order('nome');
 
-
-  async function handleDelete(id: string) {
-
-    if (!window.confirm('Confirmar exclusão deste registro?')) return;
-
-    const { error } = await supabase.from('licencas_usuarios').delete().eq('id', id);
-
-    if (!error) await fetchLicencas();
-
-  }
-
-
-
-  async function handleImport(rows: Partial<LicencaUsuario>[]) {
-
-    let success = 0;
-
-    const errors: string[] = [];
-
-    for (const row of rows) {
-
-      if (!row.email) { errors.push('Linha sem e-mail ignorada.'); continue; }
-
-      const { error } = await supabase
-
-        .from('licencas_usuarios')
-
-        .upsert({ ...row, atualizado_por: user?.email, atualizado_em: new Date().toISOString() }, { onConflict: 'email' });
-
-      if (error) errors.push(`${row.email}: ${error.message}`);
-
-      else success++;
-
+    if (!error && data) {
+      setLicencas(data);
     }
-
-    await fetchLicencas();
-
-    return { success, errors };
-
   }
 
+  async function fetchSoftwares() {
+    const { data, error } = await supabase
+      .from('softwares')
+      .select('*')
+      .order('nome');
 
+    if (!error && data) {
+      setSoftwares(data);
+    }
+  }
 
-  const tabs: { key: Tab; label: string; icon: React.ElementType; show: boolean }[] = [
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+  }
 
-    { key: 'dashboard', label: 'Licenças', icon: LayoutDashboard, show: true },
+  // Filtros aplicados na listagem de licenças
+  const filteredLicencas = licencas.filter(item => {
+    const matchesSearch = 
+      item.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.login?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.lotacao?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    { key: 'softwares', label: 'Softwares', icon: Package, show: canWrite },
+    const matchesSoftware = filterSoftware === 'all' || item.produto === filterSoftware;
+    const matchesStatus = filterStatus === 'all' || 
+      (filterStatus === 'ativa' && item.possui_licenca) ||
+      (filterStatus === 'inativa' && !item.possui_licenca);
 
-    { key: 'import', label: 'Importar Dados', icon: Upload, show: canWrite },
-
-    { key: 'admin_locais', label: 'Admins Locais', icon: Monitor, show: true },
-
-    { key: 'access', label: 'Gestão de Acessos', icon: Shield, show: isSuperAdmin },
-
-  ];
-
-
-
-  const visibleTabs = tabs.filter((t) => t.show);
-
-
+    return matchesSearch && matchesSoftware && matchesStatus;
+  });
 
   return (
+    <div className="min-h-screen bg-[#001726] text-slate-100 flex">
+      {/* 1. SIDEBAR LATERAL DE NAVEGAÇÃO */}
+      <aside className="w-60 bg-[#001726] border-r border-[#1e293b] flex flex-col justify-between shrink-0">
+        <div>
+          {/* Topo / Logo */}
+          <div className="p-6 border-b border-[#1e293b]">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-[#001E33] border border-[#D4AF37]/30 rounded-lg">
+                <ShieldAlert className="w-6 h-6 text-[#D4AF37]" />
+              </div>
+              <div>
+                <h1 className="font-bold text-lg text-white tracking-wide">ARGUS</h1>
+                <p className="text-[10px] text-[#94a3b8] uppercase tracking-wider font-semibold">Controle de Ativos</p>
+              </div>
+            </div>
+          </div>
 
-    <div className="flex bg-[#001726] min-h-[calc(100vh-4rem)] text-white">
-
-      {/* Sidebar Desktop */}
-
-      <aside className="w-60 min-h-[calc(100vh-4rem)] bg-[#001E33] border-r border-[#1e293b] flex flex-col py-4 sticky top-16 hidden md:flex">
-
-        <nav className="flex-1 space-y-1 px-3">
-
-          {visibleTabs.map((t) => (
-
+          {/* Menu de Navegação */}
+          <nav className="p-4 space-y-1.5">
             <button
-
-              key={t.key}
-
-              onClick={() => setTab(t.key)}
-
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer ${
-
-                tab === t.key
-
-                  ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
-
-                  : 'text-[#94a3b8] hover:bg-white/5 hover:text-white'
-
+              onClick={() => setTab('licencas')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                tab === 'licencas'
+                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
+                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
               }`}
-
             >
-
-              <t.icon className="w-4 h-4" />
-
-              {t.label}
-
+              <BarChart3 className="w-4 h-4" />
+              Licenças
             </button>
 
-          ))}
-
-        </nav>
-
-      </aside>
-
-
-
-      {/* Mobile Tab Bar */}
-
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#001E33] border-t border-[#1e293b] z-40">
-
-        <div className="flex overflow-x-auto">
-
-          {visibleTabs.map((t) => (
-
             <button
-
-              key={t.key}
-
-              onClick={() => setTab(t.key)}
-
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
-
-                tab === t.key ? 'text-[#D4AF37] border-b-2 border-[#D4AF37]' : 'text-[#64748b]'
-
+              onClick={() => setTab('softwares')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                tab === 'softwares'
+                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
+                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
               }`}
-
             >
-
-              <t.icon className="w-4 h-4" />
-
-              {t.label}
-
+              <Package className="w-4 h-4" />
+              Softwares
             </button>
 
-          ))}
+            <button
+              onClick={() => setTab('importar')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                tab === 'importar'
+                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
+                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Importar Dados
+            </button>
 
+            <button
+              onClick={() => setTab('admin_locais')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                tab === 'admin_locais'
+                  ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
+                  : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              Admins Locais
+            </button>
+
+            {userProfile?.role === 'super_admin' && (
+              <button
+                onClick={() => setTab('acessos')}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                  tab === 'acessos'
+                    ? 'bg-[#001E33] text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm'
+                    : 'text-[#94a3b8] hover:bg-[#001E33]/50 hover:text-white'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Gestão de Acessos
+              </button>
+            )}
+          </nav>
         </div>
 
-      </div>
+        {/* Rodapé da Sidebar / Perfil do Usuário */}
+        <div className="p-4 border-t border-[#1e293b]">
+          <div className="flex items-center justify-between">
+            <div className="truncate pr-2">
+              <p className="text-xs font-semibold text-white truncate">{userProfile?.email || 'Usuário'}</p>
+              <p className="text-[10px] text-[#94a3b8] capitalize">{userProfile?.role || 'Operador'}</p>
+            </div>
+            <button
+              onClick={handleSignOut}
+              title="Sair da Conta"
+              className="p-2 text-[#94a3b8] hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
 
-
-
-      {/* Main Content Area */}
-
-      <div className="flex-1 p-4 sm:p-6 pb-20 md:pb-6 max-w-screen-2xl">
-
-        {/* Tab: Dashboard / Licenças */}
-
-        {tab === 'dashboard' && (
-
-          <div className="space-y-5 animate-fade-in">
-
+      {/* 2. CONTEÚDO PRINCIPAL (MUDANÇA DE ABAS) */}
+      <main className="flex-1 overflow-y-auto p-8 space-y-6">
+        {/* TAB 1: LICENÇAS */}
+        {tab === 'licencas' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Topo / Métricas */}
             <MetricsCards data={licencas} softwares={softwares} />
 
-
-
-            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
-
-              <div className="flex-1">
-
-                <FiltersBar
-
-                  search={search} onSearch={setSearch}
-
-                  depRaiz={depRaiz} onDepRaiz={setDepRaiz}
-
-                  subDep={subDep} onSubDep={setSubDep}
-
-                  depRaizOptions={depRaizOptions}
-
-                  subDepOptions={subDepOptions}
-
+            {/* Filtros e Busca */}
+            <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 text-[#94a3b8] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nome, login, e-mail ou lotação..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-[#001726] border border-[#1e293b] focus:border-[#0078D4] text-white text-xs rounded-lg pl-9 pr-3 py-2.5 outline-none"
                 />
-
               </div>
 
-              <button
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <select
+                  value={filterSoftware}
+                  onChange={(e) => setFilterSoftware(e.target.value)}
+                  className="bg-[#001726] border border-[#1e293b] text-xs text-white rounded-lg px-3 py-2.5 outline-none"
+                >
+                  <option value="all">Todos os Softwares</option>
+                  {softwares.map(sw => (
+                    <option key={sw.id} value={sw.nome}>{sw.nome}</option>
+                  ))}
+                </select>
 
-                onClick={fetchLicencas}
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="bg-[#001726] border border-[#1e293b] text-xs text-white rounded-lg px-3 py-2.5 outline-none"
+                >
+                  <option value="all">Todos os Status</option>
+                  <option value="ativa">Licença Ativa</option>
+                  <option value="inativa">Sem Licença</option>
+                </select>
 
-                disabled={loading}
-
-                className="flex items-center justify-center gap-2 text-sm text-[#94a3b8] hover:text-white bg-[#001E33] border border-[#1e293b] px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer shadow-md"
-
-              >
-
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-
-                Atualizar
-
-              </button>
-
+                <button
+                  onClick={loadInitialData}
+                  disabled={loading}
+                  className="p-2.5 bg-[#001726] border border-[#1e293b] hover:border-[#0078D4] text-white rounded-lg transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 text-[#0078D4] ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
 
+            {/* Tabela Principal */}
+            <LicencasTable data={filteredLicencas} onRefresh={fetchLicencas} />
+          </div>
+        )}
 
-
-            {loading ? (
-
-              <div className="flex items-center justify-center py-20">
-
-                <div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" />
-
+        {/* TAB 2: SOFTWARES */}
+        {tab === 'softwares' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white">Inventário de Softwares</h2>
+                <p className="text-xs text-[#94a3b8] mt-1">Gerencie a quantidade contratada e os tipos de licença.</p>
               </div>
+              <button
+                onClick={() => setIsSoftwareModalOpen(true)}
+                className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#0063b1] text-white font-semibold text-xs px-4 py-2.5 rounded-lg transition-colors shadow-md"
+              >
+                <Plus className="w-4 h-4" /> Novo Software
+              </button>
+            </div>
 
-            ) : (
-
-              <LicencasTable
-
-                data={filtered}
-
-                role={user!.role}
-
-                onEdit={(item) => setModalItem(item)}
-
-                onDelete={handleDelete}
-
-                onAdd={() => setModalItem({})}
-
-              />
-
-            )}
-
+            {/* Grid/Lista de Softwares cadastrados */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {softwares.map(sw => (
+                <div key={sw.id} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-md">
+                  <h3 className="font-bold text-white text-base">{sw.nome}</h3>
+                  <p className="text-xs text-[#94a3b8] mt-0.5">{sw.fabricante || 'Fabricante N/A'}</p>
+                  <div className="mt-4 pt-4 border-t border-[#1e293b] flex justify-between items-center text-xs">
+                    <span className="text-[#94a3b8]">Quantidade Total:</span>
+                    <span className="font-bold text-white text-sm">{sw.quantidade_total || sw.quantidade || 0}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-
         )}
 
-
-
-        {/* Tab: Softwares */}
-
-        {tab === 'softwares' && canWrite && (
-
+        {/* TAB 3: IMPORTAR DADOS */}
+        {tab === 'importar' && (
           <div className="animate-fade-in">
-
-            <SoftwareManagement />
-
+            <ImportModal onImportSuccess={loadInitialData} />
           </div>
-
         )}
 
-
-
-        {/* Tab: Import */}
-
-        {tab === 'import' && canWrite && (
-
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-6 shadow-xl animate-fade-in">
-
-            <ImportCSV onImport={handleImport} />
-
-          </div>
-
-        )}
-
-
-
-        {/* Tab: Admin Locais */}
-
+        {/* TAB 4: ADMIN LOCAIS */}
         {tab === 'admin_locais' && (
-
           <div className="animate-fade-in">
-
             <AdminLocais />
-
           </div>
-
         )}
 
-
-
-        {/* Tab: Access Management */}
-
-        {tab === 'access' && isSuperAdmin && (
-
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-6 shadow-xl animate-fade-in">
-
-            <AccessManagement currentEmail={user!.email} />
-
+        {/* TAB 5: GESTÃO DE ACESSOS (APENAS SUPER ADMIN) */}
+        {tab === 'acessos' && userProfile?.role === 'super_admin' && (
+          <div className="animate-fade-in">
+            <GestaoAcessos />
           </div>
-
         )}
+      </main>
 
-
-
-        {/* Modal */}
-
-        {modalItem !== undefined && (
-
-          <LicencaModal
-
-            item={modalItem}
-
-            onClose={() => setModalItem(undefined)}
-
-            onSave={handleSave}
-
-          />
-
-        )}
-
-      </div>
-
+      {/* MODAL DE SOFTWARE */}
+      {isSoftwareModalOpen && (
+        <SoftwareModal
+          isOpen={isSoftwareModalOpen}
+          onClose={() => setIsSoftwareModalOpen(false)}
+          onSuccess={fetchSoftwares}
+        />
+      )}
     </div>
-
   );
-
-} 
-
+}

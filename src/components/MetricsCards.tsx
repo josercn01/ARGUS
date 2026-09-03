@@ -3,8 +3,8 @@ import { Package, Users, CheckCircle2, Sparkles, Layers, AlertTriangle } from 'l
 import type { LicencaUsuario, Software } from '@/types';
 
 interface MetricsCardsProps {
-  data: LicencaUsuario[];
-  softwares: Software[];
+  data?: LicencaUsuario[];
+  softwares?: Software[];
 }
 
 interface SoftwareMetric {
@@ -17,16 +17,31 @@ interface SoftwareMetric {
   percentual: number;
 }
 
-export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
+export function MetricsCards({ data = [], softwares = [] }: MetricsCardsProps) {
   const { metrics, totalGlobal, emUsoGlobal, livreGlobal, ocupacaoGlobal } = useMemo(() => {
     let globalTotal = 0;
     let globalEmUso = 0;
 
-    const listMetrics: SoftwareMetric[] = softwares.map((sw) => {
+    // Garante que ambos os parâmetros sejam iteráveis de forma segura
+    const safeUsuarios = Array.isArray(data) ? data : [];
+    const safeSoftwares = Array.isArray(softwares) ? softwares : [];
+
+    const listMetrics: SoftwareMetric[] = safeSoftwares.map((sw) => {
+      if (!sw) {
+        return {
+          id: String(Math.random()),
+          nome: 'Desconhecido',
+          total: 0,
+          emUso: 0,
+          livre: 0,
+          percentual: 0,
+        };
+      }
+
       const total = Number(sw.qtd_licencas || sw.quantidade_total || sw.quantidade || 0);
 
-      const emUso = usuarios.filter((u) => {
-        if (!u.possui_licenca) return false;
+      const emUso = safeUsuarios.filter((u) => {
+        if (!u || !u.possui_licenca) return false;
         const prodUser = `${u.produto || ''} ${u.tipo_licenca || ''}`.toLowerCase().trim();
         const swNome = (sw.nome || '').toLowerCase().trim();
         const swProd = (sw.produto || '').toLowerCase().trim();
@@ -44,8 +59,8 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
       globalEmUso += emUso;
 
       return {
-        id: sw.id,
-        nome: sw.nome,
+        id: sw.id || String(Math.random()),
+        nome: sw.nome || 'Software sem nome',
         fabricante: sw.fabricante || sw.tipo_produto,
         total,
         emUso,
@@ -64,7 +79,7 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
       livreGlobal: globalLivre,
       ocupacaoGlobal: globalOcupacao,
     };
-  }, [usuarios, softwares]);
+  }, [data, softwares]);
 
   return (
     <div className="space-y-6">
@@ -129,7 +144,7 @@ export function MetricsCards({ data: usuarios, softwares }: MetricsCardsProps) {
         </div>
       </div>
 
-      {metrics.length > 0 && (
+      {(metrics || []).length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#94a3b8] uppercase tracking-wider">

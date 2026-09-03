@@ -245,10 +245,10 @@ function SoftwareModal({
     try {
       await onSave(form);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar o software.');
-    } font-semibold {
-      setSaving(false);
-    }
+  setError(err instanceof Error ? err.message : 'Erro ao salvar o software.');
+} finally {
+  setSaving(false);
+}
   }
 
   const isAdobe = form.fabricante?.toLowerCase() === 'adobe';

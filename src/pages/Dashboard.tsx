@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../lib/supabase';
 import { 
   BarChart3, 
   Users, 
@@ -17,13 +17,13 @@ import {
   XCircle,
   AlertCircle
 } from 'lucide-react';
-import { MetricsCards } from '@/components/MetricsCards';
-import { LicencasTable } from '@/components/LicencasTable';
-import { SoftwareModal } from '@/components/SoftwareModal';
-import { ImportModal } from '@/components/ImportModal';
-import { AdminLocais } from '@/components/AdminLocais';
-import { GestaoAcessos } from '@/components/GestaoAcessos';
-import type { LicencaUsuario, Software, UserProfile } from '@/types';
+import { MetricsCards } from '../components/MetricsCards';
+import { LicencasTable } from '../components/LicencasTable';
+import { SoftwareModal } from '../components/SoftwareModal';
+import { ImportModal } from '../components/ImportModal';
+import { AdminLocais } from '../components/AdminLocais';
+import { GestaoAcessos } from '../components/GestaoAcessos';
+import type { LicencaUsuario, Software, UserProfile } from '../types';
 
 export function Dashboard() {
   const [tab, setTab] = useState<'licencas' | 'softwares' | 'importar' | 'admin_locais' | 'acessos'>('licencas');
@@ -224,7 +224,7 @@ export function Dashboard() {
                   placeholder="Buscar por nome, login, e-mail ou lotação..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] focus:border-[#0078D4] text-white text-xs rounded-lg pl-9 pr-3 py-2.5 outline-none"
+                  className="w-full bg-[#001726] border border-[#1e293b] focus:border-[#0078D4] text-white text-xs rounded-lg pl-9 pr-[#0078D4] py-2.5 outline-none"
                 />
               </div>
 

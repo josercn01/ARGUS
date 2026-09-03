@@ -136,6 +136,27 @@ export function SoftwareManagement() {
   );
 }
 
+/* --- MODAL DE SOFTWARE ATUALIZADO --- */
+
+const FABRICANTES = ['Adobe', 'Outros Softwares'];
+
+const ADOBE_TIPOS = [
+  'Adobe Acrobat Pro DC',
+  'Creative Cloud (Suite CC)',
+  'Aplicativo Único / Individual'
+];
+
+const ADOBE_APPS_INDIVIDUAIS = [
+  'Adobe Lightroom Classic: Aplicativo único - Lightroom Classic',
+  'Adobe XD: Aplicativo único - XD',
+  'Audição: Aplicativo individual - Audicão',
+  'Illustrator: Aplicativo único - Illustrator',
+  'InDesign: Aplicativo único - InDesign',
+  'Photoshop: Aplicativo único - Photoshop',
+  'Premiere Pro: Aplicativo único - Premiere',
+  'Premiere Rush: Aplicativo Único - Rush'
+];
+
 function SoftwareModal({ item, onClose, onSave }: {
   item: Partial<Software>;
   onClose: () => void;
@@ -145,15 +166,60 @@ function SoftwareModal({ item, onClose, onSave }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { setForm(item ?? {}); setError(null); }, [item]);
+  useEffect(() => {
+    setForm(item ?? {});
+    setError(null);
+  }, [item]);
 
   function set(field: keyof Software, value: unknown) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function handleFabricanteChange(v: string) {
+    setForm((prev) => ({
+      ...prev,
+      fabricante: v,
+      nome: v === 'Adobe' ? 'Adobe' : '',
+      tipo_produto: '',
+      produto: ''
+    }));
+  }
+
+  function handleTipoChange(v: string) {
+    setForm((prev) => {
+      const isAdobe = prev.fabricante?.toLowerCase() === 'adobe';
+      return {
+        ...prev,
+        tipo_produto: v,
+        // Se for Adobe e não for individual, o produto/perfil é o próprio tipo de produto
+        produto: isAdobe && v !== 'Aplicativo Único / Individual' ? v : ''
+      };
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.nome?.trim()) { setError('Nome do software é obrigatório.'); return; }
+    
+    if (!form.fabricante) {
+      setError('Selecione o Fabricante / Software Principal.');
+      return;
+    }
+
+    if (isAdobe && !form.tipo_produto) {
+      setError('Selecione o Tipo de Produto.');
+      return;
+    }
+
+    if (isAdobeIndividual && !form.produto) {
+      setError('Selecione o Aplicativo Único Individual.');
+      return;
+    }
+
+    if (isOutros && !form.nome?.trim()) {
+      setError('Nome do software é obrigatório.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -165,59 +231,134 @@ function SoftwareModal({ item, onClose, onSave }: {
     }
   }
 
-  const isNew = !item.id;
+  const isAdobe = form.fabricante?.toLowerCase() === 'adobe';
+  const isOutros = form.fabricante === 'Outros Softwares';
+  const isAdobeIndividual = isAdobe && form.tipo_produto === 'Aplicativo Único / Individual';
 
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white border border-[#E1DFDD] rounded-lg w-full max-w-md shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E1DFDD]">
-          <h2 className="text-[#323130] font-semibold text-lg">{isNew ? 'Novo Software' : 'Editar Software'}</h2>
-          <button onClick={onClose} className="text-[#605E5C] hover:text-[#323130] transition-colors p-1.5 hover:bg-[#F5F5F5] rounded-md">
+      <div className="bg-white border border-[#E1DFDD] rounded-lg w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E1DFDD] sticky top-0 bg-white z-10">
+          <h2 className="text-[#323130] font-semibold text-lg">
+            {!item.id ? 'Novo Software' : 'Editar Software'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-[#605E5C] hover:text-[#323130] transition-colors p-1.5 hover:bg-[#F5F5F5] rounded-md"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
+
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Fabricante / Seleção Inicial */}
           <div>
-            <label className="text-[#605E5C] text-xs font-medium block mb-1">Fabricante</label>
-            <input
-              type="text"
+            <label className="text-[#605E5C] text-xs font-medium block mb-1">
+              Fabricante / Software Principal *
+            </label>
+            <select
               value={form.fabricante ?? ''}
-              onChange={(e) => set('fabricante', e.target.value)}
-              placeholder="Ex: Adobe, Microsoft 365, Figma, Autodesk"
-              className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
-            />
+              onChange={(e) => handleFabricanteChange(e.target.value)}
+              className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all cursor-pointer"
+            >
+              <option value="">Selecione...</option>
+              {FABRICANTES.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
           </div>
-          <div>
-            <label className="text-[#605E5C] text-xs font-medium block mb-1">Nome do Software *</label>
-            <input
-              type="text"
-              value={form.nome ?? ''}
-              onChange={(e) => set('nome', e.target.value)}
-              required
-              placeholder="Ex: Adobe Creative Cloud"
-              className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
-            />
-          </div>
-          <div>
-            <label className="text-[#605E5C] text-xs font-medium block mb-1">Tipo de Produto</label>
-            <input
-              type="text"
-              value={form.tipo_produto ?? ''}
-              onChange={(e) => set('tipo_produto', e.target.value)}
-              placeholder="Ex: Creative Cloud, Aplicativo Individual, Nuvem de Documentos"
-              className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
-            />
-          </div>
-          <div>
-            <label className="text-[#605E5C] text-xs font-medium block mb-1">Produto / Perfil</label>
-            <input
-              type="text"
-              value={form.produto ?? ''}
-              onChange={(e) => set('produto', e.target.value)}
-              placeholder="Ex: Photoshop, Illustrator, Acrobat Pro DC"
-              className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
-            />
-          </div>
+
+          {/* FLUXO ADOBE */}
+          {isAdobe && (
+            <div className="space-y-4 bg-[#F5F5F5] border border-[#E1DFDD] rounded-md p-4">
+              <p className="text-[#0078D4] text-xs font-semibold uppercase tracking-wider">
+                Configuração de Licença Adobe
+              </p>
+
+              <div>
+                <label className="text-[#605E5C] text-xs font-medium block mb-1">
+                  Tipo de Produto / Pacote *
+                </label>
+                <select
+                  value={form.tipo_produto ?? ''}
+                  onChange={(e) => handleTipoChange(e.target.value)}
+                  className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all cursor-pointer"
+                >
+                  <option value="">Selecione o tipo...</option>
+                  {ADOBE_TIPOS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Se for Aplicativo Único / Individual */}
+              {isAdobeIndividual && (
+                <div>
+                  <label className="text-[#605E5C] text-xs font-medium block mb-1">
+                    Aplicativo Específico *
+                  </label>
+                  <select
+                    value={form.produto ?? ''}
+                    onChange={(e) => set('produto', e.target.value)}
+                    className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all cursor-pointer"
+                  >
+                    <option value="">Selecione o aplicativo...</option>
+                    {ADOBE_APPS_INDIVIDUAIS.map((app) => (
+                      <option key={app} value={app}>
+                        {app}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* FLUXO OUTROS SOFTWARES */}
+          {isOutros && (
+            <div className="space-y-4 bg-[#F5F5F5] border border-[#E1DFDD] rounded-md p-4">
+              <p className="text-[#0078D4] text-xs font-semibold uppercase tracking-wider">
+                Detalhes do Software
+              </p>
+
+              <div>
+                <label className="text-[#605E5C] text-xs font-medium block mb-1">
+                  Nome do Software / Fabricante *
+                </label>
+                <input
+                  type="text"
+                  value={form.nome ?? ''}
+                  onChange={(e) => {
+                    set('nome', e.target.value);
+                    set('produto', e.target.value);
+                  }}
+                  placeholder="Ex: Microsoft 365, Figma, Autodesk..."
+                  required
+                  className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[#605E5C] text-xs font-medium block mb-1">
+                  Tipo de Produto / Pacote
+                </label>
+                <input
+                  type="text"
+                  value={form.tipo_produto ?? ''}
+                  onChange={(e) => set('tipo_produto', e.target.value)}
+                  placeholder="Ex: Business Standard, Enterprise, Pro..."
+                  className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Descrição */}
           <div>
             <label className="text-[#605E5C] text-xs font-medium block mb-1">Descrição</label>
             <input
@@ -227,6 +368,8 @@ function SoftwareModal({ item, onClose, onSave }: {
               className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all placeholder-[#A19F9D]"
             />
           </div>
+
+          {/* Quantidade */}
           <div>
             <label className="text-[#605E5C] text-xs font-medium block mb-1">Quantidade de Licenças</label>
             <input
@@ -237,17 +380,25 @@ function SoftwareModal({ item, onClose, onSave }: {
               className="w-full bg-white border border-[#E1DFDD] text-[#323130] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#0078D4] focus:ring-2 focus:ring-[#0078D4]/20 transition-all"
             />
           </div>
+
           {error && (
-            <p className="text-[#A4262C] text-sm bg-[#FDE7E9] border border-[#A4262C]/20 rounded-md px-3 py-2">{error}</p>
+            <p className="text-[#A4262C] text-sm bg-[#FDE7E9] border border-[#A4262C]/20 rounded-md px-3 py-2">
+              {error}
+            </p>
           )}
+
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-md border border-[#E1DFDD] text-[#605E5C] hover:text-[#323130] hover:bg-[#F5F5F5] transition-colors text-sm">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-md border border-[#E1DFDD] text-[#605E5C] hover:text-[#323130] hover:bg-[#F5F5F5] transition-colors text-sm"
+            >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md bg-[#0078D4] hover:bg-[#106EBE] text-white font-semibold text-sm transition-colors disabled:opacity-60"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md bg-[#0078D4] hover:bg-[#106EBE] text-white font-semibold text-sm transition-colors disabled:opacity-60 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               {saving ? 'Salvando...' : 'Salvar'}

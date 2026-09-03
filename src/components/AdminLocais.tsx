@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Input, Textarea, Button, Modal, Badge } from '../design';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Save,
   Plus,
@@ -15,7 +16,10 @@ import {
   Network,
   AlertTriangle,
   Search,
-  PieChart
+  PieChart,
+  Undo2,
+  Clock,
+  UserCheck
 } from 'lucide-react';
 import {
   BarChart,
@@ -29,31 +33,34 @@ import {
 
 interface LocalAdmin {
   id?: string;
-  estacao: string;
+  estacao?: string;
   usuario: string;
-  prefixo: string;
-  endereco_logico?: string;
+  prefixo?: string;
+  endereco_logico: string;
   setor?: string;
   departamento?: string;
   justificativa: string;
   created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
 }
 
 /**
  * Função utilitária para contar a quantidade de administradores
- * separando por: |, ;, \, /, vírgulas ou múltiplos espaços.
+ * separando por: |, ;, \, /, vírgulas ou múltiplos espaços/quebras de linha.
  */
 function parseAdminUsers(userString: string | null | undefined): string[] {
   if (!userString) return [];
-  // Divide a string por |, ;, \, /, vírgula ou espaço duplo/múltiplo
   return userString
-    .split(/[|;\\\/,]+/)
+    .split(/[\n|;\\\/,]+|\s{2,}/)
     .map((u) => u.trim())
     .filter((u) => u.length > 0);
 }
 
 export function AdminLocais() {
+  const { user } = useAuth();
   const [locais, setLocais] = useState<LocalAdmin[]>([]);
+  const [lastState, setLastState] = useState<LocalAdmin[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -63,16 +70,14 @@ export function AdminLocais() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<LocalAdmin>({
-    estacao: '',
     usuario: '',
-    prefixo: '',
+    prefixo: 'MD',
     endereco_logico: '',
     setor: '',
     departamento: '',
     justificativa: ''
   });
 
-  // Busca TODOS os dados do Supabase ignorando o limite padrão de 1000 itens (Paginação em Loop)
   const fetchLocais = async () => {
     try {
       setLoading(true);
@@ -114,28 +119,42 @@ export function AdminLocais() {
     fetchLocais();
   }, []);
 
-  // Mapeia os hosts válidos (Estação ou Endereço Lógico) e acumula total de admins
-  const adminCountByEstacao = useMemo(() => {
+  const saveHistoryForUndo = () => {
+    setLastState([...locais]);
+  };
+
+  const handleUndo = async () => {
+    if (!lastState) return;
+    try {
+      setLoading(true);
+      setLocais(lastState);
+      setLastState(null);
+      await fetchLocais();
+    } catch (err: any) {
+      alert('Erro ao desfazer alteração: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const adminCountByHost = useMemo(() => {
     const map: Record<string, number> = {};
 
     locais.forEach((item) => {
-      // Pega o identificador do equipamento (seja estacao ou endereco_logico)
-      const host = (item.estacao || item.endereco_logico || '').toUpperCase().trim();
-      const countInRow = parseAdminUsers(item.usuario).length || 1;
+      const host = (item.endereco_logico || item.estacao || '').toUpperCase().trim();
+      const countInRow = parseAdminUsers(item.usuario).length;
 
       if (host) {
-        map[host] = (map[host] || 0) + countInRow;
+        map[host] = (map[host] || 0) + (countInRow > 0 ? countInRow : 1);
       }
     });
 
     return map;
   }, [locais]);
 
-  // KPIs Estratégicos com contagem real
   const stats = useMemo(() => {
-    const totalEquipamentos = Object.keys(adminCountByEstacao).length;
+    const totalEquipamentos = Object.keys(adminCountByHost).length;
     
-    // Total Real de Usuários Admins somando as divisões da coluna 'usuario'
     const totalUsuariosAdmin = locais.reduce((acc, item) => {
       const parsed = parseAdminUsers(item.usuario);
       return acc + (parsed.length > 0 ? parsed.length : 1);
@@ -150,9 +169,8 @@ export function AdminLocais() {
       totalSetores: setores.size,
       totalDepartamentos: departamentos.size
     };
-  }, [locais, adminCountByEstacao]);
+  }, [locais, adminCountByHost]);
 
-  // Top 10 Setores
   const topSetoresData = useMemo(() => {
     const map: Record<string, number> = {};
     locais.forEach((item) => {
@@ -166,7 +184,6 @@ export function AdminLocais() {
       .slice(0, 10);
   }, [locais]);
 
-  // Top 10 Departamentos
   const topDepartamentosData = useMemo(() => {
     const map: Record<string, number> = {};
     locais.forEach((item) => {
@@ -180,18 +197,17 @@ export function AdminLocais() {
       .slice(0, 10);
   }, [locais]);
 
-  // Filtragem da tabela
   const filteredLocais = useMemo(() => {
     if (!searchTerm) return locais;
     const term = searchTerm.toLowerCase();
     return locais.filter(
       (item) =>
-        item.estacao?.toLowerCase().includes(term) ||
         item.usuario?.toLowerCase().includes(term) ||
         item.setor?.toLowerCase().includes(term) ||
         item.departamento?.toLowerCase().includes(term) ||
         item.justificativa?.toLowerCase().includes(term) ||
-        item.endereco_logico?.toLowerCase().includes(term)
+        item.endereco_logico?.toLowerCase().includes(term) ||
+        item.updated_by?.toLowerCase().includes(term)
     );
   }, [locais, searchTerm]);
 
@@ -204,7 +220,6 @@ export function AdminLocais() {
       setForm(item);
     } else {
       setForm({
-        estacao: '',
         usuario: '',
         prefixo: 'MD',
         endereco_logico: '',
@@ -221,35 +236,34 @@ export function AdminLocais() {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    saveHistoryForUndo();
+
+    const currentUserEmail = user?.email || 'Sistema / Manual';
+    const nowISO = new Date().toISOString();
 
     try {
+      const payload = {
+        usuario: form.usuario,
+        prefixo: form.prefixo,
+        endereco_logico: form.endereco_logico,
+        setor: form.setor,
+        departamento: form.departamento,
+        justificativa: form.justificativa,
+        updated_at: nowISO,
+        updated_by: currentUserEmail
+      };
+
       if (form.id) {
         const { error: updateError } = await supabase
           .from('administradores_locais')
-          .update({
-            estacao: form.estacao,
-            usuario: form.usuario,
-            prefixo: form.prefixo,
-            endereco_logico: form.endereco_logico,
-            setor: form.setor,
-            departamento: form.departamento,
-            justificativa: form.justificativa
-          })
+          .update(payload)
           .eq('id', form.id);
 
         if (updateError) throw updateError;
       } else {
         const { error: insertError } = await supabase
           .from('administradores_locais')
-          .insert([{
-            estacao: form.estacao,
-            usuario: form.usuario,
-            prefixo: form.prefixo,
-            endereco_logico: form.endereco_logico,
-            setor: form.setor,
-            departamento: form.departamento,
-            justificativa: form.justificativa
-          }]);
+          .insert([{ ...payload, created_at: nowISO }]);
 
         if (insertError) throw insertError;
       }
@@ -265,6 +279,8 @@ export function AdminLocais() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Deseja realmente remover este registro?')) return;
+
+    saveHistoryForUndo();
 
     try {
       const { error: deleteError } = await supabase
@@ -285,15 +301,16 @@ export function AdminLocais() {
       return;
     }
 
-    const headers = ['Estacao', 'Usuario', 'Prefixo', 'Endereco Logico', 'Setor', 'Departamento', 'Justificativa'];
+    const headers = ['Usuario', 'Prefixo', 'Endereco Logico', 'Setor', 'Departamento', 'Justificativa', 'Modificado Por', 'Ultima Modificacao'];
     const rows = locais.map((item) => [
-      `"${item.estacao || ''}"`,
       `"${item.usuario || ''}"`,
       `"${item.prefixo || ''}"`,
       `"${item.endereco_logico || ''}"`,
       `"${item.setor || ''}"`,
       `"${item.departamento || ''}"`,
-      `"${(item.justificativa || '').replace(/"/g, '""')}"`
+      `"${(item.justificativa || '').replace(/"/g, '""')}"`,
+      `"${item.updated_by || ''}"`,
+      `"${item.updated_at || item.created_at || ''}"`
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
@@ -315,9 +332,15 @@ export function AdminLocais() {
       try {
         const text = event.target?.result as string;
         let registrosParaInserir: Partial<LocalAdmin>[] = [];
+        const currentUserEmail = user?.email || 'Importação CSV';
+        const nowISO = new Date().toISOString();
 
         if (file.name.endsWith('.json')) {
-          registrosParaInserir = JSON.parse(text);
+          registrosParaInserir = JSON.parse(text).map((r: any) => ({
+            ...r,
+            updated_by: currentUserEmail,
+            updated_at: nowISO
+          }));
         } else {
           const lines = text.split('\n').filter((l) => l.trim().length > 0);
           const delimiter = lines[0].includes(';') ? ';' : ',';
@@ -325,15 +348,16 @@ export function AdminLocais() {
           registrosParaInserir = lines.slice(1).map((line) => {
             const cols = line.split(delimiter).map((c) => c.replace(/^"|"$/g, '').trim());
             return {
-              estacao: cols[0] || '',
-              usuario: cols[1] || '',
-              prefixo: cols[2] || '',
-              endereco_logico: cols[3] || '',
-              setor: cols[4] || '',
-              departamento: cols[5] || '',
-              justificativa: cols[6] || ''
+              usuario: cols[0] || '',
+              prefixo: cols[1] || 'MD',
+              endereco_logico: cols[2] || '',
+              setor: cols[3] || '',
+              departamento: cols[4] || '',
+              justificativa: cols[5] || '',
+              updated_by: currentUserEmail,
+              updated_at: nowISO
             };
-          }).filter(r => r.estacao || r.usuario || r.endereco_logico);
+          }).filter(r => r.usuario || r.endereco_logico);
         }
 
         if (registrosParaInserir.length === 0) {
@@ -341,6 +365,7 @@ export function AdminLocais() {
           return;
         }
 
+        saveHistoryForUndo();
         setLoading(true);
         const { error: importError } = await supabase
           .from('administradores_locais')
@@ -361,6 +386,16 @@ export function AdminLocais() {
     reader.readAsText(file);
   };
 
+  const formatDateTime = (isoString?: string) => {
+    if (!isoString) return '-';
+    try {
+      const d = new Date(isoString);
+      return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    } catch {
+      return isoString;
+    }
+  };
+
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-6">
       {/* Header Visual */}
@@ -376,6 +411,13 @@ export function AdminLocais() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
+          {lastState && (
+            <Button onClick={handleUndo} variant="secondary" className="border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">
+              <Undo2 className="w-4 h-4" />
+              Desfazer Alteração
+            </Button>
+          )}
+
           <input
             type="file"
             ref={fileInputRef}
@@ -508,7 +550,7 @@ export function AdminLocais() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]" />
             <input
               type="text"
-              placeholder="Buscar por estação, usuário, IP, setor..."
+              placeholder="Buscar por usuário, IP, setor, responsável..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-[#001220] border border-[#1e293b] rounded-xl text-sm text-white placeholder-[#64748b] focus:outline-none focus:border-[#D4AF37]"
@@ -527,13 +569,13 @@ export function AdminLocais() {
           <table className="w-full text-left text-sm text-[#94a3b8]">
             <thead className="bg-[#0a1220] text-[#64748b] uppercase text-[11px] font-bold tracking-wider border-b border-[#1e293b]">
               <tr>
-                <th className="px-6 py-4">Estação / Hostname</th>
-                <th className="px-6 py-4">Usuário(s)</th>
+                <th className="px-6 py-4">Endereço Lógico / Host</th>
+                <th className="px-6 py-4">Usuário(s) Administrador(es)</th>
                 <th className="px-6 py-4">Prefixo</th>
-                <th className="px-6 py-4">Endereço Lógico</th>
                 <th className="px-6 py-4 text-center">Qtd. Admins</th>
                 <th className="px-6 py-4">Setor / Depto</th>
                 <th className="px-6 py-4">Justificativa / Autorização</th>
+                <th className="px-6 py-4">Última Modificação / Por</th>
                 <th className="px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
@@ -541,7 +583,7 @@ export function AdminLocais() {
               {loading ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-[#64748b]">
-                    Carregando base completa do servidor...
+                    Carregando base de dados do servidor...
                   </td>
                 </tr>
               ) : filteredLocais.length === 0 ? (
@@ -552,27 +594,25 @@ export function AdminLocais() {
                 </tr>
               ) : (
                 filteredLocais.map((item) => {
-                  const hostKey = (item.estacao || item.endereco_logico || '').toUpperCase().trim();
+                  const hostKey = (item.endereco_logico || item.estacao || '').toUpperCase().trim();
                   
-                  // Administradores da linha específica conforme separadores
                   const adminsDaLinha = parseAdminUsers(item.usuario);
                   const qtdAdminsLinha = adminsDaLinha.length || 1;
 
-                  // Total acumulado no mesmo host
-                  const totalAdminsNoHost = adminCountByEstacao[hostKey] || qtdAdminsLinha;
+                  const totalAdminsNoHost = adminCountByHost[hostKey] || qtdAdminsLinha;
                   const temAlerta = totalAdminsNoHost >= 3 || qtdAdminsLinha >= 3;
 
                   return (
                     <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
-                      {/* Hostname */}
-                      <td className="px-6 py-4 font-semibold text-white flex items-center gap-2">
-                        <span>{item.estacao || '-'}</span>
+                      {/* Endereço Lógico / Host */}
+                      <td className="px-6 py-4 font-mono text-xs text-cyan-400 font-bold flex items-center gap-2">
+                        <span>{item.endereco_logico || item.estacao || '-'}</span>
                         {temAlerta && (
                           <span
                             title={`Atenção: Este equipamento acumula ${totalAdminsNoHost} administradores!`}
-                            className="inline-flex items-center gap-1 bg-red-500/20 text-red-400 border border-red-500/40 px-2 py-0.5 rounded-full text-xs font-bold animate-pulse cursor-help"
+                            className="inline-flex items-center gap-1 bg-red-500/20 text-red-400 border border-red-500/40 px-2 py-0.5 rounded-full text-[10px] font-bold animate-pulse cursor-help"
                           >
-                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <AlertTriangle className="w-3 h-3" />
                             {totalAdminsNoHost} Admins
                           </span>
                         )}
@@ -580,7 +620,17 @@ export function AdminLocais() {
 
                       {/* Usuário(s) */}
                       <td className="px-6 py-4 text-white font-medium max-w-xs break-words">
-                        {item.usuario || '-'}
+                        <div className="flex flex-wrap gap-1">
+                          {adminsDaLinha.length > 0 ? (
+                            adminsDaLinha.map((usr, idx) => (
+                              <span key={idx} className="bg-[#001220] border border-[#1e293b] text-slate-200 px-2 py-0.5 rounded text-xs">
+                                {usr}
+                              </span>
+                            ))
+                          ) : (
+                            <span>{item.usuario || '-'}</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Prefixo */}
@@ -588,12 +638,7 @@ export function AdminLocais() {
                         <Badge type="warning">{item.prefixo || 'MD'}</Badge>
                       </td>
 
-                      {/* Endereço Lógico */}
-                      <td className="px-6 py-4 font-mono text-xs text-cyan-400 font-bold">
-                        {item.endereco_logico || '-'}
-                      </td>
-
-                      {/* Qtd. Admins por Registro/Linha */}
+                      {/* Qtd. Admins */}
                       <td className="px-6 py-4 text-center">
                         <span
                           className={`inline-block font-bold px-3 py-1 rounded-lg text-xs ${
@@ -615,6 +660,18 @@ export function AdminLocais() {
                       {/* Justificativa */}
                       <td className="px-6 py-4 max-w-xs truncate text-xs text-[#94a3b8]" title={item.justificativa}>
                         {item.justificativa || '-'}
+                      </td>
+
+                      {/* Auditoria: Quem e Quando */}
+                      <td className="px-6 py-4 text-xs">
+                        <div className="text-slate-300 font-medium flex items-center gap-1">
+                          <UserCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          {item.updated_by || 'Sistema'}
+                        </div>
+                        <div className="text-[#64748b] flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3 h-3" />
+                          {formatDateTime(item.updated_at || item.created_at)}
+                        </div>
                       </td>
 
                       {/* Ações */}
@@ -652,34 +709,28 @@ export function AdminLocais() {
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Estação / Hostname"
-              placeholder="Ex: WKS-SEN-001"
-              value={form.estacao}
-              onChange={(e) => handleSetField('estacao', e.target.value)}
-            />
-            <Input
-              label="Usuários Responsáveis *"
-              placeholder="Ex: user1 | user2 ; user3"
-              value={form.usuario}
-              onChange={(e) => handleSetField('usuario', e.target.value)}
+              label="Endereço Lógico / Host *"
+              placeholder="Ex: NH0191 ou IP"
+              value={form.endereco_logico}
+              onChange={(e) => handleSetField('endereco_logico', e.target.value)}
               required
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <Input
               label="Prefixo"
               placeholder="Ex: MD ou MP"
               value={form.prefixo}
               onChange={(e) => handleSetField('prefixo', e.target.value)}
             />
-            <Input
-              label="Endereço Lógico / Host"
-              placeholder="Ex: NH0191 ou IP"
-              value={form.endereco_logico}
-              onChange={(e) => handleSetField('endereco_logico', e.target.value)}
-            />
           </div>
+
+          <Textarea
+            label="Usuários Responsáveis (Separe com vírgula, barra ou ponto e vírgula) *"
+            placeholder="Ex: usuario1, usuario2; usuario3"
+            value={form.usuario}
+            onChange={(e) => handleSetField('usuario', e.target.value)}
+            rows={2}
+            required
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <Input

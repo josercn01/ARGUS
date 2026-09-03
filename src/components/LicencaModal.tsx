@@ -11,6 +11,24 @@ interface LicencaModalProps {
 
 const STATUS_OPTIONS = ['Ativo', 'Inativo', 'Pendente'];
 
+// Mapeamento fixo para a regra específica da Adobe
+const ADOBE_TIPOS = [
+  'Adobe Acrobat Pro DC',
+  'Creative Cloud (Suite CC)',
+  'Aplicativo Único / Individual'
+];
+
+const ADOBE_APPS_INDIVIDUAIS = [
+  'Adobe Lightroom Classic: Aplicativo único - Lightroom Classic',
+  'Adobe XD: Aplicativo único - XD',
+  'Audição: Aplicativo individual - Audicão',
+  'Illustrator: Aplicativo único - Illustrator',
+  'InDesign: Aplicativo único - InDesign',
+  'Photoshop: Aplicativo único - Photoshop',
+  'Premiere Pro: Aplicativo único - Premiere',
+  'Premiere Rush: Aplicativo Único - Rush'
+];
+
 export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
   const [form, setForm] = useState<Partial<LicencaUsuario>>({});
   const [saving, setSaving] = useState(false);
@@ -30,9 +48,13 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
 
   if (item === null) return null;
 
-  // Extrai os fabricantes cadastrados de forma flexível (fabricante, tipo_licenca ou nome)
+  // Lista de Fabricantes / Softwares Principais
   const fabricantes = useMemo(() => {
     const set = new Set<string>();
+    
+    // Garante que a opção Adobe e outras padrão estejam sempre visíveis
+    set.add('Adobe');
+    
     softwares.forEach((s: any) => {
       const fab = s.fabricante || s.tipo_licenca || s.software || s.nome;
       if (fab && typeof fab === 'string' && fab.trim()) {
@@ -42,10 +64,17 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     return [...set].sort();
   }, [softwares]);
 
-  // Lista tipos de produto/perfil com base no fabricante selecionado
+  // Tipos de Produto por Fabricante
   const tiposPorFabricante = useMemo(() => {
     const fab = form.tipo_licenca;
     if (!fab) return [];
+
+    // Regra customizada para Adobe
+    if (fab.toLowerCase() === 'adobe') {
+      return ADOBE_TIPOS;
+    }
+
+    // Regra genérica para outros fabricantes (Autodesk, Figma, Copilot, etc.)
     const set = new Set<string>();
     softwares
       .filter((s: any) => {
@@ -61,12 +90,21 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     return [...set].sort();
   }, [softwares, form.tipo_licenca]);
 
-  // Lista produtos/licenças filtrados
+  // Produtos / Perfil Específico por Tipo de Produto
   const produtosPorTipo = useMemo(() => {
     const fab = form.tipo_licenca;
     const tipo = form.tipo_produto;
     if (!fab) return [];
 
+    // Regra customizada para Adobe Aplicativo Único
+    if (fab.toLowerCase() === 'adobe') {
+      if (tipo === 'Aplicativo Único / Individual') {
+        return ADOBE_APPS_INDIVIDUAIS;
+      }
+      return []; // Não exige produto específico se já escolheu Pro DC ou Suite CC
+    }
+
+    // Regra genérica para outros fabricantes
     const filtered = softwares.filter((s: any) => {
       const itemFab = s.fabricante || s.tipo_licenca || s.software || s.nome;
       return itemFab?.toLowerCase() === fab.toLowerCase();
@@ -120,6 +158,9 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
   }
 
   const isNew = !item.id;
+  const isAdobeIndividual =
+    form.tipo_licenca?.toLowerCase() === 'adobe' &&
+    form.tipo_produto === 'Aplicativo Único / Individual';
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -166,6 +207,7 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
               <p className="text-[#D4AF37] text-xs font-semibold uppercase tracking-wider">
                 Vincular Licença
               </p>
+              
               <SelectField
                 label="Fabricante / Software Principal"
                 value={form.tipo_licenca ?? ''}
@@ -173,28 +215,27 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
                 options={fabricantes}
                 placeholder="Selecione..."
               />
+
               <SelectField
-                label="Tipo de Produto"
+                label="Tipo de Produto / Pacote"
                 value={form.tipo_produto ?? ''}
                 onChange={handleTipoChange}
                 options={tiposPorFabricante}
                 placeholder={form.tipo_licenca ? 'Selecione...' : 'Selecione o fabricante primeiro'}
                 disabled={!form.tipo_licenca}
               />
-              <SelectField
-                label="Produto / Perfil Específico"
-                value={form.produto ?? ''}
-                onChange={(v) => set('produto', v)}
-                options={produtosPorTipo}
-                placeholder={
-                  form.tipo_produto
-                    ? 'Selecione...'
-                    : form.tipo_licenca
-                    ? 'Selecione ou escolha abaixo'
-                    : 'Selecione o fabricante primeiro'
-                }
-                disabled={!form.tipo_licenca}
-              />
+
+              {/* Exibe o select do aplicativo individual quando Adobe + Aplicativo Único, ou se o fabricante tiver produtos específicos */}
+              {(isAdobeIndividual || (!isAdobeIndividual && produtosPorTipo.length > 0)) && (
+                <SelectField
+                  label="Produto / Aplicativo Específico"
+                  value={form.produto ?? ''}
+                  onChange={(v) => set('produto', v)}
+                  options={produtosPorTipo}
+                  placeholder="Selecione o aplicativo..."
+                  disabled={!form.tipo_produto}
+                />
+              )}
             </div>
           )}
 

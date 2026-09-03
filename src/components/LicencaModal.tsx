@@ -11,7 +11,7 @@ interface LicencaModalProps {
 
 const STATUS_OPTIONS = ['Ativo', 'Inativo', 'Pendente'];
 
-// Mapeamento fixo para a regra específica da Adobe
+// Mapeamento fixo para a estrutura Adobe
 const ADOBE_TIPOS = [
   'Adobe Acrobat Pro DC',
   'Creative Cloud (Suite CC)',
@@ -48,17 +48,21 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
 
   if (item === null) return null;
 
-  // Lista de Fabricantes / Softwares Principais
+  // Normaliza os Fabricantes agrupar tudo que for Adobe sob "Adobe"
   const fabricantes = useMemo(() => {
     const set = new Set<string>();
     
-    // Garante que a opção Adobe e outras padrão estejam sempre visíveis
+    // Sempre garante "Adobe" na lista
     set.add('Adobe');
-    
+
     softwares.forEach((s: any) => {
       const fab = s.fabricante || s.tipo_licenca || s.software || s.nome;
       if (fab && typeof fab === 'string' && fab.trim()) {
-        set.add(fab.trim());
+        const fabUpper = fab.trim().toUpperCase();
+        // Se começar com ADOBE, não adiciona solto (fica dentro do grupo Adobe)
+        if (!fabUpper.startsWith('ADOBE')) {
+          set.add(fab.trim());
+        }
       }
     });
     return [...set].sort();
@@ -69,12 +73,12 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     const fab = form.tipo_licenca;
     if (!fab) return [];
 
-    // Regra customizada para Adobe
+    // Se selecionou "Adobe", retorna as opções padronizadas
     if (fab.toLowerCase() === 'adobe') {
       return ADOBE_TIPOS;
     }
 
-    // Regra genérica para outros fabricantes (Autodesk, Figma, Copilot, etc.)
+    // Regra genérica para outros fabricantes (Autodesk, Copilot, Figma, etc.)
     const set = new Set<string>();
     softwares
       .filter((s: any) => {
@@ -90,21 +94,19 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     return [...set].sort();
   }, [softwares, form.tipo_licenca]);
 
-  // Produtos / Perfil Específico por Tipo de Produto
+  // Produtos / Aplicativos Específicos
   const produtosPorTipo = useMemo(() => {
     const fab = form.tipo_licenca;
     const tipo = form.tipo_produto;
     if (!fab) return [];
 
-    // Regra customizada para Adobe Aplicativo Único
     if (fab.toLowerCase() === 'adobe') {
       if (tipo === 'Aplicativo Único / Individual') {
         return ADOBE_APPS_INDIVIDUAIS;
       }
-      return []; // Não exige produto específico se já escolheu Pro DC ou Suite CC
+      return [];
     }
 
-    // Regra genérica para outros fabricantes
     const filtered = softwares.filter((s: any) => {
       const itemFab = s.fabricante || s.tipo_licenca || s.software || s.nome;
       return itemFab?.toLowerCase() === fab.toLowerCase();
@@ -225,7 +227,6 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
                 disabled={!form.tipo_licenca}
               />
 
-              {/* Exibe o select do aplicativo individual quando Adobe + Aplicativo Único, ou se o fabricante tiver produtos específicos */}
               {(isAdobeIndividual || (!isAdobeIndividual && produtosPorTipo.length > 0)) && (
                 <SelectField
                   label="Produto / Aplicativo Específico"

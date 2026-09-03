@@ -15,8 +15,11 @@ export function SoftwareManagement() {
     const { data, error: err } = await supabase.from('softwares').select('*').order('nome');
     if (err) {
       setError(err.message);
+      setSoftwares([]);
     } else if (data) {
       setSoftwares(data as Software[]);
+    } else {
+      setSoftwares([]);
     }
     setLoading(false);
   }
@@ -105,7 +108,7 @@ export function SoftwareManagement() {
                   </td>
                 </tr>
               )}
-              {!loading && softwares.length === 0 && (
+              {!loading && (!softwares || softwares.length === 0) && (
                 <tr>
                   <td colSpan={6} className="text-center text-[#94a3b8] py-8 text-sm">
                     Nenhum software cadastrado.
@@ -113,7 +116,7 @@ export function SoftwareManagement() {
                 </tr>
               )}
               {!loading &&
-                softwares.map((s) => (
+                (softwares || []).map((s) => (
                   <tr key={s.id} className="hover:bg-[#001726]/50 transition-colors">
                     <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.fabricante ?? '—'}</td>
                     <td className="px-4 py-3 text-white text-sm font-medium">{s.nome}</td>
@@ -245,10 +248,10 @@ function SoftwareModal({
     try {
       await onSave(form);
     } catch (err) {
-  setError(err instanceof Error ? err.message : 'Erro ao salvar o software.');
-} finally {
-  setSaving(false);
-}
+      setError(err instanceof Error ? err.message : 'Erro ao salvar o software.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   const isAdobe = form.fabricante?.toLowerCase() === 'adobe';
@@ -281,7 +284,7 @@ function SoftwareModal({
               className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
             >
               <option value="">Selecione...</option>
-              {FABRICANTES.map((f) => (
+              {(FABRICANTES || []).map((f) => (
                 <option key={f} value={f}>
                   {f}
                 </option>
@@ -304,7 +307,7 @@ function SoftwareModal({
                   className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
                 >
                   <option value="">Selecione o tipo...</option>
-                  {ADOBE_TIPOS.map((t) => (
+                  {(ADOBE_TIPOS || []).map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -323,7 +326,7 @@ function SoftwareModal({
                     className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
                   >
                     <option value="">Selecione o aplicativo...</option>
-                    {ADOBE_APPS_INDIVIDUAIS.map((app) => (
+                    {(ADOBE_APPS_INDIVIDUAIS || []).map((app) => (
                       <option key={app} value={app}>
                         {app}
                       </option>

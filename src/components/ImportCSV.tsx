@@ -15,21 +15,61 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
   const [importing, setImporting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Normaliza os nomes das chaves e valores vindos do arquivo
+  function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> {
+    const row: Record<string, unknown> = {};
+
+    Object.keys(rawRow).forEach((key) => {
+      const lowerKey = key.toLowerCase().trim();
+      const val = rawRow[key] !== undefined && rawRow[key] !== null ? String(rawRow[key]).trim() : null;
+
+      // Mapeamento de campos com suporte a sinônimos
+      if (lowerKey === 'nome') {
+        row.nome = val;
+      } else if (lowerKey === 'email' || lowerKey === 'e-mail') {
+        row.email = val ? val.toLowerCase() : null;
+      } else if (lowerKey === 'matricula' || lowerKey === 'matrícula') {
+        row.matricula = val;
+      } else if (lowerKey === 'departamento' || lowerKey === 'departamento_raiz') {
+        row.departamento_raiz = val;
+      } else if (lowerKey === 'subdepartamento' || lowerKey === 'sub_departamento' || lowerKey === 'subdep') {
+        row.sub_departamento = val;
+      } else if (lowerKey === 'licenca' || lowerKey === 'tipo_licenca' || lowerKey === 'fabricante') {
+        row.tipo_licenca = val;
+      } else if (lowerKey === 'tipo_produto' || lowerKey === 'tipoproduto') {
+        row.tipo_produto = val;
+      } else if (lowerKey === 'produto') {
+        row.produto = val;
+      } else if (lowerKey === 'status') {
+        row.status = val || 'Pendente';
+      } else if (lowerKey === 'possui_licenca' || lowerKey === 'possuilicenca') {
+        row.possui_licenca = val?.toLowerCase() === 'true' || val === '1' || val?.toLowerCase() === 'sim';
+      }
+    });
+
+    // Se possui_licenca não foi especificado explicitamente, infere com base na presença de tipo_licenca
+    if (row.possui_licenca === undefined) {
+      row.possui_licenca = Boolean(row.tipo_licenca && row.tipo_licenca.length > 0);
+    }
+
+    return row as Partial<LicencaUsuario>;
+  }
+
   function parseRows(text: string): Partial<LicencaUsuario>[] {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    
+    const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+    
     return lines.slice(1).map((line) => {
       const values = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, unknown> = {};
+      const rawRow: Record<string, unknown> = {};
+      
       headers.forEach((h, i) => {
-        if (h === 'possui_licenca') {
-          row[h] = values[i]?.toLowerCase() === 'true' || values[i] === '1';
-        } else {
-          row[h] = values[i] || null;
-        }
+        rawRow[h] = values[i] || null;
       });
-      return row as Partial<LicencaUsuario>;
+
+      return normalizeRow(rawRow);
     });
   }
 
@@ -37,26 +77,16 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     const wb = XLSX.read(data, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     if (!ws) return [];
+    
     const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null });
-    return json.map((row) => {
-      const mapped: Record<string, unknown> = {};
-      const keys = Object.keys(row);
-      keys.forEach((k) => {
-        const lower = k.toLowerCase().trim();
-        if (lower === 'possui_licenca') {
-          mapped[lower] = String(row[k]).toLowerCase() === 'true' || row[k] === 1 || row[k] === '1';
-        } else {
-          mapped[lower] = row[k] ?? null;
-        }
-      });
-      return mapped as Partial<LicencaUsuario>;
-    });
+    return json.map((row) => normalizeRow(row));
   }
 
   function handleFile(f: File) {
     setFile(f);
     setResult(null);
     const isXlsx = f.name.endsWith('.xlsx') || f.name.endsWith('.xls');
+    
     if (isXlsx) {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -83,11 +113,31 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     if (f) handleFile(f);
   }
 
+  // Gera e baixa o arquivo de modelo compatível com os novos tipos de licença
   function downloadTemplate() {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['Nome', 'Email', 'Matricula', 'Departamento', 'Subdepartamento', 'Licenca', 'TIPO_PRODUTO', 'PRODUTO', 'Status'],
-      ['João Silva', 'joao.silva@empresa.com.br', '12345', 'SECOM', 'Redação', 'Adobe', 'Creative Cloud', 'Photoshop', 'Ativo'],
-    ]);
+    const wsData = [
+      ['Nome', 'Email', 'Matricula', 'Departamento', 'Subdepartamento', 'Possui_Licenca', 'Tipo_Licenca', 'Tipo_Produto', 'Produto', 'Status'],
+      ['João Silva', 'joao.silva@empresa.com.br', '12345', 'SECOM', 'Redação', 'SIM', 'Adobe', 'Aplicativo Único / Individual', 'Photoshop: Aplicativo único - Photoshop', 'Ativo'],
+      ['Maria Souza', 'maria.souza@empresa.com.br', '67890', 'STI', 'Infraestrutura', 'SIM', 'Outros Softwares', 'Business Standard', 'Microsoft 365', 'Ativo'],
+      ['Carlos Lima', 'carlos.lima@empresa.com.br', '11223', 'PRODASEN', 'Sistemas', 'NAO', '', '', '', 'Pendente']
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Configura a largura visual das colunas no Excel
+    ws['!cols'] = [
+      { wch: 20 }, // Nome
+      { wch: 30 }, // Email
+      { wch: 12 }, // Matricula
+      { wch: 18 }, // Departamento
+      { wch: 18 }, // Subdepartamento
+      { wch: 15 }, // Possui_Licenca
+      { wch: 18 }, // Tipo_Licenca
+      { wch: 30 }, // Tipo_Produto
+      { wch: 38 }, // Produto
+      { wch: 12 }  // Status
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Modelo');
     XLSX.writeFile(wb, 'modelo_sereti.xlsx');
@@ -97,6 +147,7 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     if (!file) return;
     setImporting(true);
     const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
     if (isXlsx) {
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -166,12 +217,14 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
       {preview.length > 0 && (
         <div className="bg-[#F5F5F5] border border-[#E1DFDD] rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-[#E1DFDD]">
-            <p className="text-[#605E5C] text-sm flex items-center gap-2">
+            <p className="text-[#605E5C] text-sm flex items-center gap-2 font-medium">
               <FileText className="w-4 h-4 text-[#0078D4]" />
               Pré-visualização (primeiras {preview.length} linhas)
             </p>
-            <button onClick={() => { setFile(null); setPreview([]); setResult(null); }}
-              className="text-[#605E5C] hover:text-[#323130] transition-colors">
+            <button
+              onClick={() => { setFile(null); setPreview([]); setResult(null); }}
+              className="text-[#605E5C] hover:text-[#323130] transition-colors"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -179,7 +232,7 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
             <table className="w-full text-xs">
               <thead className="border-b border-[#E1DFDD] bg-white">
                 <tr>
-                  {['E-mail', 'Nome', 'Matrícula', 'Departamento', 'Subdep.', 'Licença', 'Tipo Produto', 'Produto', 'Status'].map((h) => (
+                  {['E-mail', 'Nome', 'Matrícula', 'Departamento', 'Subdep.', 'Licença / Fabricante', 'Tipo Produto', 'Produto', 'Status'].map((h) => (
                     <th key={h} className="text-left text-[#605E5C] px-3 py-2 font-medium">{h}</th>
                   ))}
                 </tr>
@@ -187,14 +240,14 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
               <tbody className="divide-y divide-[#E1DFDD]">
                 {preview.map((row, i) => (
                   <tr key={i} className="hover:bg-[#F5F5F5]">
-                    <td className="px-3 py-2 text-[#605E5C]">{row.email ?? '—'}</td>
+                    <td className="px-3 py-2 text-[#605E5C] font-medium">{row.email ?? '—'}</td>
                     <td className="px-3 py-2 text-[#323130]">{row.nome ?? '—'}</td>
                     <td className="px-3 py-2 text-[#605E5C]">{row.matricula ?? '—'}</td>
                     <td className="px-3 py-2 text-[#605E5C]">{row.departamento_raiz ?? '—'}</td>
                     <td className="px-3 py-2 text-[#605E5C]">{row.sub_departamento ?? '—'}</td>
                     <td className="px-3 py-2 text-[#605E5C]">{row.tipo_licenca ?? '—'}</td>
                     <td className="px-3 py-2 text-[#605E5C]">{row.tipo_produto ?? '—'}</td>
-                    <td className="px-3 py-2 text-[#0078D4]">{row.produto ?? '—'}</td>
+                    <td className="px-3 py-2 text-[#0078D4] font-medium">{row.produto ?? '—'}</td>
                     <td className="px-3 py-2 text-[#605E5C]">{row.status ?? '—'}</td>
                   </tr>
                 ))}
@@ -227,7 +280,7 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
         <button
           onClick={handleImport}
           disabled={importing}
-          className="w-full flex items-center justify-center gap-2 py-3 bg-[#0078D4] hover:bg-[#106EBE] text-white font-semibold rounded-lg transition-colors disabled:opacity-60"
+          className="w-full flex items-center justify-center gap-2 py-3 bg-[#0078D4] hover:bg-[#106EBE] text-white font-semibold rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
         >
           <Upload className="w-4 h-4" />
           {importing ? 'Importando...' : 'Confirmar Importação'}

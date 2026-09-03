@@ -36,11 +36,14 @@ export function Dashboard({ user, role }: DashboardProps) {
         supabase.from('locais_trabalho').select('*').order('nome'),
       ]);
 
-      if (uRes.data) setUsuarios(uRes.data as LicencaUsuario[]);
-      if (sRes.data) setSoftwares(sRes.data as Software[]);
-      if (lRes.data) setLocais(lRes.data as LocalTrabalho[]);
+      setUsuarios((uRes.data as LicencaUsuario[]) || []);
+      setSoftwares((sRes.data as Software[]) || []);
+      setLocais((lRes.data as LocalTrabalho[]) || []);
     } catch (error) {
       console.error('Erro ao carregar dados do dashboard:', error);
+      setUsuarios([]);
+      setSoftwares([]);
+      setLocais([]);
     } finally {
       setLoading(false);
     }
@@ -50,17 +53,24 @@ export function Dashboard({ user, role }: DashboardProps) {
     loadData();
   }, []);
 
-  const filteredUsuarios = usuarios.filter((u) => {
-    const matchesSearch =
-      !search ||
-      u.nome.toLowerCase().includes(search.toLowerCase()) ||
-      (u.email && u.email.toLowerCase().includes(search.toLowerCase())) ||
-      (u.login && u.login.toLowerCase().includes(search.toLowerCase())) ||
-      (u.chapa_matricula && u.chapa_matricula.toLowerCase().includes(search.toLowerCase()));
+  // Filtro com proteção contra campos nulos (nullish check)
+  const filteredUsuarios = (usuarios || []).filter((u) => {
+    if (!u) return false;
 
-    const matchesSoftware = !selectedSoftware || u.software_id === selectedSoftware || u.produto === selectedSoftware;
-    const matchesLocal = !selectedLocal || u.local_id === selectedLocal || u.local_nome === selectedLocal;
-    const matchesStatus = !selectedStatus || u.status === selectedStatus;
+    const searchTerm = search.toLowerCase().trim();
+    const matchesSearch =
+      !searchTerm ||
+      (u.nome && u.nome.toLowerCase().includes(searchTerm)) ||
+      (u.email && u.email.toLowerCase().includes(searchTerm)) ||
+      (u.login && u.login.toLowerCase().includes(searchTerm)) ||
+      (u.chapa_matricula && u.chapa_matricula.toLowerCase().includes(searchTerm));
+
+    const matchesSoftware =
+      !selectedSoftware || u.software_id === selectedSoftware || u.produto === selectedSoftware;
+    const matchesLocal =
+      !selectedLocal || u.local_id === selectedLocal || u.local_nome === selectedLocal;
+    const matchesStatus =
+      !selectedStatus || u.status === selectedStatus;
 
     return matchesSearch && matchesSoftware && matchesLocal && matchesStatus;
   });
@@ -77,7 +87,7 @@ export function Dashboard({ user, role }: DashboardProps) {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {activeTab === 'dashboard' && (
           <>
-            <MetricsCards data={usuarios} softwares={softwares} />
+            <MetricsCards data={filteredUsuarios} softwares={softwares || []} />
 
             <div className="space-y-4 pt-4 border-t border-[#1e293b]">
               <FiltersBar
@@ -89,14 +99,14 @@ export function Dashboard({ user, role }: DashboardProps) {
                 onLocalChange={setSelectedLocal}
                 status={selectedStatus}
                 onStatusChange={setSelectedStatus}
-                softwares={softwares}
-                locais={locais}
+                softwares={softwares || []}
+                locais={locais || []}
               />
 
               <LicencasTable
                 data={filteredUsuarios}
-                softwares={softwares}
-                locais={locais}
+                softwares={softwares || []}
+                locais={locais || []}
                 role={role}
                 loading={loading}
                 onRefresh={loadData}

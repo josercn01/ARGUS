@@ -1,189 +1,194 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Building2, 
-  Users, 
-  Package, 
-  CheckCircle2, 
-  AlertTriangle, 
-  RefreshCw,
-  FileSpreadsheet
-} from 'lucide-react';
-
-// ✅ IMPORT CORRETO DO MODAL (Verifique se o caminho e o nome do arquivo batem exatamente)
-import { SoftwareModal } from '../components/SoftwareModal'; 
-
-// Import do cliente do Supabase (ou da sua camada de serviços/banco)
-import { supabase } from '../lib/supabase';
-
-// Tipagem básica das tabelas/softwares
-interface SoftwareItem {
-  id: string;
-  name: string;
-  category?: string;
-  total_licenses: number;
-  used_licenses: number;
-  created_at?: string;
-}
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Package, Users, CheckCircle2, Clock, Plus, RefreshCw } from 'lucide-react';
+import { LicencaModal } from '@/components/LicencaModal';
+import type { LicencaUsuario, Software } from '@/types';
 
 export function Dashboard() {
-  const [softwares, setSoftwares] = useState<SoftwareItem[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedSoftware, setSelectedSoftware] = useState<SoftwareItem | null>(null);
+  const [licencas, setLicencas] = useState<LicencaUsuario[]>([]);
+  const [softwares, setSoftwares] = useState<Software[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Controle do Modal de Licença do Usuário
+  const [selectedLicenca, setSelectedLicenca] = useState<Partial<LicencaUsuario> | null>(null);
 
-  // Função para buscar os dados das tabelas de software / licenças
-  const fetchDashboardData = async () => {
+  // Carrega os dados das duas tabelas: licencas_usuarios e softwares
+  async function loadDashboardData() {
     setLoading(true);
     try {
-      // Ajuste o nome da tabela conforme configurado no Supabase (ex: 'softwares' ou 'licenses')
-      const { data, error } = await supabase
-        .from('softwares')
-        .select('*')
-        .order('name', { ascending: true });
+      const [resLicencas, resSoftwares] = await Promise.all([
+        supabase.from('licencas_usuarios').select('*').order('nome'),
+        supabase.from('softwares').select('*').order('nome')
+      ]);
 
-      if (error) {
-        console.error('Erro ao buscar dados das tabelas:', error);
-      } else if (data) {
-        setSoftwares(data);
-      }
+      if (resLicencas.data) setLicencas(resLicencas.data as LicencaUsuario[]);
+      if (resSoftwares.data) setSoftwares(resSoftwares.data as Software[]);
     } catch (err) {
-      console.error('Falha na requisição:', err);
+      console.error('Erro ao carregar dados do Dashboard:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    fetchDashboardData();
+    loadDashboardData();
   }, []);
 
-  const handleOpenNewModal = () => {
-    setSelectedSoftware(null);
-    setIsModalOpen(true);
-  };
+  // Salva ou atualiza a atribuição da licença
+  async function handleSaveLicenca(data: Partial<LicencaUsuario>) {
+    if (data.id) {
+      const { error } = await supabase.from('licencas_usuarios').update(data).eq('id', data.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabase.from('licencas_usuarios').insert(data);
+      if (error) throw new Error(error.message);
+    }
+    setSelectedLicenca(null);
+    await loadDashboardData();
+  }
 
-  const handleEditSoftware = (item: SoftwareItem) => {
-    setSelectedSoftware(item);
-    setIsModalOpen(true);
-  };
+  // Cálculos das métricas
+  const totalLicencasCadastradas = softwares.reduce((acc, s) => acc + (s.qtd_licencas || 0), 0);
+  const licencasEmUso = licencas.filter((l) => l.possui_licenca && l.status === 'Ativo').length;
+  const pendentes = licencas.filter((l) => l.status === 'Pendente').length;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6 p-6 max-w-7xl mx-auto">
       {/* Cabeçalho */}
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard de Licenças e Softwares</h1>
-          <p className="text-sm text-gray-500">Visão geral do inventário e controle de atribuições</p>
+          <h1 className="text-2xl font-bold text-[#323130]">Dashboard de Controle de Licenças</h1>
+          <p className="text-[#605E5C] text-sm mt-0.5">Visão consolidada de usuários e licenças alocadas</p>
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchDashboardData}
-            className="flex items-center gap-2 px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50"
+            onClick={loadDashboardData}
+            className="flex items-center gap-2 px-3 py-2 border border-[#E1DFDD] rounded-md text-[#323130] hover:bg-[#F5F5F5] transition-colors text-sm"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
           <button
-            onClick={handleOpenNewModal}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            onClick={() => setSelectedLicenca({})}
+            className="flex items-center gap-2 bg-[#0078D4] hover:bg-[#106EBE] text-white font-semibold px-4 py-2 rounded-md transition-colors text-sm"
           >
-            <Package className="w-4 h-4" />
-            Novo Software
+            <Plus className="w-4 h-4" />
+            Nova Atribuição
           </button>
         </div>
       </div>
 
-      {/* Resumo de Métricas / Cards */}
+      {/* Cards de Métricas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Total de Softwares</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-1">{softwares.length}</p>
+        <div className="p-4 bg-white border border-[#E1DFDD] rounded-lg shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#DEECF9] rounded-lg">
+            <Package className="w-6 h-6 text-[#0078D4]" />
+          </div>
+          <div>
+            <p className="text-xs text-[#605E5C] font-medium">Total de Licenças (Inventário)</p>
+            <p className="text-2xl font-semibold text-[#323130]">{totalLicencasCadastradas}</p>
+          </div>
         </div>
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Licenças Alocadas</p>
-          <p className="text-2xl font-semibold text-blue-600 mt-1">
-            {softwares.reduce((acc, item) => acc + (item.used_licenses || 0), 0)}
-          </p>
+
+        <div className="p-4 bg-white border border-[#E1DFDD] rounded-lg shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#DFF6DD] rounded-lg">
+            <CheckCircle2 className="w-6 h-6 text-[#107C41]" />
+          </div>
+          <div>
+            <p className="text-xs text-[#605E5C] font-medium">Licenças em Uso (Ativas)</p>
+            <p className="text-2xl font-semibold text-[#107C41]">{licencasEmUso}</p>
+          </div>
         </div>
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Licenças Disponíveis</p>
-          <p className="text-2xl font-semibold text-green-600 mt-1">
-            {softwares.reduce((acc, item) => acc + ((item.total_licenses || 0) - (item.used_licenses || 0)), 0)}
-          </p>
+
+        <div className="p-4 bg-white border border-[#E1DFDD] rounded-lg shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#FFF4CE] rounded-lg">
+            <Clock className="w-6 h-6 text-[#797775]" />
+          </div>
+          <div>
+            <p className="text-xs text-[#605E5C] font-medium">Solicitações Pendentes</p>
+            <p className="text-2xl font-semibold text-[#797775]">{pendentes}</p>
+          </div>
         </div>
       </div>
 
-      {/* Tabela Principal de Dados */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="font-semibold text-gray-800">Softwares Cadastrados</h2>
+      {/* Tabela Principal de Licenças por Usuário */}
+      <div className="bg-white border border-[#E1DFDD] rounded-lg shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#E1DFDD] flex justify-between items-center bg-[#FAF9F8]">
+          <h2 className="font-semibold text-[#323130] text-sm">Usuários e Licenças Atribuidas</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-600">
-            <thead className="bg-gray-50 text-gray-700 uppercase text-xs font-semibold">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead className="bg-[#F5F5F5] border-b border-[#E1DFDD]">
               <tr>
-                <th className="px-6 py-3">Software / Categoria</th>
-                <th className="px-6 py-3">Total Licenças</th>
-                <th className="px-6 py-3">Em Uso</th>
-                <th className="px-6 py-3">Disponíveis</th>
-                <th className="px-6 py-3 text-right">Ações</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#605E5C] uppercase">Usuário / E-mail</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#605E5C] uppercase">Departamento</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#605E5C] uppercase">Software / Licença</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#605E5C] uppercase">Status</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#605E5C] uppercase text-right">Ação</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {softwares.map((item) => {
-                const disponivel = (item.total_licenses || 0) - (item.used_licenses || 0);
-                return (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-medium text-gray-900">
-                      {item.name}
-                      {item.category && (
-                        <span className="block text-xs text-gray-400">{item.category}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">{item.total_licenses}</td>
-                    <td className="px-6 py-4 text-blue-600 font-medium">{item.used_licenses}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        disponivel > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                      }`}>
-                        {disponivel}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleEditSoftware(item)}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-xs"
-                      >
-                        Editar / Gerenciar
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {softwares.length === 0 && !loading && (
+            <tbody className="divide-y divide-[#E1DFDD]">
+              {loading && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
-                    Nenhum software registrado nas tabelas até o momento.
-                  </td>
+                  <td colSpan={5} className="text-center py-8 text-[#A19F9D]">Carregando dados...</td>
                 </tr>
               )}
+              {!loading && licencas.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="text-center py-8 text-[#A19F9D]">Nenhuma atribuição registrada.</td>
+                </tr>
+              )}
+              {!loading && licencas.map((item) => (
+                <tr key={item.id} className="hover:bg-[#F5F5F5] transition-colors">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-[#323130]">{item.nome || '—'}</p>
+                    <p className="text-xs text-[#605E5C]">{item.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-[#605E5C]">
+                    {item.departamento_raiz ? `${item.departamento_raiz} ${item.sub_departamento ? `(${item.sub_departamento})` : ''}` : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.possui_licenca ? (
+                      <div>
+                        <span className="font-medium text-[#0078D4] block">{item.tipo_licenca}</span>
+                        <span className="text-xs text-[#605E5C]">{item.produto || item.tipo_produto || '—'}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-[#A19F9D]">Sem licença</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${
+                      item.status === 'Ativo' 
+                        ? 'bg-[#DFF6DD] text-[#107C41] border-[#107C41]/20' 
+                        : item.status === 'Pendente'
+                        ? 'bg-[#FFF4CE] text-[#797775] border-[#797775]/20'
+                        : 'bg-[#F3F2F1] text-[#605E5C] border-[#E1DFDD]'
+                    }`}>
+                      {item.status || 'Pendente'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => setSelectedLicenca(item)}
+                      className="text-xs text-[#0078D4] hover:underline font-medium"
+                    >
+                      Editar
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Renderização do Modal de Cadastro / Edição */}
-      {isModalOpen && (
-        <SoftwareModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          software={selectedSoftware}
-          onSuccess={() => {
-            setIsModalOpen(false);
-            fetchDashboardData();
-          }}
-        />
-      )}
+      {/* Renderização do LicencaModal */}
+      <LicencaModal
+        item={selectedLicenca}
+        onClose={() => setSelectedLicenca(null)}
+        onSave={handleSaveLicenca}
+      />
     </div>
   );
 }

@@ -21,36 +21,73 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     setForm(item ?? {});
     setError(null);
     (async () => {
-      const { data } = await supabase.from('softwares').select('*').order('nome');
-      if (data) setSoftwares(data as Software[]);
+      const { data, error: sbError } = await supabase.from('softwares').select('*').order('nome');
+      if (!sbError && data) {
+        setSoftwares(data as Software[]);
+      }
     })();
   }, [item]);
 
   if (item === null) return null;
 
+  // Extrai os fabricantes cadastrados de forma flexível (fabricante, tipo_licenca ou nome)
   const fabricantes = useMemo(() => {
     const set = new Set<string>();
-    softwares.forEach((s) => { if (s.fabricante) set.add(s.fabricante); });
+    softwares.forEach((s: any) => {
+      const fab = s.fabricante || s.tipo_licenca || s.software || s.nome;
+      if (fab && typeof fab === 'string' && fab.trim()) {
+        set.add(fab.trim());
+      }
+    });
     return [...set].sort();
   }, [softwares]);
 
+  // Lista tipos de produto/perfil com base no fabricante selecionado
   const tiposPorFabricante = useMemo(() => {
     const fab = form.tipo_licenca;
     if (!fab) return [];
     const set = new Set<string>();
     softwares
-      .filter((s) => s.fabricante === fab)
-      .forEach((s) => { if (s.tipo_produto) set.add(s.tipo_produto); });
+      .filter((s: any) => {
+        const itemFab = s.fabricante || s.tipo_licenca || s.software || s.nome;
+        return itemFab?.toLowerCase() === fab.toLowerCase();
+      })
+      .forEach((s: any) => {
+        const tipo = s.tipo_produto || s.categoria || s.perfil;
+        if (tipo && typeof tipo === 'string' && tipo.trim()) {
+          set.add(tipo.trim());
+        }
+      });
     return [...set].sort();
   }, [softwares, form.tipo_licenca]);
 
+  // Lista produtos/licenças filtrados
   const produtosPorTipo = useMemo(() => {
     const fab = form.tipo_licenca;
     const tipo = form.tipo_produto;
     if (!fab) return [];
-    const filtered = softwares.filter((s) => s.fabricante === fab);
-    const narrowed = tipo ? filtered.filter((s) => s.tipo_produto === tipo) : filtered;
-    return narrowed.map((s) => s.produto ?? s.nome).filter(Boolean).sort();
+
+    const filtered = softwares.filter((s: any) => {
+      const itemFab = s.fabricante || s.tipo_licenca || s.software || s.nome;
+      return itemFab?.toLowerCase() === fab.toLowerCase();
+    });
+
+    const narrowed = tipo
+      ? filtered.filter((s: any) => {
+          const itemTipo = s.tipo_produto || s.categoria || s.perfil;
+          return itemTipo?.toLowerCase() === tipo.toLowerCase();
+        })
+      : filtered;
+
+    const result = new Set<string>();
+    narrowed.forEach((s: any) => {
+      const prodName = s.produto || s.nome || s.descricao;
+      if (prodName && typeof prodName === 'string' && prodName.trim()) {
+        result.add(prodName.trim());
+      }
+    });
+
+    return [...result].sort();
   }, [softwares, form.tipo_licenca, form.tipo_produto]);
 
   function set(field: keyof LicencaUsuario, value: unknown) {
@@ -67,7 +104,10 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.email) { setError('E-mail é obrigatório.'); return; }
+    if (!form.email) {
+      setError('E-mail é obrigatório.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -146,8 +186,14 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
                 value={form.produto ?? ''}
                 onChange={(v) => set('produto', v)}
                 options={produtosPorTipo}
-                placeholder={form.tipo_produto ? 'Selecione...' : 'Selecione o tipo de produto primeiro'}
-                disabled={!form.tipo_produto && produtosPorTipo.length === 0 && !form.tipo_licenca}
+                placeholder={
+                  form.tipo_produto
+                    ? 'Selecione...'
+                    : form.tipo_licenca
+                    ? 'Selecione ou escolha abaixo'
+                    : 'Selecione o fabricante primeiro'
+                }
+                disabled={!form.tipo_licenca}
               />
             </div>
           )}

@@ -1,5 +1,4 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 import { LoginScreen } from '@/components/LoginScreen';
 import { Header } from '@/components/Header';
 import { Dashboard } from '@/pages/Dashboard';

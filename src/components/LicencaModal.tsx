@@ -48,29 +48,24 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
 
   if (item === null) return null;
 
-  // Lista de Fabricantes / Softwares Principais (Adobe + Demais Softwares do banco)
+  // Monta a lista garantindo Adobe e Outros Softwares
   const fabricantes = useMemo(() => {
-    const set = new Set<string>();
-    
-    // Sempre inclui Adobe
-    set.add('Adobe');
+    const list: string[] = ['Adobe', 'Outros Softwares'];
 
-    // Popula com todos os outros softwares do banco (desconsiderando variações soltas de "Adobe")
+    // Pega qualquer outro software cadastrado no banco que não seja Adobe
     softwares.forEach((s: any) => {
-      const fab = s.fabricante || s.tipo_licenca || s.software || s.nome;
-      if (fab && typeof fab === 'string' && fab.trim()) {
-        const fabUpper = fab.trim().toUpperCase();
-        if (!fabUpper.startsWith('ADOBE')) {
-          set.add(fab.trim());
+      const nomeValido = s.fabricante || s.software || s.nome;
+      if (nomeValido && typeof nomeValido === 'string') {
+        const itemClean = nomeValido.trim();
+        const upper = itemClean.toUpperCase();
+        
+        if (!upper.startsWith('ADOBE') && !list.includes(itemClean)) {
+          list.push(itemClean);
         }
       }
     });
 
-    return [...set].sort((a, b) => {
-      if (a === 'Adobe') return -1; // Deixa Adobe no topo
-      if (b === 'Adobe') return 1;
-      return a.localeCompare(b);
-    });
+    return list;
   }, [softwares]);
 
   // Tipos de Produto / Pacote por Fabricante ou Software
@@ -78,16 +73,14 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     const fab = form.tipo_licenca;
     if (!fab) return [];
 
-    // Regra customizada para Adobe
     if (fab.toLowerCase() === 'adobe') {
       return ADOBE_TIPOS;
     }
 
-    // Regra dinâmica para os demais softwares
     const set = new Set<string>();
     softwares
       .filter((s: any) => {
-        const itemFab = s.fabricante || s.tipo_licenca || s.software || s.nome;
+        const itemFab = s.fabricante || s.software || s.nome;
         return itemFab?.toLowerCase() === fab.toLowerCase();
       })
       .forEach((s: any) => {
@@ -106,7 +99,6 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     const tipo = form.tipo_produto;
     if (!fab) return [];
 
-    // Adobe
     if (fab.toLowerCase() === 'adobe') {
       if (tipo === 'Aplicativo Único / Individual') {
         return ADOBE_APPS_INDIVIDUAIS;
@@ -114,9 +106,8 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
       return [];
     }
 
-    // Outros Softwares
     const filtered = softwares.filter((s: any) => {
-      const itemFab = s.fabricante || s.tipo_licenca || s.software || s.nome;
+      const itemFab = s.fabricante || s.software || s.nome;
       return itemFab?.toLowerCase() === fab.toLowerCase();
     });
 
@@ -169,6 +160,7 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
 
   const isNew = !item.id;
   const isAdobe = form.tipo_licenca?.toLowerCase() === 'adobe';
+  const isOutros = form.tipo_licenca === 'Outros Softwares';
   const isAdobeIndividual = isAdobe && form.tipo_produto === 'Aplicativo Único / Individual';
 
   return (
@@ -225,8 +217,17 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
                 placeholder="Selecione..."
               />
 
-              {/* Exibe o tipo de produto se for Adobe ou se o software selecionado tiver tipos cadastrados */}
-              {(isAdobe || tiposPorFabricante.length > 0) && (
+              {/* Se selecionar 'Outros Softwares', abre um campo para digitar livremente */}
+              {isOutros && (
+                <Field
+                  label="Nome do Software / Licença"
+                  value={form.produto ?? ''}
+                  onChange={(v) => set('produto', v)}
+                />
+              )}
+
+              {/* Exibe 'Tipo de Produto' se for Adobe ou se houver categorias para o software selecionado */}
+              {(isAdobe || (!isOutros && tiposPorFabricante.length > 0)) && (
                 <SelectField
                   label="Tipo de Produto / Pacote"
                   value={form.tipo_produto ?? ''}
@@ -237,8 +238,8 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
                 />
               )}
 
-              {/* Exibe o seletor de aplicativo se for Adobe Individual ou se o software tiver subprodutos */}
-              {(isAdobeIndividual || (!isAdobe && produtosPorTipo.length > 0)) && (
+              {/* Exibe 'Produto / Aplicativo Específico' para Adobe Individual ou softwares com sub-produtos */}
+              {(isAdobeIndividual || (!isAdobe && !isOutros && produtosPorTipo.length > 0)) && (
                 <SelectField
                   label="Produto / Aplicativo Específico"
                   value={form.produto ?? ''}

@@ -61,6 +61,19 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   const [saving, setSaving] = useState(false);
   const canEdit = ['super_admin', 'admin', 'editor'].includes(role);
 
+  // Extração robusta do identificador do usuário (E-mail ou Nome real)
+  const getUserIdentifier = () => {
+    if (!user) return 'Sistema';
+    return (
+      (user as any).email ||
+      (user as any).user_metadata?.email ||
+      (user as any).nome ||
+      (user as any).user_metadata?.nome ||
+      (user as any).id ||
+      'Administrador'
+    );
+  };
+
   // BUSCA COMPLETA SEM LIMITE DE 1000 LINHAS (PAGINAÇÃO RECURSIVA)
   async function fetchAllData() {
     setLoading(true);
@@ -105,7 +118,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         .from('administradores_locais_auditoria')
         .select('*')
         .order('criado_em', { ascending: false })
-        .limit(20);
+        .limit(25);
 
       setAuditLogs(data || []);
     } catch (err) {
@@ -123,14 +136,14 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     antigos: AdminLocalRow | null, 
     novos: AdminLocalRow | null
   ) {
-    const userEmail = user?.email || (user as any)?.nome || 'Usuário Autenticado';
+    const identifier = getUserIdentifier();
     const agora = new Date().toLocaleString('pt-BR');
     await supabase.from('administradores_locais_auditoria').insert([{
       registro_id: registroId,
       acao,
       dados_antigos: antigos,
       dados_novos: novos,
-      modificado_por: `${userEmail} em ${agora}`
+      modificado_por: `${identifier} em ${agora}`
     }]);
   }
 
@@ -183,7 +196,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     if (!enderecoLogico.trim()) return;
 
     setSaving(true);
-    const identifier = user?.email || (user as any)?.nome || 'Usuário Autenticado';
+    const identifier = getUserIdentifier();
     const userSignature = `${identifier} em ${new Date().toLocaleString('pt-BR')}`;
     const administradoresConcatenados = listaAdmins.filter(Boolean).join(', ');
 
@@ -245,7 +258,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Função Desfazer (Undo) com restauração completa e segura
+  // Função Desfazer (Undo) blindada contra erros de chave primária e restrições
   async function handleUndo(log: AuditLog) {
     if (!window.confirm(`Deseja reverter a alteração de ${log.modificado_por}?`)) return;
 
@@ -253,21 +266,28 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       if (log.acao === 'INSERT' && log.registro_id) {
         await supabase.from('administradores_locais').delete().eq('id', log.registro_id);
       } else if (log.acao === 'DELETE' && log.dados_antigos) {
-        // Assegura que o registro excluído volte com o mesmo ID e dados originais
-        const { error: insertError } = await supabase
+        // Remove qualquer vestígio duplicado e reinsere o objeto completo original com seu ID exato
+        await supabase.from('administradores_locais').delete().eq('id', log.dados_antigos.id);
+        const { error: insertErr } = await supabase
           .from('administradores_locais')
-          .upsert([log.dados_antigos]);
-        if (insertError) throw insertError;
+          .insert([log.dados_antigos]);
+        if (insertErr) throw insertErr;
       } else if (log.acao === 'UPDATE' && log.dados_antigos && log.registro_id) {
-        await supabase.from('administradores_locais').update(log.dados_antigos).eq('id', log.registro_id);
+        const { error: updateErr } = await supabase
+          .from('administradores_locais')
+          .update(log.dados_antigos)
+          .eq('id', log.registro_id);
+        if (updateErr) throw updateErr;
       }
 
+      // Remove o log de auditoria correspondente após a reversão bem-sucedida
       await supabase.from('administradores_locais_auditoria').delete().eq('id', log.id);
       setShowUndoModal(false);
       await fetchAllData();
       await fetchAuditLogs();
+      alert('Reversão efetuada com sucesso!');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao reverter alteração');
+      alert(err instanceof Error ? `Erro ao reverter: ${err.message}` : 'Erro ao reverter alteração');
     }
   }
 

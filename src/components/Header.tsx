@@ -27,7 +27,7 @@ export function Header({ user, role, activeTab, onTabChange }: HeaderProps) {
   const navItems: { id: TabKey; label: string; icon: React.ElementType }[] = [
     { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard },
     { id: 'softwares', label: 'Softwares', icon: Package },
-    { id: 'Administradores', label: 'Administradores', icon: MapPin },
+    { id: 'Locais', label: 'Locais', icon: MapPin },
     { id: 'permissoes', label: 'Acessos', icon: ShieldCheck },
   ];
 

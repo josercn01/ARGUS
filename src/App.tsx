@@ -1,5 +1,5 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { AuthModal } from '@/components/AuthModal';
+import { LoginScreen } from '@/components/LoginScreen';
 import { Dashboard } from '@/pages/Dashboard';
 import { Loader2 } from 'lucide-react';
 
@@ -15,7 +15,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <AuthModal />;
+    return <LoginScreen />;
   }
 
   return <Dashboard user={user} role={role} />;

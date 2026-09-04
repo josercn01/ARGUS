@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   ShieldAlert, Plus, Trash2, Search, RotateCcw, 
-  Monitor, Users, Building2, Layers, History, X, Edit3, Download
+  Monitor, Users, Building2, Layers, X, Edit3, Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { AuthUser, SystemRole } from '@/types';
@@ -61,7 +61,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   const [saving, setSaving] = useState(false);
   const canEdit = ['super_admin', 'admin', 'editor'].includes(role);
 
-  // Extração robusta do identificador do usuário (E-mail ou Nome real)
   const getUserIdentifier = () => {
     if (!user) return 'Sistema';
     return (
@@ -74,7 +73,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     );
   };
 
-  // BUSCA COMPLETA SEM LIMITE DE 1000 LINHAS (PAGINAÇÃO RECURSIVA)
   async function fetchAllData() {
     setLoading(true);
     try {
@@ -147,7 +145,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }]);
   }
 
-  // Abertura do Formulário (Novo ou Editar)
   function handleOpenForm(item?: AdminLocalRow) {
     if (item) {
       setEditingItem(item);
@@ -171,7 +168,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     setShowFormModal(true);
   }
 
-  // Ajusta vetor de nomes conforme quantidade
   function handleQntdChange(novaQtd: number) {
     const qtd = Math.max(1, novaQtd);
     setQntdAdmin(qtd);
@@ -190,7 +186,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     setListaAdmins(novaLista);
   }
 
-  // Salvar Registro (Insert ou Update)
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!enderecoLogico.trim()) return;
@@ -240,7 +235,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Excluir Registro
   async function handleDelete(item: AdminLocalRow) {
     if (!window.confirm(`Confirma a exclusão da estação ${item.endereco_logico}?`)) return;
 
@@ -258,7 +252,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Função Desfazer (Undo) blindada contra erros de chave primária e restrições
   async function handleUndo(log: AuditLog) {
     if (!window.confirm(`Deseja reverter a alteração de ${log.modificado_por}?`)) return;
 
@@ -266,7 +259,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       if (log.acao === 'INSERT' && log.registro_id) {
         await supabase.from('administradores_locais').delete().eq('id', log.registro_id);
       } else if (log.acao === 'DELETE' && log.dados_antigos) {
-        // Remove qualquer vestígio duplicado e reinsere o objeto completo original com seu ID exato
         await supabase.from('administradores_locais').delete().eq('id', log.dados_antigos.id);
         const { error: insertErr } = await supabase
           .from('administradores_locais')
@@ -280,7 +272,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         if (updateErr) throw updateErr;
       }
 
-      // Remove o log de auditoria correspondente após a reversão bem-sucedida
       await supabase.from('administradores_locais_auditoria').delete().eq('id', log.id);
       setShowUndoModal(false);
       await fetchAllData();
@@ -291,7 +282,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Exportar Excel com Aba de Resumo/Dashboard
   function handleExportExcel() {
     const exportData = filteredItems.map(item => ({
       'Endereço Lógico': item.endereco_logico,
@@ -475,55 +465,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
       </div>
 
-      {/* RANKINGS TOP 10 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#001E33]/80 border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-4 flex items-center gap-2">
-            <Layers className="w-4 h-4" /> Top 10 Setores
-          </h3>
-          <div className="space-y-2.5">
-            {top10Setor.map((item, idx) => {
-              const maxVal = top10Setor[0]?.total || 1;
-              const percent = Math.round((item.total / maxVal) * 100);
-              return (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs font-medium">
-                    <span className="text-slate-200 truncate max-w-[250px]">{idx + 1}. {item.nome}</span>
-                    <span className="text-amber-400 font-bold font-mono">{item.total} admin(s)</span>
-                  </div>
-                  <div className="w-full bg-[#00111d] h-2 rounded-full overflow-hidden border border-slate-800">
-                    <div className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="bg-[#001E33]/80 border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-4 flex items-center gap-2">
-            <Building2 className="w-4 h-4" /> Top 10 Departamentos
-          </h3>
-          <div className="space-y-2.5">
-            {top10Depto.map((item, idx) => {
-              const maxVal = top10Depto[0]?.total || 1;
-              const percent = Math.round((item.total / maxVal) * 100);
-              return (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs font-medium">
-                    <span className="text-slate-200 truncate max-w-[250px]">{idx + 1}. {item.nome}</span>
-                    <span className="text-cyan-400 font-bold font-mono">{item.total} admin(s)</span>
-                  </div>
-                  <div className="w-full bg-[#00111d] h-2 rounded-full overflow-hidden border border-slate-800">
-                    <div className="bg-gradient-to-r from-cyan-500 to-blue-400 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
       {/* FILTROS DE BUSCA */}
       <div className="bg-[#001E33] p-4 rounded-2xl border border-[#1e293b] flex flex-col md:flex-row items-center gap-3 shadow-md">
         <div className="relative flex-1 w-full">
@@ -579,7 +520,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
               {loading && (
                 <tr>
                   <td colSpan={7} className="text-center text-slate-400 py-10 text-xs">
-                    Carregando registros do banco de dados (sem limite de 1000)...
+                    Carregando registros do banco de dados...
                   </td>
                 </tr>
               )}
@@ -666,34 +607,49 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                     className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
-
                 <div>
-                  <label className="text-slate-400 text-xs font-semibold block mb-1">Quantidade de Admins *</label>
+                  <label className="text-slate-400 text-xs font-semibold block mb-1">Quantidade de Admins</label>
                   <input
                     type="number"
-                    min="1"
+                    min={1}
                     value={qntdAdmin}
                     onChange={(e) => handleQntdChange(Number(e.target.value))}
                     className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
+              </div>
 
+              <div className="space-y-2">
+                <label className="text-slate-400 text-xs font-semibold block">Nomes / Contas dos Administradores</label>
+                {listaAdmins.map((adm, index) => (
+                  <div key={index} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder={`Administrador ${index + 1}`}
+                      value={adm}
+                      onChange={(e) => handleAdminNameChange(index, e.target.value)}
+                      className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-400 text-xs font-semibold block mb-1">Setor</label>
                   <input
                     type="text"
-                    placeholder="EX: SECOM"
+                    placeholder="Ex: SUPIM / COATEN"
                     value={setor}
                     onChange={(e) => setSetor(e.target.value)}
                     className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
-
                 <div>
                   <label className="text-slate-400 text-xs font-semibold block mb-1">Departamento</label>
                   <input
                     type="text"
-                    placeholder="EX: SECOM"
+                    placeholder="Ex: PRODASEN"
                     value={departamento}
                     onChange={(e) => setDepartamento(e.target.value)}
                     className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
@@ -701,34 +657,14 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 </div>
               </div>
 
-              {/* LEQUES DE NOMES DOS ADMINISTRADORES */}
-              <div className="space-y-2 pt-2 border-t border-[#1e293b]">
-                <label className="text-amber-400 text-xs font-bold block">
-                  Nome(s) dos Administradores ({listaAdmins.length})
-                </label>
-                {listaAdmins.map((admName, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono text-slate-500 w-6">#{idx + 1}</span>
-                    <input
-                      type="text"
-                      required
-                      placeholder={`Nome do Admin / Conta ${idx + 1} (ex: SEC-Administradores)`}
-                      value={admName}
-                      onChange={(e) => handleAdminNameChange(idx, e.target.value)}
-                      className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                ))}
-              </div>
-
               <div>
                 <label className="text-slate-400 text-xs font-semibold block mb-1">Justificativa / Motivo</label>
                 <textarea
-                  rows={2}
-                  placeholder="Descreva o motivo da concessão..."
+                  rows={3}
+                  placeholder="Justificativa para a concessão de privilégios..."
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37] resize-none"
                 />
               </div>
 
@@ -736,16 +672,16 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                  className="px-4 py-2 bg-[#001726] text-slate-300 hover:text-white rounded-xl text-xs font-bold cursor-pointer border border-[#1e293b]"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-5 py-2 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+                  className="px-4 py-2 bg-[#D4AF37] hover:brightness-110 text-[#001726] rounded-xl text-xs font-extrabold cursor-pointer disabled:opacity-50"
                 >
-                  {saving ? 'Salvando...' : 'Salvar'}
+                  {saving ? 'Salvando...' : 'Salvar Registro'}
                 </button>
               </div>
             </form>
@@ -753,56 +689,49 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
       )}
 
-      {/* POPUP DESFAZER (UNDO) */}
+      {/* MODAL DE HISTÓRICO / DESFAZER (UNDO) */}
       {showUndoModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl">
+          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-[#1e293b] pb-3">
               <h3 className="text-white font-bold text-base flex items-center gap-2">
-                <History className="w-5 h-5 text-amber-400" />
-                Desfazer Alterações (Histórico Recente)
+                <RotateCcw className="w-5 h-5 text-amber-400" />
+                Histórico de Auditoria e Reversão (Desfazer)
               </h3>
               <button onClick={() => setShowUndoModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+            <div className="space-y-3">
               {auditLogs.length === 0 && (
-                <p className="text-slate-500 text-xs text-center py-6">Nenhum histórico de alteração recente para desfazer.</p>
+                <p className="text-slate-400 text-xs text-center py-6">Nenhum log de auditoria recente encontrado.</p>
               )}
 
               {auditLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="bg-[#001726] p-3.5 rounded-xl border border-[#1e293b] flex items-center justify-between gap-3 hover:border-amber-500/40 transition-all"
-                >
-                  <div className="space-y-1">
+                <div key={log.id} className="bg-[#001726] border border-[#1e293b] p-3.5 rounded-xl flex items-center justify-between gap-4">
+                  <div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
-                        log.acao === 'INSERT' 
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
-                          : log.acao === 'DELETE'
-                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                          : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        log.acao === 'INSERT' ? 'bg-emerald-500/20 text-emerald-400' :
+                        log.acao === 'UPDATE' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
                       }`}>
                         {log.acao}
                       </span>
-                      <span className="text-xs font-bold text-white">
+                      <span className="text-xs text-white font-mono font-bold">
                         {log.dados_novos?.endereco_logico || log.dados_antigos?.endereco_logico || 'Registro'}
                       </span>
                     </div>
-
-                    <div className="text-[11px] text-slate-400">
-                      Modificado: {log.modificado_por}
-                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">{log.modificado_por}</p>
+                    <span className="text-[10px] text-slate-500 block font-mono">
+                      {new Date(log.criado_em).toLocaleString('pt-BR')}
+                    </span>
                   </div>
 
                   <button
                     onClick={() => handleUndo(log)}
-                    className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer"
+                    className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
                     Reverter
                   </button>
                 </div>

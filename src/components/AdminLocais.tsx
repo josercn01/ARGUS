@@ -105,7 +105,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         .from('administradores_locais_auditoria')
         .select('*')
         .order('criado_em', { ascending: false })
-        .limit(10);
+        .limit(20);
 
       setAuditLogs(data || []);
     } catch (err) {
@@ -123,7 +123,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     antigos: AdminLocalRow | null, 
     novos: AdminLocalRow | null
   ) {
-    const userEmail = user?.email || 'Sistema';
+    const userEmail = user?.email || (user as any)?.nome || 'Usuário Autenticado';
     const agora = new Date().toLocaleString('pt-BR');
     await supabase.from('administradores_locais_auditoria').insert([{
       registro_id: registroId,
@@ -183,7 +183,8 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     if (!enderecoLogico.trim()) return;
 
     setSaving(true);
-    const userSignature = `${user?.email || 'Sistema'} em ${new Date().toLocaleString('pt-BR')}`;
+    const identifier = user?.email || (user as any)?.nome || 'Usuário Autenticado';
+    const userSignature = `${identifier} em ${new Date().toLocaleString('pt-BR')}`;
     const administradoresConcatenados = listaAdmins.filter(Boolean).join(', ');
 
     const payload = {
@@ -226,7 +227,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Excluir Registro (Lixeira)
+  // Excluir Registro
   async function handleDelete(item: AdminLocalRow) {
     if (!window.confirm(`Confirma a exclusão da estação ${item.endereco_logico}?`)) return;
 
@@ -244,7 +245,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Função Desfazer (Undo)
+  // Função Desfazer (Undo) com restauração completa e segura
   async function handleUndo(log: AuditLog) {
     if (!window.confirm(`Deseja reverter a alteração de ${log.modificado_por}?`)) return;
 
@@ -252,14 +253,19 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       if (log.acao === 'INSERT' && log.registro_id) {
         await supabase.from('administradores_locais').delete().eq('id', log.registro_id);
       } else if (log.acao === 'DELETE' && log.dados_antigos) {
-        await supabase.from('administradores_locais').insert([log.dados_antigos]);
-      } else if (log.acao === 'UPDATE' && log.dados_antigos) {
+        // Assegura que o registro excluído volte com o mesmo ID e dados originais
+        const { error: insertError } = await supabase
+          .from('administradores_locais')
+          .upsert([log.dados_antigos]);
+        if (insertError) throw insertError;
+      } else if (log.acao === 'UPDATE' && log.dados_antigos && log.registro_id) {
         await supabase.from('administradores_locais').update(log.dados_antigos).eq('id', log.registro_id);
       }
 
       await supabase.from('administradores_locais_auditoria').delete().eq('id', log.id);
       setShowUndoModal(false);
       await fetchAllData();
+      await fetchAuditLogs();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao reverter alteração');
     }

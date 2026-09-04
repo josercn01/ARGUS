@@ -20,7 +20,10 @@ export interface AdminLocalRow {
   departamento?: string;
   setor?: string;
   justificativa?: string;
+  prefixo?: string;
   modificado_por?: string;
+  updated_by?: string;
+  lote_import?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -28,11 +31,11 @@ export interface AdminLocalRow {
 interface AuditLog {
   id: string;
   registro_id: string;
-  acao: 'INSERT' | 'UPDATE' | 'DELETE';
+  operacao: string;
   dados_antigos: AdminLocalRow | null;
   dados_novos: AdminLocalRow | null;
-  modificado_por: string;
-  criado_em: string;
+  usuario: string;
+  created_at: string;
 }
 
 export function AdminLocais({ user, role }: AdminLocaisProps) {
@@ -54,6 +57,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   const [enderecoLogico, setEnderecoLogico] = useState('');
   const [setor, setSetor] = useState('');
   const [departamento, setDepartamento] = useState('');
+  const [prefixo, setPrefixo] = useState('');
   const [qntdAdmin, setQntdAdmin] = useState<number>(1);
   const [listaAdmins, setListaAdmins] = useState<string[]>(['']);
   const [justificativa, setJustificativa] = useState('');
@@ -114,7 +118,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       const { data } = await supabase
         .from('administradores_locais_auditoria')
         .select('*')
-        .order('criado_em', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(25);
 
       setAuditLogs(data || []);
@@ -129,7 +133,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
   async function recordAuditLog(
     registroId: string, 
-    acao: 'INSERT' | 'UPDATE' | 'DELETE', 
+    operacao: 'INSERT' | 'UPDATE' | 'DELETE', 
     antigos: AdminLocalRow | null, 
     novos: AdminLocalRow | null
   ) {
@@ -137,10 +141,10 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     const agora = new Date().toLocaleString('pt-BR');
     await supabase.from('administradores_locais_auditoria').insert([{
       registro_id: registroId,
-      acao,
+      operacao,
       dados_antigos: antigos,
       dados_novos: novos,
-      modificado_por: `${identifier} em ${agora}`
+      usuario: `${identifier} em ${agora}`
     }]);
   }
 
@@ -150,6 +154,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       setEnderecoLogico(item.endereco_logico || '');
       setSetor(item.setor || '');
       setDepartamento(item.departamento || '');
+      setPrefixo(item.prefixo || '');
       setJustificativa(item.justificativa || '');
       
       const adminsArray = item.administradores ? item.administradores.split(',').map(s => s.trim()) : [''];
@@ -160,6 +165,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       setEnderecoLogico('');
       setSetor('');
       setDepartamento('');
+      setPrefixo('');
       setJustificativa('');
       setQntdAdmin(1);
       setListaAdmins(['']);
@@ -200,8 +206,10 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       qntd_admin: Number(qntdAdmin),
       setor: setor.trim(),
       departamento: departamento.trim(),
+      prefixo: prefixo.trim(),
       justificativa: justificativa.trim(),
       modificado_por: userSignature,
+      updated_by: identifier,
       updated_at: new Date().toISOString()
     };
 
@@ -252,18 +260,18 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   }
 
   async function handleUndo(log: AuditLog) {
-    if (!window.confirm(`Deseja reverter a alteração de ${log.modificado_por}?`)) return;
+    if (!window.confirm(`Deseja reverter a alteração feita por ${log.usuario}?`)) return;
 
     try {
-      if (log.acao === 'INSERT' && log.registro_id) {
+      if (log.operacao === 'INSERT' && log.registro_id) {
         await supabase.from('administradores_locais').delete().eq('id', log.registro_id);
-      } else if (log.acao === 'DELETE' && log.dados_antigos) {
+      } else if (log.operacao === 'DELETE' && log.dados_antigos) {
         await supabase.from('administradores_locais').delete().eq('id', log.dados_antigos.id);
         const { error: insertErr } = await supabase
           .from('administradores_locais')
           .insert([log.dados_antigos]);
         if (insertErr) throw insertErr;
-      } else if (log.acao === 'UPDATE' && log.dados_antigos && log.registro_id) {
+      } else if (log.operacao === 'UPDATE' && log.dados_antigos && log.registro_id) {
         const { error: updateErr } = await supabase
           .from('administradores_locais')
           .update(log.dados_antigos)
@@ -288,6 +296,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       'Administradores': item.administradores || '',
       'Departamento': item.departamento || '',
       'Setor': item.setor || '',
+      'Prefixo': item.prefixo || '',
       'Justificativa / Motivo': item.justificativa || '',
       'Modificado Por': item.modificado_por || ''
     }));
@@ -320,6 +329,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         item.administradores?.toLowerCase().includes(search.toLowerCase()) ||
         item.setor?.toLowerCase().includes(search.toLowerCase()) ||
         item.departamento?.toLowerCase().includes(search.toLowerCase()) ||
+        item.prefixo?.toLowerCase().includes(search.toLowerCase()) ||
         item.justificativa?.toLowerCase().includes(search.toLowerCase());
 
       const matchesSetor = selectedSetor === 'todos' || item.setor === selectedSetor;
@@ -446,7 +456,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Buscar por Endereço Lógico, Admins, Setor, Departamento ou Justificativa..."
+            placeholder="Buscar por Endereço Lógico, Admins, Setor, Departamento, Prefixo ou Justificativa..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-[#001726] border border-[#1e293b] text-white pl-9 pr-4 py-2.5 rounded-xl text-xs focus:outline-none focus:border-[#D4AF37]"
@@ -486,6 +496,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Admins Locais</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Setor</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Departamento</th>
+                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Prefixo</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Justificativa / Motivo</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Modificado Por</th>
                 {canEdit && <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5 text-right">Ações</th>}
@@ -494,7 +505,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
             <tbody className="divide-y divide-[#1e293b]">
               {loading && (
                 <tr>
-                  <td colSpan={7} className="text-center text-slate-400 py-10 text-xs">
+                  <td colSpan={8} className="text-center text-slate-400 py-10 text-xs">
                     Carregando registros do banco de dados...
                   </td>
                 </tr>
@@ -502,7 +513,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
               {!loading && filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center text-slate-400 py-10 text-xs">
+                  <td colSpan={8} className="text-center text-slate-400 py-10 text-xs">
                     Nenhum registro encontrado.
                   </td>
                 </tr>
@@ -524,11 +535,14 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                     <td className="px-4 py-3 text-xs text-slate-400">
                       {item.departamento || '-'}
                     </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 font-mono">
+                      {item.prefixo || '-'}
+                    </td>
                     <td className="px-4 py-3 text-xs text-slate-400 max-w-xs truncate">
                       {item.justificativa || '-'}
                     </td>
                     <td className="px-4 py-3 text-[11px] text-slate-400 font-mono">
-                      {item.modificado_por || '-'}
+                      {item.modificado_por || item.updated_by || '-'}
                     </td>
                     {canEdit && (
                       <td className="px-4 py-3 text-right space-x-1">
@@ -570,8 +584,8 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
             </div>
 
             <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
                   <label className="text-slate-400 text-xs font-semibold block mb-1">Endereço Lógico (Estação) *</label>
                   <input
                     type="text"
@@ -583,15 +597,26 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-slate-400 text-xs font-semibold block mb-1">Quantidade de Admins</label>
+                  <label className="text-slate-400 text-xs font-semibold block mb-1">Prefixo</label>
                   <input
-                    type="number"
-                    min={1}
-                    value={qntdAdmin}
-                    onChange={(e) => handleQntdChange(Number(e.target.value))}
+                    type="text"
+                    placeholder="Prefixo"
+                    value={prefixo}
+                    onChange={(e) => setPrefixo(e.target.value)}
                     className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 text-xs font-semibold block mb-1">Quantidade de Admins</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={qntdAdmin}
+                  onChange={(e) => handleQntdChange(Number(e.target.value))}
+                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                />
               </div>
 
               <div className="space-y-2">
@@ -688,18 +713,18 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        log.acao === 'INSERT' ? 'bg-emerald-500/20 text-emerald-400' :
-                        log.acao === 'UPDATE' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
+                        log.operacao === 'INSERT' ? 'bg-emerald-500/20 text-emerald-400' :
+                        log.operacao === 'UPDATE' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
                       }`}>
-                        {log.acao}
+                        {log.operacao}
                       </span>
                       <span className="text-xs text-white font-mono font-bold">
                         {log.dados_novos?.endereco_logico || log.dados_antigos?.endereco_logico || 'Registro'}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1">{log.modificado_por}</p>
+                    <p className="text-[11px] text-slate-400 mt-1">{log.usuario}</p>
                     <span className="text-[10px] text-slate-500 block font-mono">
-                      {new Date(log.criado_em).toLocaleString('pt-BR')}
+                      {new Date(log.created_at).toLocaleString('pt-BR')}
                     </span>
                   </div>
 

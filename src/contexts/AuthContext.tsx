@@ -26,27 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Função disparada pelo botão "Entrar com Conta Corporativa"
- const signIn = async () => {
-    try {
-      setAuthError(null);
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'azure',
-        options: {
-          redirectTo: window.location.origin,
-          scopes: 'openid email profile User.Read', // Força o Azure a retornar o email e perfil completos
-        },
-      });
-      if (error) {
-        console.error('Erro no signInWithOAuth:', error.message);
-        setAuthError(error.message);
-      }
-    } catch (err) {
-      console.error('Erro inesperado ao iniciar login:', err);
-      setAuthError('Erro inesperado ao conectar com o provedor de identidade.');
-    }
-
-// Função disparada pelo botão "Entrar com Conta Corporativa"
+  // Função disparada pelo botão "Entrar com Conta Corporativa" com os escopos corrigidos para o Azure
   const signIn = async () => {
     try {
       setAuthError(null);
@@ -65,8 +45,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro inesperado ao iniciar login:', err);
       setAuthError('Erro inesperado ao conectar com o provedor de identidade.');
     }
-  };
-   
   };
 
   const signOut = async () => {
@@ -95,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 2. Validação se o usuário está cadastrado na tabela permissoes_usuarios
+    // 2. Validação se o usuário está cadastrado na tabela correta permissoes_usuarios
     try {
       const { data, error } = await supabase
         .from('permissoes_usuarios')

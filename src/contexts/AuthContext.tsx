@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Validação se o usuário está cadastrado na tabela correta permissoes_usuarios
     try {
       const { data, error } = await supabase
-        .from('permissoes_usuarios')
+        .from('perfis_usuarios')
         .select('role')
         .eq('email', email)
         .maybeSingle();

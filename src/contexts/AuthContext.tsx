@@ -27,13 +27,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Função disparada pelo botão "Entrar com Conta Corporativa"
-  const signIn = async () => {
+ const signIn = async () => {
     try {
       setAuthError(null);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
           redirectTo: window.location.origin,
+          scopes: 'openid email profile User.Read', // Força o Azure a retornar o email e perfil completos
         },
       });
       if (error) {

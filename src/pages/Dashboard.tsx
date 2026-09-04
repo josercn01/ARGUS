@@ -50,7 +50,7 @@ export function Dashboard({ user, role }: DashboardProps) {
     loadData();
   }, [loadData]);
 
-  // Aplicar filtros nas licenças
+  // Aplicar filtros
   const filteredLicencas = licencas.filter((item) => {
     if (search.trim()) {
       const q = search.toLowerCase().trim();
@@ -61,17 +61,9 @@ export function Dashboard({ user, role }: DashboardProps) {
       if (!matchNome && !matchEmail && !matchLogin && !matchChapa) return false;
     }
 
-    if (selectedSoftware && item.software_id !== selectedSoftware) {
-      return false;
-    }
-
-    if (selectedLocal && item.local_id !== selectedLocal) {
-      return false;
-    }
-
-    if (selectedStatus && item.status !== selectedStatus) {
-      return false;
-    }
+    if (selectedSoftware && item.software_id !== selectedSoftware) return false;
+    if (selectedLocal && item.local_id !== selectedLocal) return false;
+    if (selectedStatus && item.status !== selectedStatus) return false;
 
     return true;
   });

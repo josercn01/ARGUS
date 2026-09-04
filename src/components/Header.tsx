@@ -2,14 +2,14 @@ import {
   Shield, 
   LayoutDashboard, 
   Package, 
-  MapPin, 
+  Monitor, 
   ShieldCheck, 
   LogOut 
 } from 'lucide-react';
 import type { AuthUser, SystemRole } from '@/types';
 import { supabase } from '@/lib/supabase';
 
-export type TabKey = 'dashboard' | 'softwares' | 'Locais' | 'permissoes';
+export type TabKey = 'dashboard' | 'softwares' | 'admin-locais' | 'permissoes';
 
 interface HeaderProps {
   user: AuthUser | null;
@@ -18,16 +18,15 @@ interface HeaderProps {
   onTabChange: (tab: TabKey) => void;
 }
 
-export function Header({ user, role, activeTab, onTabChange }: HeaderProps) {
+export function Header({ user, activeTab, onTabChange }: HeaderProps) {
   async function handleLogout() {
     await supabase.auth.signOut();
   }
 
-  // Liberando a exibição das abas de navegação
   const navItems: { id: TabKey; label: string; icon: React.ElementType }[] = [
     { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard },
     { id: 'softwares', label: 'Softwares', icon: Package },
-    { id: 'Locais', label: 'Locais', icon: MapPin },
+    { id: 'admin-locais', label: 'Admin Locais', icon: Monitor },
     { id: 'permissoes', label: 'Acessos', icon: ShieldCheck },
   ];
 

@@ -1,81 +1,46 @@
-export type Role = 'super_admin' | 'admin' | 'editor' | 'consulta';
+export type SystemRole = 'super_admin' | 'admin' | 'editor' | 'consulta';
 
-/**
- * Alias usado pelos componentes de RBAC (Módulo 5).
- * Mantido separado de `Role` apenas por legibilidade — é o mesmo conjunto.
- */
-export type SystemRole = Role;
-
-export type LicencaStatus = 'Ativo' | 'Pendente' | 'Inativo';
-
-/** Módulo 4 — Administração de Locais (tabela `locais_trabalho`) */
-export interface LocalTrabalho {
-  id: string;
-  nome: string;
-  descricao: string | null;
-  created_at: string;
-}
-
-/** Módulo 2 — Gestão de Licenças (tabela `licencas_usuarios`) */
-export interface LicencaUsuario {
+export interface AuthUser {
   id: string;
   email: string;
-  nome: string | null;
-  /** Login de rede do colaborador */
-  login: string | null;
-  /** Chapa / matrícula */
-  chapa_matricula: string | null;
-  /** @deprecated mantido para compatibilidade com dados legados; use `chapa_matricula` */
-  matricula: string | null;
-
-  /** Vínculo local/setorial */
-  local_id: string | null;
-  local_nome: string | null;
-  departamento_raiz: string | null;
-  sub_departamento: string | null;
-
-  /** Vínculo com o catálogo de softwares */
-  software_id: string | null;
-  tipo_licenca: string | null;
-  tipo_produto: string | null;
-  produto: string | null;
-
-  possui_licenca: boolean;
-  status: string | null;
-
-  atualizado_por: string | null;
-  atualizado_em: string | null;
-  created_at: string;
+  user_metadata?: {
+    full_name?: string;
+    avatar_url?: string;
+  };
 }
 
-/** Módulo 3 — Gestão de Softwares (tabela `softwares`) */
-export interface Software {
+export interface PermissaoUsuario {
   id: string;
-  nome: string;
-  fabricante: string | null;
-  tipo_produto: string | null;
-  produto: string | null;
-  descricao: string | null;
-  /** Teto contratado */
-  qtd_licencas: number;
-  /** Espelho de `qtd_licencas` mantido por compatibilidade */
-  quantidade_total?: number | null;
-  /** Campo legado de bases antigas */
-  quantidade?: number | null;
+  email: string;
+  role: SystemRole;
   created_at: string;
   updated_at: string;
 }
 
-/** Módulo 5 — Gestão de Acessos (tabela `perfis_usuarios`) */
-export interface PerfilUsuario {
+export interface AdminLocalItem {
   id: string;
-  email: string;
-  role: Role;
-  created_at: string;
+  hostname: string;
+  usuario_admin: string;
+  nome_colaborador?: string;
+  setor?: string;
+  justificativa_chamado?: string;
+  created_at?: string;
 }
 
-export interface AuthUser {
-  email: string;
-  name: string;
-  role: Role;
+export interface Software {
+  id: string;
+  nome: string;
+  fabricante?: string;
+  versao?: string;
+  licencas_totais?: number;
+  descricao?: string;
+  created_at?: string;
+}
+
+export interface LocalTrabalho {
+  id: string;
+  nome: string;
+  sigla?: string;
+  descricao?: string;
+  created_at?: string;
 }

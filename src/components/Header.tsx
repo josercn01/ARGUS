@@ -19,25 +19,23 @@ interface HeaderProps {
 }
 
 export function Header({ user, role, activeTab, onTabChange }: HeaderProps) {
-  const isSuperAdmin = role === 'super_admin';
-  const isAdminOrHigher = ['super_admin', 'admin', 'editor'].includes(role);
-
   async function handleLogout() {
     await supabase.auth.signOut();
   }
 
-  const navItems: { id: TabKey; label: string; icon: React.ElementType; visible: boolean }[] = [
-    { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard, visible: true },
-    { id: 'softwares', label: 'Softwares', icon: Package, visible: isAdminOrHigher },
-    { id: 'locais', label: 'Locais', icon: MapPin, visible: isAdminOrHigher },
-    { id: 'permissoes', label: 'Acessos', icon: ShieldCheck, visible: isSuperAdmin },
+  // Liberando a exibição das abas de navegação
+  const navItems: { id: TabKey; label: string; icon: React.ElementType }[] = [
+    { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard },
+    { id: 'softwares', label: 'Softwares', icon: Package },
+    { id: 'locais', label: 'Locais', icon: MapPin },
+    { id: 'permissoes', label: 'Acessos', icon: ShieldCheck },
   ];
 
   return (
     <header className="bg-[#001726] border-b border-[#1e293b] sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
         {/* Lado Esquerdo: Logo + Navegação de Abas */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-[#D4AF37]/10 border border-[#D4AF37] rounded-xl flex items-center justify-center text-[#D4AF37] shadow-md">
               <Shield className="w-5 h-5" />
@@ -53,9 +51,9 @@ export function Header({ user, role, activeTab, onTabChange }: HeaderProps) {
             </div>
           </div>
 
-          {/* Botões do Menu Superior */}
+          {/* Botões do Menu Superior - Sempre Visíveis */}
           <nav className="flex items-center gap-1 bg-[#00121E] p-1 rounded-xl border border-[#1e293b]">
-            {navItems.filter(item => item.visible).map((item) => {
+            {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (

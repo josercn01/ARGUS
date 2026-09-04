@@ -85,8 +85,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         const { data, error } = await supabase
           .from('administradores_locais')
           .select('*')
-          .range(page * pageSize, (page + 1) * pageSize - 1)
-          .order('endereco_logico', { ascending: true });
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (error) throw error;
 
@@ -336,30 +335,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
   const totalAdminsLocais = useMemo(() => {
     return filteredItems.reduce((acc, curr) => acc + (curr.qntd_admin || 1), 0);
-  }, [filteredItems]);
-
-  const top10Setor = useMemo(() => {
-    const map = new Map<string, number>();
-    filteredItems.forEach((i) => {
-      const key = i.setor || 'Não Definido';
-      map.set(key, (map.get(key) || 0) + (i.qntd_admin || 1));
-    });
-    return Array.from(map.entries())
-      .map(([nome, total]) => ({ nome, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-  }, [filteredItems]);
-
-  const top10Depto = useMemo(() => {
-    const map = new Map<string, number>();
-    filteredItems.forEach((i) => {
-      const key = i.departamento || 'Não Definido';
-      map.set(key, (map.get(key) || 0) + (i.qntd_admin || 1));
-    });
-    return Array.from(map.entries())
-      .map(([nome, total]) => ({ nome, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
   }, [filteredItems]);
 
   return (

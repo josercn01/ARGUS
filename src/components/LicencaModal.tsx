@@ -1,282 +1,354 @@
-import { useState, useEffect, useMemo } from 'react';
-import { X, Save } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import type { LicencaUsuario, Software } from '@/types';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Save, AlertCircle } from 'lucide-react';
+import type { LicencaUsuario, Software, LocalTrabalho } from '@/types';
 
 interface LicencaModalProps {
   item: Partial<LicencaUsuario> | null;
+  softwares: Software[];
+  locais: LocalTrabalho[];
   onClose: () => void;
   onSave: (data: Partial<LicencaUsuario>) => Promise<void>;
 }
 
-const STATUS_OPTIONS = ['Ativo', 'Inativo', 'Pendente'];
+const STATUS_OPTIONS = ['Ativo', 'Pendente', 'Inativo'];
 
-// Mapeamento fixo para a estrutura Adobe
-const ADOBE_TIPOS = [
-  'Adobe Acrobat Pro DC',
-  'Creative Cloud (Suite CC)',
-  'Aplicativo Único / Individual'
-];
+const inputClass =
+  'w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]';
+const selectClass =
+  'w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] disabled:opacity-50';
+const labelClass = 'text-[#94a3b8] text-xs font-semibold block mb-1';
 
-const ADOBE_APPS_INDIVIDUAIS = [
-  'Adobe Lightroom Classic: Aplicativo único - Lightroom Classic',
-  'Adobe XD: Aplicativo único - XD',
-  'Audição: Aplicativo individual - Audicão',
-  'Illustrator: Aplicativo único - Illustrator',
-  'InDesign: Aplicativo único - InDesign',
-  'Photoshop: Aplicativo único - Photoshop',
-  'Premiere Pro: Aplicativo único - Premiere',
-  'Premiere Rush: Aplicativo Único - Rush'
-];
-
-export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
+export function LicencaModal({ item, softwares, locais, onClose, onSave }: LicencaModalProps) {
   const [form, setForm] = useState<Partial<LicencaUsuario>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [softwares, setSoftwares] = useState<Software[]>([]);
 
   useEffect(() => {
     setForm(item ?? {});
     setError(null);
-    (async () => {
-      const { data, error: sbError } = await supabase.from('softwares').select('*').order('nome');
-      if (!sbError && data) {
-        setSoftwares(data as Software[]);
-      }
-    })();
   }, [item]);
 
   if (item === null) return null;
 
-  // Monta a lista garantindo Adobe e Outros Softwares
-  const fabricantes = useMemo(() => {
-    const list: string[] = ['Adobe', 'Outros Softwares'];
-
-    // Pega qualquer outro software cadastrado no banco que não seja Adobe
-    softwares.forEach((s: any) => {
-      const nomeValido = s.fabricante || s.software || s.nome;
-      if (nomeValido && typeof nomeValido === 'string') {
-        const itemClean = nomeValido.trim();
-        const upper = itemClean.toUpperCase();
-        
-        if (!upper.startsWith('ADOBE') && !list.includes(itemClean)) {
-          list.push(itemClean);
-        }
-      }
-    });
-
-    return list;
-  }, [softwares]);
-
-  // Tipos de Produto / Pacote por Fabricante ou Software
-  const tiposPorFabricante = useMemo(() => {
-    const fab = form.tipo_licenca;
-    if (!fab) return [];
-
-    if (fab.toLowerCase() === 'adobe') {
-      return ADOBE_TIPOS;
-    }
-
-    const set = new Set<string>();
-    softwares
-      .filter((s: any) => {
-        const itemFab = s.fabricante || s.software || s.nome;
-        return itemFab?.toLowerCase() === fab.toLowerCase();
-      })
-      .forEach((s: any) => {
-        const tipo = s.tipo_produto || s.categoria || s.perfil;
-        if (tipo && typeof tipo === 'string' && tipo.trim()) {
-          set.add(tipo.trim());
-        }
-      });
-
-    return [...set].sort();
-  }, [softwares, form.tipo_licenca]);
-
-  // Produtos / Aplicativos Específicos
-  const produtosPorTipo = useMemo(() => {
-    const fab = form.tipo_licenca;
-    const tipo = form.tipo_produto;
-    if (!fab) return [];
-
-    if (fab.toLowerCase() === 'adobe') {
-      if (tipo === 'Aplicativo Único / Individual') {
-        return ADOBE_APPS_INDIVIDUAIS;
-      }
-      return [];
-    }
-
-    const filtered = softwares.filter((s: any) => {
-      const itemFab = s.fabricante || s.software || s.nome;
-      return itemFab?.toLowerCase() === fab.toLowerCase();
-    });
-
-    const narrowed = tipo
-      ? filtered.filter((s: any) => {
-          const itemTipo = s.tipo_produto || s.categoria || s.perfil;
-          return itemTipo?.toLowerCase() === tipo.toLowerCase();
-        })
-      : filtered;
-
-    const result = new Set<string>();
-    narrowed.forEach((s: any) => {
-      const prodName = s.produto || s.nome || s.descricao;
-      if (prodName && typeof prodName === 'string' && prodName.trim()) {
-        result.add(prodName.trim());
-      }
-    });
-
-    return [...result].sort();
-  }, [softwares, form.tipo_licenca, form.tipo_produto]);
-
-  function set(field: keyof LicencaUsuario, value: unknown) {
+  function setField<K extends keyof LicencaUsuario>(field: K, value: LicencaUsuario[K] | null) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handleFabricanteChange(v: string) {
-    setForm((prev) => ({ ...prev, tipo_licenca: v, tipo_produto: '', produto: '' }));
+  /* --- Cascata Fabricante -> Tipo de Produto -> Produto --- */
+
+  const fabricantes = useMemo(() => {
+    const set = new Set<string>();
+    (softwares || []).forEach((s) => {
+      const fab = (s.fabricante || s.nome || '').trim();
+      if (fab) set.add(fab);
+    });
+    if (form.tipo_licenca) set.add(form.tipo_licenca);
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [softwares, form.tipo_licenca]);
+
+  const softwaresDoFabricante = useMemo(() => {
+    const fab = form.tipo_licenca?.trim().toLowerCase();
+    if (!fab) return [];
+    return (softwares || []).filter(
+      (s) => (s.fabricante || s.nome || '').trim().toLowerCase() === fab,
+    );
+  }, [softwares, form.tipo_licenca]);
+
+  const tipos = useMemo(() => {
+    const set = new Set<string>();
+    softwaresDoFabricante.forEach((s) => {
+      if (s.tipo_produto?.trim()) set.add(s.tipo_produto.trim());
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [softwaresDoFabricante]);
+
+  const produtos = useMemo(() => {
+    const tipo = form.tipo_produto?.trim().toLowerCase();
+    return softwaresDoFabricante.filter(
+      (s) => !tipo || (s.tipo_produto || '').trim().toLowerCase() === tipo,
+    );
+  }, [softwaresDoFabricante, form.tipo_produto]);
+
+  function handleFabricante(v: string) {
+    setForm((prev) => ({
+      ...prev,
+      tipo_licenca: v || null,
+      tipo_produto: null,
+      produto: null,
+      software_id: null,
+    }));
   }
 
-  function handleTipoChange(v: string) {
-    setForm((prev) => ({ ...prev, tipo_produto: v, produto: '' }));
+  function handleTipo(v: string) {
+    setForm((prev) => ({ ...prev, tipo_produto: v || null, produto: null, software_id: null }));
+  }
+
+  function handleProduto(softwareId: string) {
+    const sw = (softwares || []).find((s) => s.id === softwareId);
+    setForm((prev) => ({
+      ...prev,
+      software_id: softwareId || null,
+      produto: sw?.produto ?? sw?.nome ?? null,
+      tipo_produto: sw?.tipo_produto ?? prev.tipo_produto ?? null,
+      tipo_licenca: sw?.fabricante ?? prev.tipo_licenca ?? null,
+      possui_licenca: softwareId ? true : prev.possui_licenca,
+    }));
+  }
+
+  function handleLocal(localId: string) {
+    const local = (locais || []).find((l) => l.id === localId);
+    setForm((prev) => ({
+      ...prev,
+      local_id: localId || null,
+      local_nome: local?.nome ?? null,
+    }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.email) {
-      setError('E-mail é obrigatório.');
+
+    if (!form.email?.trim()) {
+      setError('O e-mail do colaborador é obrigatório.');
       return;
     }
+    if (form.possui_licenca && !form.software_id) {
+      setError('Selecione o produto/perfil de licença atribuído ao colaborador.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
       await onSave(form);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar.');
+      setError(err instanceof Error ? err.message : 'Erro ao salvar o registro.');
     } finally {
       setSaving(false);
     }
   }
 
-  const isNew = !item.id;
-  const isAdobe = form.tipo_licenca?.toLowerCase() === 'adobe';
-  const isOutros = form.tipo_licenca === 'Outros Softwares';
-  const isAdobeIndividual = isAdobe && form.tipo_produto === 'Aplicativo Único / Individual';
-
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto text-white">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e293b] sticky top-0 bg-[#001E33] z-10">
-          <h2 className="text-white font-semibold text-lg flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#D4AF37]" />
-            {isNew ? 'Novo Registro' : 'Editar Registro'}
-          </h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e293b] sticky top-0 bg-[#001E33] z-10">
+          <h3 className="text-white font-bold text-base">
+            {form.id ? 'Editar Licença do Colaborador' : 'Novo Registro de Licença'}
+          </h3>
           <button
             onClick={onClose}
-            className="text-[#94a3b8] hover:text-white transition-colors p-1.5 hover:bg-[#001726] rounded-lg"
+            className="p-1.5 text-[#94a3b8] hover:text-white hover:bg-white/5 rounded-md transition-all"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="E-mail *" type="email" value={form.email ?? ''} onChange={(v) => set('email', v)} required />
-            <Field label="Nome" value={form.nome ?? ''} onChange={(v) => set('nome', v)} />
-            <Field label="Matrícula" value={form.matricula ?? ''} onChange={(v) => set('matricula', v)} />
-            <Field label="Departamento Raiz" value={form.departamento_raiz ?? ''} onChange={(v) => set('departamento_raiz', v)} />
-            <Field label="Subdepartamento" value={form.sub_departamento ?? ''} onChange={(v) => set('sub_departamento', v)} />
-          </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-5">
+          {/* Identificação do colaborador */}
+          <section className="space-y-4">
+            <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
+              Identificação do Colaborador
+            </h4>
 
-          {/* Licença Checkbox */}
-          <div className="flex items-center gap-3 pt-2">
-            <input
-              id="possui_licenca"
-              type="checkbox"
-              checked={form.possui_licenca ?? false}
-              onChange={(e) => set('possui_licenca', e.target.checked)}
-              className="w-4 h-4 rounded border-[#1e293b] bg-[#001726] accent-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] cursor-pointer"
-            />
-            <label htmlFor="possui_licenca" className="text-[#94a3b8] text-sm font-medium cursor-pointer">
-              Possui Licença
-            </label>
-          </div>
-
-          {form.possui_licenca && (
-            <div className="space-y-3 bg-[#001726] border border-[#1e293b] rounded-xl p-4">
-              <p className="text-[#D4AF37] text-xs font-semibold uppercase tracking-wider">
-                Vincular Licença
-              </p>
-              
-              <SelectField
-                label="Fabricante / Software Principal"
-                value={form.tipo_licenca ?? ''}
-                onChange={handleFabricanteChange}
-                options={fabricantes}
-                placeholder="Selecione..."
-              />
-
-              {/* Se selecionar 'Outros Softwares', abre um campo para digitar livremente */}
-              {isOutros && (
-                <Field
-                  label="Nome do Software / Licença"
-                  value={form.produto ?? ''}
-                  onChange={(v) => set('produto', v)}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Nome completo</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Maria Souza"
+                  value={form.nome ?? ''}
+                  onChange={(e) => setField('nome', e.target.value)}
+                  className={inputClass}
                 />
-              )}
+              </div>
 
-              {/* Exibe 'Tipo de Produto' se for Adobe ou se houver categorias para o software selecionado */}
-              {(isAdobe || (!isOutros && tiposPorFabricante.length > 0)) && (
-                <SelectField
-                  label="Tipo de Produto / Pacote"
+              <div>
+                <label className={labelClass}>E-mail *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="usuario@senado.leg.br"
+                  value={form.email ?? ''}
+                  onChange={(e) => setField('email', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Login de rede</label>
+                <input
+                  type="text"
+                  placeholder="Ex: msouza"
+                  value={form.login ?? ''}
+                  onChange={(e) => setField('login', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Chapa / Matrícula</label>
+                <input
+                  type="text"
+                  placeholder="Ex: 123456"
+                  value={form.chapa_matricula ?? form.matricula ?? ''}
+                  onChange={(e) => setField('chapa_matricula', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Vínculo local e setorial */}
+          <section className="space-y-4 pt-4 border-t border-[#1e293b]">
+            <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
+              Vínculo Local e Setorial
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>Local de Trabalho / Unidade</label>
+                <select
+                  value={form.local_id ?? ''}
+                  onChange={(e) => handleLocal(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">Não informado</option>
+                  {(locais || []).map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>Departamento</label>
+                <input
+                  type="text"
+                  placeholder="Ex: SEGRAF"
+                  value={form.departamento_raiz ?? ''}
+                  onChange={(e) => setField('departamento_raiz', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Setor / Subdepartamento</label>
+                <input
+                  type="text"
+                  placeholder="Ex: COATEN"
+                  value={form.sub_departamento ?? ''}
+                  onChange={(e) => setField('sub_departamento', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Licença atribuída */}
+          <section className="space-y-4 pt-4 border-t border-[#1e293b]">
+            <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
+              Licença Atribuída
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>Fabricante</label>
+                <select
+                  value={form.tipo_licenca ?? ''}
+                  onChange={(e) => handleFabricante(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">Selecione...</option>
+                  {fabricantes.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>Tipo de Produto</label>
+                <select
                   value={form.tipo_produto ?? ''}
-                  onChange={handleTipoChange}
-                  options={tiposPorFabricante}
-                  placeholder={form.tipo_licenca ? 'Selecione...' : 'Selecione o fabricante primeiro'}
-                  disabled={!form.tipo_licenca}
-                />
-              )}
+                  onChange={(e) => handleTipo(e.target.value)}
+                  disabled={!form.tipo_licenca || tipos.length === 0}
+                  className={selectClass}
+                >
+                  <option value="">{tipos.length ? 'Selecione...' : 'Sem tipos cadastrados'}</option>
+                  {tipos.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              {/* Exibe 'Produto / Aplicativo Específico' para Adobe Individual ou softwares com sub-produtos */}
-              {(isAdobeIndividual || (!isAdobe && !isOutros && produtosPorTipo.length > 0)) && (
-                <SelectField
-                  label="Produto / Aplicativo Específico"
-                  value={form.produto ?? ''}
-                  onChange={(v) => set('produto', v)}
-                  options={produtosPorTipo}
-                  placeholder="Selecione o produto/aplicativo..."
+              <div>
+                <label className={labelClass}>Produto / Perfil</label>
+                <select
+                  value={form.software_id ?? ''}
+                  onChange={(e) => handleProduto(e.target.value)}
                   disabled={!form.tipo_licenca}
+                  className={selectClass}
+                >
+                  <option value="">Selecione...</option>
+                  {produtos.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.produto || s.tipo_produto || s.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+              <div>
+                <label className={labelClass}>Status do Acesso</label>
+                <select
+                  value={form.status ?? 'Pendente'}
+                  onChange={(e) => setField('status', e.target.value)}
+                  className={selectClass}
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer bg-[#001726] border border-[#1e293b] rounded-lg px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.possui_licenca)}
+                  onChange={(e) => setField('possui_licenca', e.target.checked)}
+                  className="w-4 h-4 accent-[#D4AF37]"
                 />
-              )}
+                <span className="text-white text-sm font-medium">Possui licença ativa</span>
+              </label>
+            </div>
+          </section>
+
+          {error && (
+            <div className="flex items-center gap-2 text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-xs">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              {error}
             </div>
           )}
 
-          <SelectField
-            label="Status"
-            value={form.status ?? 'Pendente'}
-            onChange={(v) => set('status', v)}
-            options={STATUS_OPTIONS}
-          />
-
-          {error && (
-            <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-3 pt-4">
+          <div className="flex justify-end gap-2 pt-2 border-t border-[#1e293b]">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg border border-[#1e293b] text-[#94a3b8] hover:text-white hover:bg-[#001726] transition-colors text-sm font-medium"
+              className="text-sm text-[#94a3b8] hover:text-white px-4 py-2 rounded-lg transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold text-sm transition-colors disabled:opacity-60 cursor-pointer"
+              className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               {saving ? 'Salvando...' : 'Salvar'}
@@ -284,51 +356,6 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
           </div>
         </form>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, value, onChange, type = 'text', required }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; required?: boolean;
-}) {
-  return (
-    <div>
-      <label className="text-[#94a3b8] text-xs font-medium block mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all placeholder-[#64748b]"
-      />
-    </div>
-  );
-}
-
-function SelectField({ label, value, onChange, options, placeholder, disabled }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div>
-      <label className="text-[#94a3b8] text-xs font-medium block mb-1">{label}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-      >
-        <option value="" className="bg-[#001E33] text-[#64748b]">{placeholder ?? 'Selecione...'}</option>
-        {options.map((o) => (
-          <option key={o} value={o} className="bg-[#001E33] text-white">
-            {o}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }

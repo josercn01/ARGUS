@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   ShieldAlert, Plus, Trash2, Search, RotateCcw, 
-  Monitor, Users, Building2, Layers, History, X, Check, Edit3
+  Monitor, Users, Building2, Layers, History, X, Edit3, Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import type { AuthUser, SystemRole } from '@/types';
 
 interface AdminLocaisProps {
@@ -11,18 +12,17 @@ interface AdminLocaisProps {
   role: SystemRole;
 }
 
-interface AdminLocalRow {
+export interface AdminLocalRow {
   id: string;
-  hostname: string;
-  endereco_logico?: string;
+  endereco_logico: string;
+  qntd_admin: number;
   administradores?: string;
-  qntd_admin?: number;
-  setor?: string;
   departamento?: string;
-  justificativa_chamado?: string;
+  setor?: string;
+  justificativa?: string;
   modificado_por?: string;
-  updated_at?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 interface AuditLog {
@@ -51,7 +51,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   const [editingItem, setEditingItem] = useState<AdminLocalRow | null>(null);
 
   // Form State
-  const [hostname, setHostname] = useState('');
   const [enderecoLogico, setEnderecoLogico] = useState('');
   const [administradores, setAdministradores] = useState('');
   const [qntdAdmin, setQntdAdmin] = useState(1);
@@ -62,25 +61,45 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   const [saving, setSaving] = useState(false);
   const canEdit = ['super_admin', 'admin', 'editor'].includes(role);
 
-  // Buscar Dados
-  async function fetchData() {
+  // BUSCA COMPLETA SEM LIMITE DE 1000 LINHAS (PAGINAÇÃO RECURSIVA)
+  async function fetchAllData() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('administradores_locais')
-        .select('*')
-        .order('hostname');
+      let allRows: AdminLocalRow[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (error) throw error;
-      setItems(data || []);
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('administradores_locais')
+          .select('*')
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+          .order('endereco_logico', { ascending: true });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allRows = [...allRows, ...data];
+          if (data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setItems(allRows);
     } catch (err) {
-      console.error('Erro ao carregar administradores locais:', err);
+      console.error('Erro ao buscar administradores locais:', err);
     } finally {
       setLoading(false);
     }
   }
 
-  // Buscar logs de auditoria para o Undo
+  // Buscar logs de auditoria
   async function fetchAuditLogs() {
     try {
       const { data } = await supabase
@@ -91,15 +110,15 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
       setAuditLogs(data || []);
     } catch (err) {
-      console.error('Erro ao buscar logs de auditoria:', err);
+      console.error('Erro ao buscar auditoria:', err);
     }
   }
 
   useEffect(() => {
-    fetchData();
+    fetchAllData();
   }, []);
 
-  // Inserir log de auditoria
+  // Inserir log
   async function recordAuditLog(
     registroId: string, 
     acao: 'INSERT' | 'UPDATE' | 'DELETE', 
@@ -107,29 +126,28 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     novos: AdminLocalRow | null
   ) {
     const userEmail = user?.email || 'Sistema';
+    const agora = new Date().toLocaleString('pt-BR');
     await supabase.from('administradores_locais_auditoria').insert([{
       registro_id: registroId,
       acao,
       dados_antigos: antigos,
       dados_novos: novos,
-      modificado_por: `${userEmail} em ${new Date().toLocaleString('pt-BR')}`
+      modificado_por: `${userEmail} em ${agora}`
     }]);
   }
 
-  // Abertura do Form
+  // Abertura do Formulário
   function handleOpenForm(item?: AdminLocalRow) {
     if (item) {
       setEditingItem(item);
-      setHostname(item.hostname);
       setEnderecoLogico(item.endereco_logico || '');
       setAdministradores(item.administradores || '');
       setQntdAdmin(item.qntd_admin || 1);
       setSetor(item.setor || '');
       setDepartamento(item.departamento || '');
-      setJustificativa(item.justificativa_chamado || '');
+      setJustificativa(item.justificativa || '');
     } else {
       setEditingItem(null);
-      setHostname('');
       setEnderecoLogico('');
       setAdministradores('');
       setQntdAdmin(1);
@@ -140,27 +158,27 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     setShowFormModal(true);
   }
 
-  // Salvar / Editar
+  // Salvar
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!enderecoLogico.trim()) return;
+
     setSaving(true);
-    const userSignature = `${user?.email || 'Desconhecido'} - ${new Date().toLocaleString('pt-BR')}`;
+    const userSignature = `${user?.email || 'Sistema'} em ${new Date().toLocaleString('pt-BR')}`;
 
     const payload = {
-      hostname: hostname.toUpperCase().trim(),
-      endereco_logico: enderecoLogico.trim(),
+      endereco_logico: enderecoLogico.toUpperCase().trim(),
       administradores: administradores.trim(),
       qntd_admin: Number(qntdAdmin),
       setor: setor.trim(),
       departamento: departamento.trim(),
-      justificativa_chamado: justificativa.trim(),
+      justificativa: justificativa.trim(),
       modificado_por: userSignature,
       updated_at: new Date().toISOString()
     };
 
     try {
       if (editingItem) {
-        // Update
         const { error } = await supabase
           .from('administradores_locais')
           .update(payload)
@@ -169,7 +187,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         if (error) throw error;
         await recordAuditLog(editingItem.id, 'UPDATE', editingItem, { id: editingItem.id, ...payload });
       } else {
-        // Insert
         const { data, error } = await supabase
           .from('administradores_locais')
           .insert([payload])
@@ -181,7 +198,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       }
 
       setShowFormModal(false);
-      await fetchData();
+      await fetchAllData();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao salvar registro');
     } finally {
@@ -191,7 +208,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
   // Deletar
   async function handleDelete(item: AdminLocalRow) {
-    if (!window.confirm(`Confirma a exclusão de ${item.hostname}?`)) return;
+    if (!window.confirm(`Confirma a exclusão de ${item.endereco_logico}?`)) return;
 
     try {
       const { error } = await supabase
@@ -201,52 +218,82 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
       if (error) throw error;
       await recordAuditLog(item.id, 'DELETE', item, null);
-      await fetchData();
+      await fetchAllData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao excluir registro');
+      alert(err instanceof Error ? err.message : 'Erro ao excluir');
     }
   }
 
   // Função Desfazer (Undo)
   async function handleUndo(log: AuditLog) {
-    if (!window.confirm(`Deseja desfazer a ação (${log.acao}) realizada por ${log.modificado_por}?`)) return;
+    if (!window.confirm(`Deseja reverter a alteração de ${log.modificado_por}?`)) return;
 
     try {
       if (log.acao === 'INSERT' && log.registro_id) {
-        // Desfazer inserção = Deletar
         await supabase.from('administradores_locais').delete().eq('id', log.registro_id);
       } else if (log.acao === 'DELETE' && log.dados_antigos) {
-        // Desfazer exclusão = Inserir de volta
         await supabase.from('administradores_locais').insert([log.dados_antigos]);
       } else if (log.acao === 'UPDATE' && log.dados_antigos) {
-        // Desfazer edição = Restaurar dados antigos
         await supabase.from('administradores_locais').update(log.dados_antigos).eq('id', log.registro_id);
       }
 
-      // Remover o log aplicado
       await supabase.from('administradores_locais_auditoria').delete().eq('id', log.id);
-
       setShowUndoModal(false);
-      await fetchData();
+      await fetchAllData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao reverter ação');
+      alert(err instanceof Error ? err.message : 'Erro ao reverter alteração');
     }
   }
 
-  // Opções de Filtro Únicas
+  // Exportar Excel com Aba de Resumo/Dashboard
+  function handleExportExcel() {
+    // 1. Dados Principais
+    const exportData = filteredItems.map(item => ({
+      'Endereço Lógico': item.endereco_logico,
+      'Qtd Admins': item.qntd_admin,
+      'Administradores': item.administradores || '',
+      'Departamento': item.departamento || '',
+      'Setor': item.setor || '',
+      'Justificativa / Motivo': item.justificativa || '',
+      'Modificado Por': item.modificado_por || ''
+    }));
+
+    // 2. Resumo/KPIs
+    const dashboardSummary = [
+      { Métrica: 'Total de Estações Exibidas', Valor: filteredItems.length },
+      { Métrica: 'Total de Administradores Locais', Valor: totalAdminsLocais },
+      { Métrica: 'Total de Setores Distintos', Valor: listaSetores.length },
+      { Métrica: 'Total de Departamentos', Valor: listaDeptos.length },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    
+    // Aba Dados
+    const wsData = XLSX.utils.json_to_sheet(exportData);
+    XLSX.utils.book_append_sheet(wb, wsData, 'Administradores Locais');
+
+    // Aba Resumo Dashboard
+    const wsSummary = XLSX.utils.json_to_sheet(dashboardSummary);
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo Dashboard');
+
+    // Download
+    XLSX.writeFile(wb, `ARGUS_Administradores_Locais_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // Lista de Opções para Filtros
   const listaSetores = useMemo(() => Array.from(new Set(items.map((i) => i.setor).filter(Boolean))), [items]);
   const listaDeptos = useMemo(() => Array.from(new Set(items.map((i) => i.departamento).filter(Boolean))), [items]);
 
-  // Itens Filtrados
+  // Filtro Dinâmico
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const matchesSearch =
         !search.trim() ||
-        item.hostname?.toLowerCase().includes(search.toLowerCase()) ||
         item.endereco_logico?.toLowerCase().includes(search.toLowerCase()) ||
         item.administradores?.toLowerCase().includes(search.toLowerCase()) ||
         item.setor?.toLowerCase().includes(search.toLowerCase()) ||
-        item.departamento?.toLowerCase().includes(search.toLowerCase());
+        item.departamento?.toLowerCase().includes(search.toLowerCase()) ||
+        item.justificativa?.toLowerCase().includes(search.toLowerCase());
 
       const matchesSetor = selectedSetor === 'todos' || item.setor === selectedSetor;
       const matchesDepto = selectedDepto === 'todos' || item.departamento === selectedDepto;
@@ -255,10 +302,9 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     });
   }, [items, search, selectedSetor, selectedDepto]);
 
-  // Cálculos Dinâmicos dos KPIs
+  // Cálculos Dinâmicos
   const totalMaquinas = useMemo(() => {
-    const IPsUnicos = new Set(filteredItems.map((i) => i.endereco_logico).filter(Boolean));
-    return IPsUnicos.size || filteredItems.length;
+    return new Set(filteredItems.map((i) => i.endereco_logico).filter(Boolean)).size;
   }, [filteredItems]);
 
   const totalAdminsLocais = useMemo(() => {
@@ -301,41 +347,47 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
             Administradores Locais
           </h2>
           <p className="text-slate-400 text-xs mt-1">
-            Gestão de privilégios elevados, log de alterações e auditoria de estações.
+            Gestão de privilégios elevados, log de alterações e auditoria de estações de trabalho.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-emerald-400 border border-emerald-500/30 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg hover:border-emerald-400"
+          >
+            <Download className="w-4 h-4" />
+            Exportar Excel
+          </button>
+
           {canEdit && (
             <button
               onClick={() => {
                 fetchAuditLogs();
                 setShowUndoModal(true);
               }}
-              className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-amber-400 border border-amber-500/30 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg hover:border-amber-400"
+              className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-amber-400 border border-amber-500/30 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg hover:border-amber-400"
             >
               <RotateCcw className="w-4 h-4 text-amber-400" />
-              Desfazer Alteração
+              Desfazer
             </button>
           )}
 
           {canEdit && (
             <button
               onClick={() => handleOpenForm()}
-              className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#B38F24] hover:brightness-110 text-[#001726] font-extrabold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/10"
+              className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#B38F24] hover:brightness-110 text-[#001726] font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/10"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
-              Novo Admin Local
+              Novo Admin
             </button>
           )}
         </div>
       </div>
 
-      {/* DASHBOARD ULTRA REALISTA (GRADIENT CARDS) */}
+      {/* CARDS DE DASHBOARD ULTRA REALISTA */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1 */}
         <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-cyan-500/10 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total de Máquinas</span>
             <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
@@ -348,9 +400,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
           </div>
         </div>
 
-        {/* KPI 2 */}
         <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Admins Locais</span>
             <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
@@ -359,13 +409,11 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
           </div>
           <div className="mt-3">
             <span className="text-3xl font-black text-[#D4AF37] tracking-tight">{totalAdminsLocais}</span>
-            <span className="text-[11px] text-slate-400 block mt-1 font-mono">Contas com admin local</span>
+            <span className="text-[11px] text-slate-400 block mt-1 font-mono">Contas com permissão</span>
           </div>
         </div>
 
-        {/* KPI 3 */}
         <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Setores Mapeados</span>
             <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
@@ -378,9 +426,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
           </div>
         </div>
 
-        {/* KPI 4 */}
         <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Departamentos</span>
             <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
@@ -389,17 +435,16 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
           </div>
           <div className="mt-3">
             <span className="text-3xl font-black text-white tracking-tight">{listaDeptos.length}</span>
-            <span className="text-[11px] text-slate-400 block mt-1">Departamentos ativos</span>
+            <span className="text-[11px] text-slate-400 block mt-1">Departamentos cadastrados</span>
           </div>
         </div>
       </div>
 
-      {/* PAINEL RANKING TOP 10 (SETOR E DEPARTAMENTO) */}
+      {/* RANKINGS TOP 10 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 10 Setor */}
-        <div className="bg-[#001E33]/80 border border-[#1e293b] p-5 rounded-2xl shadow-xl backdrop-blur-md">
+        <div className="bg-[#001E33]/80 border border-[#1e293b] p-5 rounded-2xl shadow-xl">
           <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-4 flex items-center gap-2">
-            <Layers className="w-4 h-4" /> Top 10 Setores com Mais Admins Locais
+            <Layers className="w-4 h-4" /> Top 10 Setores
           </h3>
           <div className="space-y-2.5">
             {top10Setor.map((item, idx) => {
@@ -412,10 +457,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                     <span className="text-amber-400 font-bold font-mono">{item.total} admin(s)</span>
                   </div>
                   <div className="w-full bg-[#00111d] h-2 rounded-full overflow-hidden border border-slate-800">
-                    <div
-                      className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${percent}%` }}
-                    />
+                    <div className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
                   </div>
                 </div>
               );
@@ -423,8 +465,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
           </div>
         </div>
 
-        {/* Top 10 Departamento */}
-        <div className="bg-[#001E33]/80 border border-[#1e293b] p-5 rounded-2xl shadow-xl backdrop-blur-md">
+        <div className="bg-[#001E33]/80 border border-[#1e293b] p-5 rounded-2xl shadow-xl">
           <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-4 flex items-center gap-2">
             <Building2 className="w-4 h-4" /> Top 10 Departamentos
           </h3>
@@ -439,10 +480,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                     <span className="text-cyan-400 font-bold font-mono">{item.total} admin(s)</span>
                   </div>
                   <div className="w-full bg-[#00111d] h-2 rounded-full overflow-hidden border border-slate-800">
-                    <div
-                      className="bg-gradient-to-r from-cyan-500 to-blue-400 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${percent}%` }}
-                    />
+                    <div className="bg-gradient-to-r from-cyan-500 to-blue-400 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
                   </div>
                 </div>
               );
@@ -451,13 +489,13 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
       </div>
 
-      {/* FILTROS E BUSCA DINÂMICA */}
+      {/* FILTROS DE BUSCA */}
       <div className="bg-[#001E33] p-4 rounded-2xl border border-[#1e293b] flex flex-col md:flex-row items-center gap-3 shadow-md">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Buscar por Hostname, IP/Lógico, Admins, Setor ou Chamado..."
+            placeholder="Buscar por Endereço Lógico, Admins, Setor, Departamento ou Justificativa..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-[#001726] border border-[#1e293b] text-white pl-9 pr-4 py-2.5 rounded-xl text-xs focus:outline-none focus:border-[#D4AF37]"
@@ -487,17 +525,17 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </select>
       </div>
 
-      {/* TABELA DE REGISTROS */}
+      {/* TABELA DE DADOS */}
       <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#001726] border-b border-[#1e293b]">
               <tr>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Hostname</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Endereço Lógico</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Admins Locais</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Setor / Departamento</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Chamado / Motivo</th>
+                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Setor</th>
+                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Departamento</th>
+                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Justificativa / Motivo</th>
                 <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Modificado Por</th>
                 {canEdit && <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5 text-right">Ações</th>}
               </tr>
@@ -506,7 +544,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
               {loading && (
                 <tr>
                   <td colSpan={7} className="text-center text-slate-400 py-10 text-xs">
-                    Carregando registros de administradores locais...
+                    Carregando registros do banco de dados (sem limite de 1000)...
                   </td>
                 </tr>
               )}
@@ -514,7 +552,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
               {!loading && filteredItems.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center text-slate-400 py-10 text-xs">
-                    Nenhum registro encontrado para os filtros aplicados.
+                    Nenhum registro encontrado.
                   </td>
                 </tr>
               )}
@@ -522,22 +560,21 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
               {!loading &&
                 filteredItems.map((item) => (
                   <tr key={item.id} className="hover:bg-[#001726]/60 transition-colors">
-                    <td className="px-4 py-3 font-mono font-bold text-white text-xs">
-                      {item.hostname}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-cyan-400 text-xs">
-                      {item.endereco_logico || '-'}
+                    <td className="px-4 py-3 font-mono font-bold text-cyan-400 text-xs">
+                      {item.endereco_logico}
                     </td>
                     <td className="px-4 py-3 text-xs">
                       <div className="font-semibold text-amber-300">{item.administradores || '-'}</div>
                       <div className="text-[10px] text-slate-500">Qtd: {item.qntd_admin || 1}</div>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-300">
-                      <div>{item.setor || '-'}</div>
-                      <div className="text-[10px] text-slate-500">{item.departamento || '-'}</div>
+                      {item.setor || '-'}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-400">
-                      {item.justificativa_chamado || '-'}
+                      {item.departamento || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 max-w-xs truncate">
+                      {item.justificativa || '-'}
                     </td>
                     <td className="px-4 py-3 text-[11px] text-slate-400 font-mono">
                       {item.modificado_por || '-'}
@@ -546,15 +583,15 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                       <td className="px-4 py-3 text-right space-x-1">
                         <button
                           onClick={() => handleOpenForm(item)}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
-                          title="Editar Registro"
+                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all cursor-pointer"
+                          title="Editar"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
-                          title="Excluir Registro"
+                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
+                          title="Excluir"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -567,7 +604,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
       </div>
 
-      {/* MODAL CADASTRAR / EDITAR */}
+      {/* FORM MODAL */}
       {showFormModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-xl w-full space-y-4 shadow-2xl">
@@ -576,49 +613,26 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 <ShieldAlert className="w-5 h-5 text-[#D4AF37]" />
                 {editingItem ? 'Editar Admin Local' : 'Cadastrar Admin Local'}
               </h3>
-              <button onClick={() => setShowFormModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowFormModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSave} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Hostname *</label>
+                <label className="text-slate-400 text-xs font-semibold block mb-1">Endereço Lógico *</label>
                 <input
                   type="text"
                   required
-                  placeholder="EX: STF-PC-0123"
-                  value={hostname}
-                  onChange={(e) => setHostname(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Endereço Lógico (IP/MAC)</label>
-                <input
-                  type="text"
-                  placeholder="EX: 10.20.30.40"
+                  placeholder="EX: MP7003"
                   value={enderecoLogico}
                   onChange={(e) => setEnderecoLogico(e.target.value)}
                   className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Administradores (Contas/Usuários) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="EX: .\adminlocal, dominio\usuario1"
-                  value={administradores}
-                  onChange={(e) => setAdministradores(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
               <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Qtd. Admins Locais</label>
+                <label className="text-slate-400 text-xs font-semibold block mb-1">Qtd. Admins</label>
                 <input
                   type="number"
                   min="1"
@@ -628,11 +642,23 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 />
               </div>
 
+              <div className="sm:col-span-2">
+                <label className="text-slate-400 text-xs font-semibold block mb-1">Administradores (Contas/Grupos) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="EX: SEC-Administradores"
+                  value={administradores}
+                  onChange={(e) => setAdministradores(e.target.value)}
+                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                />
+              </div>
+
               <div>
                 <label className="text-slate-400 text-xs font-semibold block mb-1">Setor</label>
                 <input
                   type="text"
-                  placeholder="EX: COATEN"
+                  placeholder="EX: SECOM"
                   value={setor}
                   onChange={(e) => setSetor(e.target.value)}
                   className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
@@ -643,38 +669,38 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 <label className="text-slate-400 text-xs font-semibold block mb-1">Departamento</label>
                 <input
                   type="text"
-                  placeholder="EX: STI / Secretaria de TI"
+                  placeholder="EX: SECOM"
                   value={departamento}
                   onChange={(e) => setDepartamento(e.target.value)}
                   className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
 
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Nº Chamado / Motivo</label>
-                <input
-                  type="text"
-                  placeholder="EX: INC-102030"
+              <div className="sm:col-span-2">
+                <label className="text-slate-400 text-xs font-semibold block mb-1">Justificativa / Chamado</label>
+                <textarea
+                  rows={3}
+                  placeholder="Descreva o motivo da concessão..."
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
                   className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
 
-              <div className="sm:col-span-2 flex justify-end gap-2 pt-3 border-t border-[#1e293b] mt-2">
+              <div className="sm:col-span-2 flex justify-end gap-2 pt-3 border-t border-[#1e293b]">
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-5 py-2 rounded-xl text-xs transition-all shadow-md"
+                  className="bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-5 py-2 rounded-xl text-xs transition-all shadow-md cursor-pointer"
                 >
-                  {saving ? 'Salvando...' : 'Salvar Registro'}
+                  {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
             </form>
@@ -682,27 +708,23 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
       )}
 
-      {/* MODAL POP-UP DESFAZER (UNDO LAST 10 ACTIONS) */}
+      {/* POPUP DESFAZER (UNDO) */}
       {showUndoModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#1e293b] pb-3">
               <h3 className="text-white font-bold text-base flex items-center gap-2">
                 <History className="w-5 h-5 text-amber-400" />
-                Desfazer Últimas Alterações (Log de Auditoria)
+                Desfazer Alterações (Histórico Recente)
               </h3>
-              <button onClick={() => setShowUndoModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowUndoModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-slate-400 text-xs">
-              Selecione qual alteração você deseja reverter. Esta ação irá restaurar os dados originais no banco.
-            </p>
-
             <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
               {auditLogs.length === 0 && (
-                <p className="text-slate-500 text-xs text-center py-6">Nenhum histórico recente disponível para ser desfeito.</p>
+                <p className="text-slate-500 text-xs text-center py-6">Nenhum histórico de alteração recente para desfazer.</p>
               )}
 
               {auditLogs.map((log) => (
@@ -722,21 +744,21 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                         {log.acao}
                       </span>
                       <span className="text-xs font-bold text-white">
-                        {log.dados_novos?.hostname || log.dados_antigos?.hostname || 'Registro'}
+                        {log.dados_novos?.endereco_logico || log.dados_antigos?.endereco_logico || 'Registro'}
                       </span>
                     </div>
 
                     <div className="text-[11px] text-slate-400">
-                      <span className="text-slate-500">Alterado por:</span> {log.modificado_por}
+                      Modificado: {log.modificado_por}
                     </div>
                   </div>
 
                   <button
                     onClick={() => handleUndo(log)}
-                    className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
+                    className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
-                    Desfazer
+                    Reverter
                   </button>
                 </div>
               ))}

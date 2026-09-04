@@ -1,82 +1,83 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Header } from '@/components/Header';
+import { Header, type TabKey } from '@/components/Header';
 import { MetricsCards } from '@/components/MetricsCards';
 import { FiltersBar } from '@/components/FiltersBar';
 import { LicencasTable } from '@/components/LicencasTable';
 import { SoftwareManagement } from '@/components/SoftwareManagement';
-import { AccessManagement } from '@/components/AccessManagement';
 import { AdminLocais } from '@/components/AdminLocais';
-import type { LicencaUsuario, Software, LocalTrabalho, SystemRole } from '@/types';
+import { AccessManagement } from '@/components/AccessManagement';
+import type { AuthUser, SystemRole, LicencaUsuario, Software, LocalTrabalho } from '@/types';
 
 interface DashboardProps {
-  user: any;
+  user: AuthUser | null;
   role: SystemRole;
 }
 
 export function Dashboard({ user, role }: DashboardProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'softwares' | 'permissoes' | 'locais'>('dashboard');
-  const [usuarios, setUsuarios] = useState<LicencaUsuario[]>([]);
+  const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
+  const [licencas, setLicencas] = useState<LicencaUsuario[]>([]);
   const [softwares, setSoftwares] = useState<Software[]>([]);
   const [locais, setLocais] = useState<LocalTrabalho[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros da tabela de licenças
+  // Filtros
   const [search, setSearch] = useState('');
   const [selectedSoftware, setSelectedSoftware] = useState('');
   const [selectedLocal, setSelectedLocal] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [uRes, sRes, lRes] = await Promise.all([
+      const [licRes, softRes, locRes] = await Promise.all([
         supabase.from('licencas_usuarios').select('*').order('nome'),
         supabase.from('softwares').select('*').order('nome'),
         supabase.from('locais_trabalho').select('*').order('nome'),
       ]);
 
-      setUsuarios((uRes.data as LicencaUsuario[]) || []);
-      setSoftwares((sRes.data as Software[]) || []);
-      setLocais((lRes.data as LocalTrabalho[]) || []);
-    } catch (error) {
-      console.error('Erro ao carregar dados do dashboard:', error);
-      setUsuarios([]);
-      setSoftwares([]);
-      setLocais([]);
+      if (licRes.data) setLicencas(licRes.data);
+      if (softRes.data) setSoftwares(softRes.data);
+      if (locRes.data) setLocais(locRes.data);
+    } catch (err) {
+      console.error('Erro ao carregar dados do Dashboard:', err);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
-  // Filtro com proteção contra campos nulos (nullish check)
-  const filteredUsuarios = (usuarios || []).filter((u) => {
-    if (!u) return false;
+  // Aplicar filtros nas licenças
+  const filteredLicencas = licencas.filter((item) => {
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      const matchNome = item.nome?.toLowerCase().includes(q);
+      const matchEmail = item.email?.toLowerCase().includes(q);
+      const matchLogin = item.login?.toLowerCase().includes(q);
+      const matchChapa = (item.chapa_matricula || item.matricula)?.toLowerCase().includes(q);
+      if (!matchNome && !matchEmail && !matchLogin && !matchChapa) return false;
+    }
 
-    const searchTerm = search.toLowerCase().trim();
-    const matchesSearch =
-      !searchTerm ||
-      (u.nome && u.nome.toLowerCase().includes(searchTerm)) ||
-      (u.email && u.email.toLowerCase().includes(searchTerm)) ||
-      (u.login && u.login.toLowerCase().includes(searchTerm)) ||
-      (u.chapa_matricula && u.chapa_matricula.toLowerCase().includes(searchTerm));
+    if (selectedSoftware && item.software_id !== selectedSoftware) {
+      return false;
+    }
 
-    const matchesSoftware =
-      !selectedSoftware || u.software_id === selectedSoftware || u.produto === selectedSoftware;
-    const matchesLocal =
-      !selectedLocal || u.local_id === selectedLocal || u.local_nome === selectedLocal;
-    const matchesStatus =
-      !selectedStatus || u.status === selectedStatus;
+    if (selectedLocal && item.local_id !== selectedLocal) {
+      return false;
+    }
 
-    return matchesSearch && matchesSoftware && matchesLocal && matchesStatus;
+    if (selectedStatus && item.status !== selectedStatus) {
+      return false;
+    }
+
+    return true;
   });
 
   return (
-    <div className="min-h-screen bg-[#001726] text-white flex flex-col">
+    <div className="min-h-screen bg-[#00121E] text-white flex flex-col">
       <Header
         user={user}
         role={role}
@@ -84,40 +85,61 @@ export function Dashboard({ user, role }: DashboardProps) {
         onTabChange={setActiveTab}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
         {activeTab === 'dashboard' && (
-          <>
-            <MetricsCards data={filteredUsuarios} softwares={softwares || []} />
+          <div className="space-y-6">
+            <MetricsCards
+              licencas={licencas}
+              softwares={softwares}
+              locais={locais}
+            />
 
-            <div className="space-y-4 pt-4 border-t border-[#1e293b]">
-              <FiltersBar
-                search={search}
-                onSearchChange={setSearch}
-                software={selectedSoftware}
-                onSoftwareChange={setSelectedSoftware}
-                local={selectedLocal}
-                onLocalChange={setSelectedLocal}
-                status={selectedStatus}
-                onStatusChange={setSelectedStatus}
-                softwares={softwares || []}
-                locais={locais || []}
-              />
+            <FiltersBar
+              search={search}
+              onSearchChange={setSearch}
+              software={selectedSoftware}
+              onSoftwareChange={setSelectedSoftware}
+              local={selectedLocal}
+              onLocalChange={setSelectedLocal}
+              status={selectedStatus}
+              onStatusChange={setSelectedStatus}
+              softwares={softwares}
+              locais={locais}
+            />
 
-              <LicencasTable
-                data={filteredUsuarios}
-                softwares={softwares || []}
-                locais={locais || []}
-                role={role}
-                loading={loading}
-                onRefresh={loadData}
-              />
-            </div>
-          </>
+            <LicencasTable
+              data={filteredLicencas}
+              softwares={softwares}
+              locais={locais}
+              role={role}
+              loading={loading}
+              onRefresh={loadData}
+            />
+          </div>
         )}
 
-        {activeTab === 'softwares' && <SoftwareManagement />}
-        {activeTab === 'locais' && <AdminLocais />}
-        {activeTab === 'permissoes' && <AccessManagement currentUser={user} role={role} />}
+        {activeTab === 'softwares' && (
+          <SoftwareManagement
+            softwares={softwares}
+            role={role}
+            onRefresh={loadData}
+          />
+        )}
+
+        {activeTab === 'locais' && (
+          <AdminLocais
+            locais={locais}
+            role={role}
+            onRefresh={loadData}
+          />
+        )}
+
+        {activeTab === 'permissoes' && (
+          <AccessManagement
+            currentUser={user}
+            role={role}
+          />
+        )}
       </main>
     </div>
   );

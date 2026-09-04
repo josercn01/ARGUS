@@ -52,10 +52,10 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
   // Form State
   const [enderecoLogico, setEnderecoLogico] = useState('');
-  const [administradores, setAdministradores] = useState('');
-  const [qntdAdmin, setQntdAdmin] = useState(1);
   const [setor, setSetor] = useState('');
   const [departamento, setDepartamento] = useState('');
+  const [qntdAdmin, setQntdAdmin] = useState<number>(1);
+  const [listaAdmins, setListaAdmins] = useState<string[]>(['']);
   const [justificativa, setJustificativa] = useState('');
 
   const [saving, setSaving] = useState(false);
@@ -99,7 +99,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Buscar logs de auditoria
   async function fetchAuditLogs() {
     try {
       const { data } = await supabase
@@ -118,7 +117,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     fetchAllData();
   }, []);
 
-  // Inserir log
   async function recordAuditLog(
     registroId: string, 
     acao: 'INSERT' | 'UPDATE' | 'DELETE', 
@@ -136,39 +134,61 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }]);
   }
 
-  // Abertura do Formulário
+  // Abertura do Formulário (Novo ou Editar)
   function handleOpenForm(item?: AdminLocalRow) {
     if (item) {
       setEditingItem(item);
       setEnderecoLogico(item.endereco_logico || '');
-      setAdministradores(item.administradores || '');
-      setQntdAdmin(item.qntd_admin || 1);
       setSetor(item.setor || '');
       setDepartamento(item.departamento || '');
       setJustificativa(item.justificativa || '');
+      
+      const adminsArray = item.administradores ? item.administradores.split(',').map(s => s.trim()) : [''];
+      setQntdAdmin(Math.max(1, adminsArray.length));
+      setListaAdmins(adminsArray);
     } else {
       setEditingItem(null);
       setEnderecoLogico('');
-      setAdministradores('');
-      setQntdAdmin(1);
       setSetor('');
       setDepartamento('');
       setJustificativa('');
+      setQntdAdmin(1);
+      setListaAdmins(['']);
     }
     setShowFormModal(true);
   }
 
-  // Salvar
+  // Atualizar quantidade e ajustar o vetor de nomes dinamicamente
+  function handleQntdChange(novaQtd: number) {
+    const qtd = Math.max(1, novaQtd);
+    setQntdAdmin(qtd);
+    setListaAdmins(prev => {
+      if (qtd > prev.length) {
+        return [...prev, ...Array(qtd - prev.length).fill('')];
+      } else {
+        return prev.slice(0, qtd);
+      }
+    });
+  }
+
+  function handleAdminNameChange(index: number, value: string) {
+    const novaLista = [...listaAdmins];
+    novaLista[index] = value;
+    setListaAdmins(novaLista);
+  }
+
+  // Salvar Registro (Insert ou Update)
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!enderecoLogico.trim()) return;
 
     setSaving(true);
     const userSignature = `${user?.email || 'Sistema'} em ${new Date().toLocaleString('pt-BR')}`;
+    const administradoresConcatenados = listaAdmins.filter(Boolean).join(', ');
 
     const payload = {
       endereco_logico: enderecoLogico.toUpperCase().trim(),
-      administradores: administradores.trim(),
+      administradores: administradoresConcatenados,
       qntd_admin: Number(qntdAdmin),
       setor: setor.trim(),
       departamento: departamento.trim(),
@@ -206,9 +226,9 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     }
   }
 
-  // Deletar
+  // Excluir Registro (Lixeira)
   async function handleDelete(item: AdminLocalRow) {
-    if (!window.confirm(`Confirma a exclusão de ${item.endereco_logico}?`)) return;
+    if (!window.confirm(`Confirma a exclusão da estação ${item.endereco_logico}?`)) return;
 
     try {
       const { error } = await supabase
@@ -247,7 +267,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
   // Exportar Excel com Aba de Resumo/Dashboard
   function handleExportExcel() {
-    // 1. Dados Principais
     const exportData = filteredItems.map(item => ({
       'Endereço Lógico': item.endereco_logico,
       'Qtd Admins': item.qntd_admin,
@@ -258,7 +277,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       'Modificado Por': item.modificado_por || ''
     }));
 
-    // 2. Resumo/KPIs
     const dashboardSummary = [
       { Métrica: 'Total de Estações Exibidas', Valor: filteredItems.length },
       { Métrica: 'Total de Administradores Locais', Valor: totalAdminsLocais },
@@ -267,24 +285,18 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     ];
 
     const wb = XLSX.utils.book_new();
-    
-    // Aba Dados
     const wsData = XLSX.utils.json_to_sheet(exportData);
     XLSX.utils.book_append_sheet(wb, wsData, 'Administradores Locais');
 
-    // Aba Resumo Dashboard
     const wsSummary = XLSX.utils.json_to_sheet(dashboardSummary);
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo Dashboard');
 
-    // Download
     XLSX.writeFile(wb, `ARGUS_Administradores_Locais_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  // Lista de Opções para Filtros
   const listaSetores = useMemo(() => Array.from(new Set(items.map((i) => i.setor).filter(Boolean))), [items]);
   const listaDeptos = useMemo(() => Array.from(new Set(items.map((i) => i.departamento).filter(Boolean))), [items]);
 
-  // Filtro Dinâmico
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const matchesSearch =
@@ -302,7 +314,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     });
   }, [items, search, selectedSetor, selectedDepto]);
 
-  // Cálculos Dinâmicos
   const totalMaquinas = useMemo(() => {
     return new Set(filteredItems.map((i) => i.endereco_logico).filter(Boolean)).size;
   }, [filteredItems]);
@@ -311,7 +322,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     return filteredItems.reduce((acc, curr) => acc + (curr.qntd_admin || 1), 0);
   }, [filteredItems]);
 
-  // Ranking Top 10 por Setor
   const top10Setor = useMemo(() => {
     const map = new Map<string, number>();
     filteredItems.forEach((i) => {
@@ -324,7 +334,6 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       .slice(0, 10);
   }, [filteredItems]);
 
-  // Ranking Top 10 por Departamento
   const top10Depto = useMemo(() => {
     const map = new Map<string, number>();
     filteredItems.forEach((i) => {
@@ -379,13 +388,13 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
               className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#B38F24] hover:brightness-110 text-[#001726] font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/10"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
-              Novo Admin
+              Novo Cadastro
             </button>
           )}
         </div>
       </div>
 
-      {/* CARDS DE DASHBOARD ULTRA REALISTA */}
+      {/* CARDS DE DASHBOARD */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
           <div className="flex items-center justify-between">
@@ -583,15 +592,15 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                       <td className="px-4 py-3 text-right space-x-1">
                         <button
                           onClick={() => handleOpenForm(item)}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all cursor-pointer"
-                          title="Editar"
+                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center"
+                          title="Editar Cadastro"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
-                          title="Excluir"
+                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center"
+                          title="Excluir Cadastro"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -604,82 +613,92 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
       </div>
 
-      {/* FORM MODAL */}
+      {/* MODAL DE NOVO CADASTRO / EDIÇÃO */}
       {showFormModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-xl w-full space-y-4 shadow-2xl">
+          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-[#1e293b] pb-3">
               <h3 className="text-white font-bold text-base flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-[#D4AF37]" />
-                {editingItem ? 'Editar Admin Local' : 'Cadastrar Admin Local'}
+                {editingItem ? 'Editar Administrador Local' : 'Novo Cadastro de Administrador Local'}
               </h3>
               <button onClick={() => setShowFormModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Endereço Lógico *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="EX: MP7003"
-                  value={enderecoLogico}
-                  onChange={(e) => setEnderecoLogico(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 text-xs font-semibold block mb-1">Endereço Lógico (Estação) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="EX: MP7003"
+                    value={enderecoLogico}
+                    onChange={(e) => setEnderecoLogico(e.target.value)}
+                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 text-xs font-semibold block mb-1">Quantidade de Admins *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={qntdAdmin}
+                    onChange={(e) => handleQntdChange(Number(e.target.value))}
+                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 text-xs font-semibold block mb-1">Setor</label>
+                  <input
+                    type="text"
+                    placeholder="EX: SECOM"
+                    value={setor}
+                    onChange={(e) => setSetor(e.target.value)}
+                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 text-xs font-semibold block mb-1">Departamento</label>
+                  <input
+                    type="text"
+                    placeholder="EX: SECOM"
+                    value={departamento}
+                    onChange={(e) => setDepartamento(e.target.value)}
+                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+              </div>
+
+              {/* LEQUES DE NOMES DOS ADMINISTRADORES */}
+              <div className="space-y-2 pt-2 border-t border-[#1e293b]">
+                <label className="text-amber-400 text-xs font-bold block">
+                  Nome(s) dos Administradores ({listaAdmins.length})
+                </label>
+                {listaAdmins.map((admName, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-500 w-6">#{idx + 1}</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder={`Nome do Admin / Conta ${idx + 1} (ex: SEC-Administradores)`}
+                      value={admName}
+                      onChange={(e) => handleAdminNameChange(idx, e.target.value)}
+                      className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                ))}
               </div>
 
               <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Qtd. Admins</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={qntdAdmin}
-                  onChange={(e) => setQntdAdmin(Number(e.target.value))}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Administradores (Contas/Grupos) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="EX: SEC-Administradores"
-                  value={administradores}
-                  onChange={(e) => setAdministradores(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Setor</label>
-                <input
-                  type="text"
-                  placeholder="EX: SECOM"
-                  value={setor}
-                  onChange={(e) => setSetor(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Departamento</label>
-                <input
-                  type="text"
-                  placeholder="EX: SECOM"
-                  value={departamento}
-                  onChange={(e) => setDepartamento(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Justificativa / Chamado</label>
+                <label className="text-slate-400 text-xs font-semibold block mb-1">Justificativa / Motivo</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="Descreva o motivo da concessão..."
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
@@ -687,7 +706,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
                 />
               </div>
 
-              <div className="sm:col-span-2 flex justify-end gap-2 pt-3 border-t border-[#1e293b]">
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#1e293b]">
                 <button
                   type="button"
                   onClick={() => setShowFormModal(false)}

@@ -158,7 +158,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     setShowFormModal(true);
   }
 
-  // Atualizar quantidade e ajustar o vetor de nomes dinamicamente
+  // Ajusta vetor de nomes conforme quantidade
   function handleQntdChange(novaQtd: number) {
     const qtd = Math.max(1, novaQtd);
     setQntdAdmin(qtd);

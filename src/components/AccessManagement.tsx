@@ -1,142 +1,141 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Shield, UserPlus, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
-import type { AuthUser, SystemRole } from '@/types';
+import { ShieldCheck, UserPlus, Trash2, Edit2, AlertCircle, CheckCircle2, Search } from 'lucide-react';
+import type { PermissaoUsuario, SystemRole } from '@/types';
 
 interface AccessManagementProps {
-  currentUser: AuthUser | null;
-  role: SystemRole;
+  currentRole: SystemRole;
 }
 
-interface UserPermission {
-  id: string;
-  email: string;
-  role: SystemRole;
-  criado_em?: string;
-}
-
-const ROLES_DISPONIVEIS: { value: SystemRole; label: string; desc: string }[] = [
-  { value: 'super_admin', label: 'Super Admin', desc: 'Acesso total, incluindo gestão de acessos e locais.' },
-  { value: 'admin', label: 'Admin', desc: 'Gerencia licenças, softwares e locais.' },
-  { value: 'editor', label: 'Editor', desc: 'Cria e edita licenças e softwares.' },
-  { value: 'consulta', label: 'Leitor', desc: 'Apenas visualização e relatórios.' },
-];
-
-export function AccessManagement({ currentUser, role }: AccessManagementProps) {
-  const [users, setUsers] = useState<UserPermission[]>([]);
+export function AccessManagement({ currentRole }: AccessManagementProps) {
+  const [usuarios, setUsuarios] = useState<PermissaoUsuario[]>([]);
   const [loading, setLoading] = useState(true);
-  const [emailInput, setEmailInput] = useState('');
-  const [roleInput, setRoleInput] = useState<SystemRole>('consulta');
+  const [search, setSearch] = useState('');
+  
+  // Form states
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<SystemRole>('editor');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const isSuperAdmin = role === 'super_admin';
+  const isSuperAdmin = currentRole === 'super_admin';
 
-  async function fetchUsers() {
+  async function fetchUsuarios() {
     setLoading(true);
-    setError(null);
     try {
       const { data, error: err } = await supabase
         .from('permissoes_usuarios')
         .select('*')
-        .order('email');
+        .order('created_at', { ascending: false });
 
       if (err) throw err;
-      setUsers(data || []);
+      setUsuarios(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar permissões.');
+      console.error('Erro ao buscar lista de acessos:', err);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsuarios();
   }, []);
 
-  async function handleAddUser(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!emailInput.trim()) return;
+    if (!email.trim()) return;
 
     setSaving(true);
     setError(null);
     setSuccess(null);
 
-    const emailFormatted = emailInput.trim().toLowerCase();
-
     try {
-      const { error: err } = await supabase.from('permissoes_usuarios').upsert(
-        {
-          email: emailFormatted,
-          role: roleInput,
-          atualizado_por: currentUser?.email ?? null,
-          atualizado_em: new Date().toISOString(),
-        },
-        { onConflict: 'email' }
-      );
+      if (editingId) {
+        // Atualizar perfil do usuário
+        const { error: err } = await supabase
+          .from('permissoes_usuarios')
+          .update({
+            role,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingId);
 
-      if (err) throw err;
+        if (err) throw err;
+        setSuccess('Permissão atualizada com sucesso!');
+      } else {
+        // Inserir novo usuário
+        const { error: err } = await supabase
+          .from('permissoes_usuarios')
+          .insert([
+            {
+              email: email.trim().toLowerCase(),
+              role,
+            },
+          ]);
 
-      setSuccess(`Permissão atribuída com sucesso a ${emailFormatted}.`);
-      setEmailInput('');
-      setRoleInput('consulta');
-      await fetchUsers();
+        if (err) throw err;
+        setSuccess('Usuário cadastrado com sucesso!');
+      }
+
+      setEmail('');
+      setRole('editor');
+      setEditingId(null);
+      await fetchUsuarios();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar permissão.');
-    } finally {
+    } fontally {
       setSaving(false);
     }
   }
 
-  async function handleDelete(u: UserPermission) {
-    if (u.email === currentUser?.email) {
-      setError('Você não pode remover suas próprias permissões de acesso.');
-      return;
-    }
-
-    if (!window.confirm(`Remover a permissão do usuário ${u.email}?`)) return;
-
+  function handleEdit(item: PermissaoUsuario) {
+    setEditingId(item.id);
+    setEmail(item.email);
+    setRole(item.role);
     setError(null);
     setSuccess(null);
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null);
+    setEmail('');
+    setRole('editor');
+  }
+
+  async function handleDelete(id: string, userEmail: string) {
+    if (!window.confirm(`Tem certeza que deseja remover o acesso de ${userEmail}?`)) return;
 
     try {
       const { error: err } = await supabase
         .from('permissoes_usuarios')
         .delete()
-        .eq('id', u.id);
+        .eq('id', id);
 
       if (err) throw err;
-
-      setSuccess(`Permissão de ${u.email} removida.`);
-      await fetchUsers();
+      await fetchUsuarios();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao excluir permissão.');
+      alert(err instanceof Error ? err.message : 'Erro ao remover permissão.');
     }
   }
 
-  if (!isSuperAdmin) {
-    return (
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-8 text-center text-[#94a3b8]">
-        <Shield className="w-12 h-12 text-amber-500/40 mx-auto mb-3" />
-        <h3 className="text-white font-bold text-lg mb-1">Acesso Restrito</h3>
-        <p className="text-sm">Apenas usuários com perfil <strong>Super Admin</strong> podem gerenciar permissões do sistema.</p>
-      </div>
-    );
-  }
+  const filteredUsuarios = usuarios.filter((u) =>
+    u.email.toLowerCase().includes(search.toLowerCase()) ||
+    u.role.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-white font-bold text-lg flex items-center gap-2">
-            <Shield className="w-5 h-5 text-[#D4AF37]" />
-            Gestão de Permissões e Acessos
-          </h2>
-          <p className="text-[#94a3b8] text-sm mt-0.5">
-            Controle de perfis de acesso dos operadores e administradores do ARGUS.
-          </p>
-        </div>
+      <div>
+        <h2 className="text-white font-bold text-lg flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-[#D4AF37]" />
+          Gestão de Acessos do Sistema
+        </h2>
+        <p className="text-[#94a3b8] text-sm mt-0.5">
+          Gerenciamento de funções e permissões dos usuários do Argus Coaten.
+        </p>
       </div>
 
       {error && (
@@ -153,114 +152,156 @@ export function AccessManagement({ currentUser, role }: AccessManagementProps) {
         </div>
       )}
 
-      {/* Formulário de Adição/Edição */}
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 shadow-lg">
-        <h3 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
-          <UserPlus className="w-4 h-4 text-[#D4AF37]" />
-          Conceder ou Alterar Permissão
-        </h3>
+      {/* Formulário de Adição/Edição (Super Admin) */}
+      {isSuperAdmin && (
+        <div className="bg-[#001E33] p-4 rounded-xl border border-[#1e293b]">
+          <h3 className="text-white font-semibold text-xs mb-3 flex items-center gap-1.5">
+            <UserPlus className="w-4 h-4 text-[#D4AF37]" />
+            {editingId ? 'Editar Permissão do Usuário' : 'Cadastrar Novo Acesso'}
+          </h3>
 
-        <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-          <div className="md:col-span-6">
-            <label className="text-[#94a3b8] text-xs font-semibold block mb-1">E-mail do Usuário</label>
-            <input
-              type="email"
-              required
-              placeholder="usuario@senado.leg.br"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 items-end">
+            <div className="flex-1 w-full">
+              <label className="text-[#94a3b8] text-xs font-semibold block mb-1">E-mail Corporativo *</label>
+              <input
+                type="email"
+                required
+                disabled={!!editingId}
+                placeholder="usuario@senado.leg.br"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] disabled:opacity-50"
+              />
+            </div>
 
-          <div className="md:col-span-4">
-            <label className="text-[#94a3b8] text-xs font-semibold block mb-1">Perfil de Acesso</label>
-            <select
-              value={roleInput}
-              onChange={(e) => setRoleInput(e.target.value as SystemRole)}
-              className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] cursor-pointer"
-            >
-              {ROLES_DISPONIVEIS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </div>
+            <div className="w-full sm:w-48">
+              <label className="text-[#94a3b8] text-xs font-semibold block mb-1">Perfil de Acesso *</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as SystemRole)}
+                className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
+              >
+                <option value="super_admin">super_admin</option>
+                <option value="admin">admin</option>
+                <option value="editor">editor</option>
+                <option value="consulta">consulta</option>
+              </select>
+            </div>
 
-          <div className="md:col-span-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full flex items-center justify-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
-            >
-              {saving ? 'Salvar...' : 'Salvar'}
-            </button>
-          </div>
-        </form>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="submit"
+                disabled={saving}
+                className="bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg text-sm transition-all disabled:opacity-50 cursor-pointer shadow-md w-full sm:w-auto whitespace-nowrap"
+              >
+                {saving ? 'Salvando...' : editingId ? 'Atualizar' : 'Adicionar Acesso'}
+              </button>
+
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="px-3 py-2 text-xs font-semibold text-[#94a3b8] hover:text-white transition-colors border border-[#1e293b] rounded-lg"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Busca */}
+      <div className="bg-[#001E33] p-4 rounded-xl border border-[#1e293b]">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]" />
+          <input
+            type="text"
+            placeholder="Buscar por e-mail ou perfil..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-[#001726] border border-[#1e293b] text-white pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
+          />
+        </div>
       </div>
 
-      {/* Tabela de Usuários com Acesso */}
+      {/* Tabela de Usuários */}
       <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#001726] border-b border-[#1e293b]">
               <tr>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Usuário</th>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Perfil</th>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3 text-right">Ações</th>
+                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">E-mail</th>
+                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Perfil (Role)</th>
+                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Criado em</th>
+                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Atualizado em</th>
+                {isSuperAdmin && <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e293b]">
               {loading && (
                 <tr>
-                  <td colSpan={3} className="text-center text-[#94a3b8] py-8 text-sm">
-                    Carregando permissões...
+                  <td colSpan={5} className="text-center text-[#94a3b8] py-8 text-sm">
+                    Carregando permissões do banco...
                   </td>
                 </tr>
               )}
 
-              {!loading && users.length === 0 && (
+              {!loading && filteredUsuarios.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="text-center text-[#94a3b8] py-8 text-sm">
-                    Nenhum acesso cadastrado manualmente.
+                  <td colSpan={5} className="text-center text-[#94a3b8] py-8 text-sm">
+                    Nenhum usuário encontrado.
                   </td>
                 </tr>
               )}
 
               {!loading &&
-                users.map((u) => {
-                  const isSelf = u.email === currentUser?.email;
-                  return (
-                    <tr key={u.id} className="hover:bg-[#001726]/50 transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="text-white text-sm font-medium flex items-center gap-2">
-                          {u.email}
-                          {isSelf && (
-                            <span className="text-[10px] bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/30 px-1.5 py-0.2 rounded font-semibold">
-                              Você
-                            </span>
-                          )}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="bg-[#1e293b] text-[#94a3b8] border border-[#334155] px-2.5 py-1 rounded-full text-xs font-semibold">
-                          {ROLES_DISPONIVEIS.find((r) => r.value === u.role)?.label ?? u.role}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
+                filteredUsuarios.map((u) => (
+                  <tr key={u.id} className="hover:bg-[#001726]/50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-white text-xs">
+                      {u.email}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border ${
+                          u.role === 'super_admin'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                            : u.role === 'admin'
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                            : u.role === 'editor'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
+                        }`}
+                      >
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-[#94a3b8] font-mono">
+                      {u.created_at ? new Date(u.created_at).toLocaleString('pt-BR') : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-[#94a3b8] font-mono">
+                      {u.updated_at ? new Date(u.updated_at).toLocaleString('pt-BR') : '-'}
+                    </td>
+                    {isSuperAdmin && (
+                      <td className="px-4 py-3 text-right space-x-1">
                         <button
-                          onClick={() => handleDelete(u)}
-                          disabled={isSelf}
-                          className="p-1.5 text-[#94a3b8] hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-all disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
-                          title={isSelf ? 'Você não pode remover seu próprio acesso' : 'Remover permissão'}
+                          onClick={() => handleEdit(u)}
+                          className="p-1.5 text-[#94a3b8] hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 rounded-md transition-all cursor-pointer"
+                          title="Editar Perfil"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(u.id, u.email)}
+                          className="p-1.5 text-[#94a3b8] hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-all cursor-pointer"
+                          title="Excluir Permissão"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
-                    </tr>
-                  );
-                })}
+                    )}
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

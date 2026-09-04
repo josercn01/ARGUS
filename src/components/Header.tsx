@@ -9,7 +9,7 @@ import {
 import type { AuthUser, SystemRole } from '@/types';
 import { supabase } from '@/lib/supabase';
 
-export type TabKey = 'dashboard' | 'softwares' | 'locais' | 'permissoes';
+export type TabKey = 'dashboard' | 'softwares' | 'Administradores' | 'permissoes';
 
 interface HeaderProps {
   user: AuthUser | null;
@@ -27,7 +27,7 @@ export function Header({ user, role, activeTab, onTabChange }: HeaderProps) {
   const navItems: { id: TabKey; label: string; icon: React.ElementType }[] = [
     { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard },
     { id: 'softwares', label: 'Softwares', icon: Package },
-    { id: 'locais', label: 'Locais', icon: MapPin },
+    { id: 'Administradores', label: 'Administradores', icon: MapPin },
     { id: 'permissoes', label: 'Acessos', icon: ShieldCheck },
   ];
 

@@ -9,7 +9,7 @@ import {
 import type { AuthUser, SystemRole } from '@/types';
 import { supabase } from '@/lib/supabase';
 
-export type TabKey = 'dashboard' | 'softwares' | 'Administradores' | 'permissoes';
+export type TabKey = 'dashboard' | 'softwares' | 'Locais' | 'permissoes';
 
 interface HeaderProps {
   user: AuthUser | null;

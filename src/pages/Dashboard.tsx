@@ -33,12 +33,20 @@ export function Dashboard({ user, role }: DashboardProps) {
       const [licRes, softRes, locRes] = await Promise.all([
         supabase.from('licencas_usuarios').select('*').order('nome'),
         supabase.from('softwares').select('*').order('nome'),
-        supabase.from('locais_trabalho').select('*').order('nome'),
+        supabase.from('administradores_locais').select('*').order('endereco_logico'),
       ]);
 
       if (licRes.data) setLicencas(licRes.data);
       if (softRes.data) setSoftwares(softRes.data);
-      if (locRes.data) setLocais(locRes.data);
+      if (locRes.data) {
+        // Mapeia para o formato esperado caso necessário
+        const mappedLocais = locRes.data.map((item: any) => ({
+          id: item.id,
+          nome: item.endereco_logico,
+          ...item
+        }));
+        setLocais(mappedLocais);
+      }
     } catch (err) {
       console.error('Erro ao carregar dados do Dashboard:', err);
     } finally {
@@ -56,13 +64,13 @@ export function Dashboard({ user, role }: DashboardProps) {
       const q = search.toLowerCase().trim();
       const matchNome = item.nome?.toLowerCase().includes(q);
       const matchEmail = item.email?.toLowerCase().includes(q);
-      const matchLogin = item.login?.toLowerCase().includes(q);
-      const matchChapa = (item.chapa_matricula || item.matricula)?.toLowerCase().includes(q);
+      const matchLogin = (item as any).login?.toLowerCase().includes(q);
+      const matchChapa = ((item as any).chapa_matricula || item.matricula)?.toLowerCase().includes(q);
       if (!matchNome && !matchEmail && !matchLogin && !matchChapa) return false;
     }
 
-    if (selectedSoftware && item.software_id !== selectedSoftware) return false;
-    if (selectedLocal && item.local_id !== selectedLocal) return false;
+    if (selectedSoftware && (item as any).software_id !== selectedSoftware) return false;
+    if (selectedLocal && (item as any).local_id !== selectedLocal) return false;
     if (selectedStatus && item.status !== selectedStatus) return false;
 
     return true;
@@ -120,9 +128,8 @@ export function Dashboard({ user, role }: DashboardProps) {
 
         {activeTab === 'locais' && (
           <AdminLocais
-            locais={locais}
+            user={user}
             role={role}
-            onRefresh={loadData}
           />
         )}
 

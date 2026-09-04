@@ -45,6 +45,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro inesperado ao iniciar login:', err);
       setAuthError('Erro inesperado ao conectar com o provedor de identidade.');
     }
+
+// Função disparada pelo botão "Entrar com Conta Corporativa"
+  const signIn = async () => {
+    try {
+      setAuthError(null);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: window.location.origin,
+          scopes: 'openid email profile User.Read',
+        },
+      });
+      if (error) {
+        console.error('Erro no signInWithOAuth:', error.message);
+        setAuthError(error.message);
+      }
+    } catch (err) {
+      console.error('Erro inesperado ao iniciar login:', err);
+      setAuthError('Erro inesperado ao conectar com o provedor de identidade.');
+    }
+  };
+   
   };
 
   const signOut = async () => {

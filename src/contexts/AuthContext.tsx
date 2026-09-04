@@ -1,106 +1,78 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { AuthUser, Role } from '@/types';
+import type { AuthUser, SystemRole } from '@/types';
 
 interface AuthContextType {
   user: AuthUser | null;
+  role: SystemRole;
   loading: boolean;
-  signIn: () => Promise<void>;
-  signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
-
-const SUPER_ADMIN_EMAILS = ['josercn@senado.leg.br'];
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  role: 'consulta',
+  loading: true,
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [role, setRole] = useState<SystemRole>('consulta');
   const [loading, setLoading] = useState(true);
 
-  async function loadUserProfile(email: string, displayName: string) {
-    const { data } = await supabase
-      .from('perfis_usuarios')
-      .select('role')
-      .eq('email', email)
-      .maybeSingle();
+  async function fetchUserRole(email: string) {
+    try {
+      const { data, error } = await supabase
+        .from('permissoes_usuarios')
+        .select('role')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
 
-    let role: Role;
-    if (SUPER_ADMIN_EMAILS.includes(email.toLowerCase())) {
-      role = 'super_admin';
-      await supabase
-        .from('perfis_usuarios')
-        .upsert({ email, role: 'super_admin' }, { onConflict: 'email' });
-    } else {
-      role = (data?.role as Role) ?? 'consulta';
+      if (error) {
+        console.error('Erro ao consultar permissoes_usuarios:', error);
+        setRole('consulta');
+        return;
+      }
+
+      if (data && data.role) {
+        setRole(data.role as SystemRole);
+      } else {
+        setRole('consulta');
+      }
+    } catch (err) {
+      console.error('Erro na requisição de role:', err);
+      setRole('consulta');
     }
-    setUser({ email, name: displayName, role });
   }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const email = session.user.email ?? '';
-        const name =
-          session.user.user_metadata?.full_name ??
-          session.user.user_metadata?.name ??
-          email;
-        (async () => {
-          await loadUserProfile(email, name);
-          setLoading(false);
-        })();
-      } else {
-        setLoading(false);
+      const currentUser = (session?.user as unknown as AuthUser) || null;
+      setUser(currentUser);
+      if (currentUser?.email) {
+        fetchUserRole(currentUser.email);
       }
+      setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        (async () => {
-          if (session?.user) {
-            const email = session.user.email ?? '';
-            const name =
-              session.user.user_metadata?.full_name ??
-              session.user.user_metadata?.name ??
-              email;
-            await loadUserProfile(email, name);
-          } else {
-            setUser(null);
-          }
-          setLoading(false);
-        })();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = (session?.user as unknown as AuthUser) || null;
+      setUser(currentUser);
+      if (currentUser?.email) {
+        fetchUserRole(currentUser.email);
+      } else {
+        setRole('consulta');
       }
-    );
+      setLoading(false);
+    });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  async function signIn() {
-    await supabase.auth.signInWithOAuth({
-      provider: 'azure',
-      options: {
-        scopes: 'email profile',
-        redirectTo: window.location.origin,
-        queryParams: {
-          tenant: '751d81cc-4c2c-4d22-ad41-440700d5dd0e',
-        },
-      },
-    });
-  }
-
-  async function signOut() {
-    await supabase.auth.signOut();
-    setUser(null);
-  }
-
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, role, loading }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
-  return ctx;
-}
+export const useAuth = () => useContext(AuthContext);

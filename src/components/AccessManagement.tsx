@@ -86,7 +86,7 @@ export function AccessManagement({ currentRole }: AccessManagementProps) {
       await fetchUsuarios();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar permissão.');
-    } fontally {
+    } finally {
       setSaving(false);
     }
   }

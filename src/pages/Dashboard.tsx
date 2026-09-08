@@ -126,7 +126,7 @@ export function Dashboard({ user, role }: DashboardProps) {
           />
         )}
 
-        {activeTab === 'locais' && (
+        {activeTab === 'admin-locais' && (
           <AdminLocais
             user={user}
             role={role}

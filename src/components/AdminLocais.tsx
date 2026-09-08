@@ -627,7 +627,7 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabela com cabeçalho fixo (sticky) e sem a coluna status */}
+      {/* Tabela com cabeçalho fixo (sticky) */}
       <div className="bg-[#0b1329] border border-[#1e293b] rounded-2xl shadow-xl overflow-hidden">
         <div className="max-h-[600px] overflow-y-auto relative">
           <table className="w-full text-left text-sm border-collapse">
@@ -659,14 +659,30 @@ export const AdminLocais: React.FC = () => {
                         <span className="text-slate-500">{item.departamento || 'Geral'}</span>
                       </td>
                       <td className="p-4 text-xs text-slate-400">
-                        <div className="flex items-center gap-1 font-medium text-slate-300">
-                          <User className="w-3 h-3 text-slate-500" />
-                          {item.modificado_por || 'Sistema'}
-                        </div>
-                        <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                          <Clock className="w-3 h-3" />
-                          {item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR') : '-'}
-                        </div>
+                        {(() => {
+                          const modPor = item.modificado_por || 'Sistema';
+                          const parts = modPor.split(/[-–()]+/);
+                          const nome = parts[0]?.trim() || modPor;
+                          const email = parts[1]?.trim() || (parts.length > 2 ? parts[2]?.trim() : '');
+
+                          return (
+                            <div>
+                              <div className="flex items-center gap-1 font-medium text-slate-200">
+                                <User className="w-3 h-3 text-blue-400" />
+                                {nome}
+                              </div>
+                              {email && (
+                                <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                                  {email.includes('@') ? email : `@${email}`}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-1">
+                                <Clock className="w-3 h-3" />
+                                {item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR') : '-'}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-2">
@@ -779,7 +795,6 @@ export const AdminLocais: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase md:hidden">Setor</label>
                   <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Setor</label>
                   <input
                     type="text"

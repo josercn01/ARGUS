@@ -18,7 +18,8 @@ import {
   Clock,
   Shield,
   Layers,
-  Briefcase
+  Briefcase,
+  RotateCcw
 } from 'lucide-react';
 
 export interface AdminRecord {
@@ -34,28 +35,36 @@ export interface AdminRecord {
   updated_at?: string;
 }
 
-export interface AlertaItem {
+export interface HistoryItem {
+  id: string;
   endereco_logico: string;
-  administradores: string;
-  status: string;
+  administradores_antigos: string;
+  administradores_novos: string;
+  modificado_por: string;
+  updated_at: string;
+  tipo_acao: string;
 }
 
 export const AdminLocais: React.FC = () => {
   const [data, setData] = useState<AdminRecord[]>([]);
+  const [historico, setHistorico] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [importing, setImporting] = useState<boolean>(false);
   const [search, setSearch] = useState<string>('');
   const [filterAlerta, setFilterAlerta] = useState<boolean>(false);
-  const [alertasRecentes, setAlertasRecentes] = useState<AlertaItem[]>([]);
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [currentRecord, setCurrentRecord] = useState<Partial<AdminRecord>>({});
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+
   const currentUser = 'Administrador TI (Senado)';
+  const currentUserEmail = 'admin.sti@senado.leg.br';
 
   useEffect(() => {
     loadData();
+    loadHistorico();
   }, []);
 
   const contarAdmins = (adminsStr: string): number => {
@@ -101,15 +110,56 @@ export const AdminLocais: React.FC = () => {
     }
   };
 
+  const loadHistorico = async () => {
+    try {
+      const { data: histData, error } = await supabase
+        .from('administradores_locais_historico')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        // Se a tabela de histórico não existir, apenas ignora ou simula
+        console.warn('Tabela de histórico não encontrada ou vazia:', error.message);
+        setHistorico([]);
+        return;
+      }
+      setHistorico(histData || []);
+    } catch (err) {
+      setHistorico([]);
+    }
+  };
+
+  const registrarHistorico = async (
+    endereco: string,
+    adminsAntigos: string,
+    adminsNovos: string,
+    acao: string
+  ) => {
+    try {
+      await supabase.from('administradores_locais_historico').insert([
+        {
+          endereco_logico: endereco,
+          administradores_antigos: adminsAntigos,
+          administradores_novos: adminsNovos,
+          modificado_por: `${currentUser} (${currentUserEmail})`,
+          updated_at: new Date().toISOString(),
+          tipo_acao: acao
+        }
+      ]);
+      loadHistorico();
+    } catch (err) {
+      console.error('Erro ao registrar histórico:', err);
+    }
+  };
+
   const topSetores = useMemo(() => {
     const counts: Record<string, number> = {};
     data.forEach((item) => {
       const setor = item.setor || 'Não Definido';
       counts[setor] = (counts[setor] || 0) + 1;
     });
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [data]);
 
   const topDepartamentos = useMemo(() => {
@@ -118,9 +168,17 @@ export const AdminLocais: React.FC = () => {
       const dept = item.departamento || 'Não Definido';
       counts[dept] = (counts[dept] || 0) + 1;
     });
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [data]);
+
+  const totalSetoresGeral = useMemo(() => {
+    const uniqueSetores = new Set(data.map((item) => (item.setor || 'Não Definido').trim().toUpperCase()));
+    return uniqueSetores.size;
+  }, [data]);
+
+  const totalDepartamentosGeral = useMemo(() => {
+    const uniqueDept = new Set(data.map((item) => (item.departamento || 'Não Definido').trim().toUpperCase()));
+    return uniqueDept.size;
   }, [data]);
 
   const handleOpenNewModal = () => {
@@ -148,29 +206,37 @@ export const AdminLocais: React.FC = () => {
       return;
     }
 
+    const host = currentRecord.endereco_logico.trim().toUpperCase();
+    const adminsNovos = currentRecord.administradores.trim();
+
     const payload = {
-      endereco_logico: currentRecord.endereco_logico.trim().toUpperCase(),
-      administradores: currentRecord.administradores.trim(),
-      qtd_admin: contarAdmins(currentRecord.administradores),
+      endereco_logico: host,
+      administradores: adminsNovos,
+      qtd_admin: contarAdmins(adminsNovos),
       departamento: currentRecord.departamento?.trim() || 'Geral',
       setor: currentRecord.setor?.trim() || 'Geral',
       justificativa: currentRecord.justificativa?.trim() || '',
-      modificado_por: currentUser,
+      modificado_por: `${currentUser} - ${currentUserEmail}`,
       updated_at: new Date().toISOString()
     };
 
     try {
       if (isEditing && currentRecord.id) {
+        const antigo = data.find((i) => i.id === currentRecord.id);
+        const adminsAntigos = antigo ? antigo.administradores : '';
+
         const { error } = await supabase
           .from('administradores_locais')
           .update(payload)
           .eq('id', currentRecord.id);
         if (error) throw error;
+
+        await registrarHistorico(host, adminsAntigos, adminsNovos, 'EDIÇÃO');
       } else {
-        const { error } = await supabase
-          .from('administradores_locais')
-          .insert([payload]);
+        const { error } = await supabase.from('administradores_locais').insert([payload]);
         if (error) throw error;
+
+        await registrarHistorico(host, '(Nenhum)', adminsNovos, 'CRIAÇÃO');
       }
 
       setIsModalOpen(false);
@@ -180,15 +246,71 @@ export const AdminLocais: React.FC = () => {
     }
   };
 
-  const handleDeleteRecord = async (id: string, host: string) => {
+  const handleDeleteRecord = async (id: string, host: string, admins: string) => {
     if (!confirm(`Deseja realmente excluir o registro da estação ${host}?`)) return;
 
     try {
       const { error } = await supabase.from('administradores_locais').delete().eq('id', id);
       if (error) throw error;
+
+      await registrarHistorico(host, admins, '(Excluído)', 'EXCLUSÃO');
       loadData();
     } catch (err: any) {
       alert(`Erro ao excluir: ${err.message}`);
+    }
+  };
+
+  const handleDesfazerAlteracao = async (itemHist: HistoryItem) => {
+    if (!confirm(`Deseja reverter a estação ${itemHist.endereco_logico} para o estado anterior?`)) return;
+
+    try {
+      // Localiza se a estação existe na base atual
+      const existente = data.find(
+        (i) => i.endereco_logico.toUpperCase() === itemHist.endereco_logico.toUpperCase()
+      );
+
+      if (itemHist.tipo_acao === 'EXCLUSÃO' || itemHist.administradores_antigos === '(Excluído)') {
+        alert('Este item foi excluído. Recrie-o manualmente ou insira os dados anteriores.');
+        return;
+      }
+
+      const payload = {
+        administradores: itemHist.administradores_antigos,
+        qtd_admin: contarAdmins(itemHist.administradores_antigos),
+        modificado_por: `${currentUser} - ${currentUserEmail} (REVERSÃO)`,
+        updated_at: new Date().toISOString()
+      };
+
+      if (existente && existente.id) {
+        const { error } = await supabase
+          .from('administradores_locais')
+          .update(payload)
+          .eq('id', existente.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('administradores_locais').insert([
+          {
+            endereco_logico: itemHist.endereco_logico,
+            ...payload,
+            departamento: 'Geral',
+            setor: 'Geral'
+          }
+        ]);
+        if (error) throw error;
+      }
+
+      await registrarHistorico(
+        itemHist.endereco_logico,
+        itemHist.administradores_novos,
+        itemHist.administradores_antigos,
+        'REVERSÃO'
+      );
+
+      alert(`Alteração desfeita com sucesso para a estação ${itemHist.endereco_logico}!`);
+      setIsHistoryModalOpen(false);
+      loadData();
+    } catch (err: any) {
+      alert(`Erro ao desfazer alteração: ${err.message}`);
     }
   };
 
@@ -210,50 +332,59 @@ export const AdminLocais: React.FC = () => {
           data.map((item) => [item.endereco_logico.toString().trim().toUpperCase(), item])
         );
 
-        const novosAlertas: AlertaItem[] = [];
         const payloadToUpsert: any[] = [];
         let added = 0;
         let updated = 0;
 
-        importedRows.forEach((row) => {
+        for (const row of importedRows) {
           const host = (
             row['ENDEREÇO LÓGICO'] || row.ENDERECO_LOGICO || row.Host || row.HOSTNAME || ''
-          ).toString().trim().toUpperCase();
+          )
+            .toString()
+            .trim()
+            .toUpperCase();
 
           const admins = (
-            row['ADMINISTRADORES LOCAIS'] || row.ADMINISTRADORES_LOCAIS || row.ADMINISTRADORES || row.Admins || ''
-          ).toString().trim();
+            row['ADMINISTRADORES LOCAIS'] ||
+            row.ADMINISTRADORES_LOCAIS ||
+            row.ADMINISTRADORES ||
+            row.Admins ||
+            ''
+          )
+            .toString()
+            .trim();
 
-          if (!host) return;
+          if (!host) continue;
 
-          if (!currentMap.has(host)) {
+          const existing = currentMap.get(host);
+          if (!existing) {
             added++;
-            novosAlertas.push({ endereco_logico: host, administradores: admins, status: 'Revisar permissionamento' });
             payloadToUpsert.push({
               endereco_logico: host,
               administradores: admins,
               qtd_admin: contarAdmins(admins),
               alerta: 'Revisar permissionamento',
-              justificativa: '[NOVO DISPOSITIVO] Não consta na base cadastrada',
-              modificado_por: currentUser,
+              justificativa: '[NOVO DISPOSITIVO] Importado via planilha',
+              modificado_por: `${currentUser} - ${currentUserEmail}`,
               updated_at: new Date().toISOString()
             });
+            await registrarHistorico(host, '(Nenhum)', admins, 'IMPORTAÇÃO (NOVO)');
           } else {
             updated++;
-            const existing = currentMap.get(host)!;
             payloadToUpsert.push({
               id: existing.id,
               endereco_logico: host,
               administradores: admins,
               qtd_admin: contarAdmins(admins),
               alerta: existing.alerta || null,
-              modificado_por: currentUser,
+              modificado_por: `${currentUser} - ${currentUserEmail}`,
               updated_at: new Date().toISOString()
             });
+            if (existing.administradores !== admins) {
+              await registrarHistorico(host, existing.administradores, admins, 'IMPORTAÇÃO (ATUALIZAÇÃO)');
+            }
           }
-        });
-
-        setAlertasRecentes(novosAlertas);
+        }
 
         for (let i = 0; i < payloadToUpsert.length; i += 300) {
           const chunk = payloadToUpsert.slice(i, i + 300);
@@ -261,7 +392,7 @@ export const AdminLocais: React.FC = () => {
           if (error) throw error;
         }
 
-        alert(`Importação concluída! Atualizados: ${updated} | Novos com alerta: ${added}`);
+        alert(`Importação concluída! Atualizados: ${updated} | Novos: ${added}`);
         loadData();
       } catch (err: any) {
         alert(`Erro na importação: ${err.message}`);
@@ -312,8 +443,6 @@ export const AdminLocais: React.FC = () => {
   const totalAdminsGeral = useMemo(() => {
     return data.reduce((acc, item) => acc + (item.qtd_admin || contarAdmins(item.administradores)), 0);
   }, [data]);
-  const totalSetores = topSetores.length;
-  const totalDepartamentos = topDepartamentos.length;
 
   return (
     <div className="space-y-6 font-sans text-slate-100">
@@ -329,6 +458,14 @@ export const AdminLocais: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsHistoryModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600/80 text-white rounded-lg hover:bg-indigo-600 transition-colors shadow-sm text-sm font-medium border border-indigo-500/30"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Desfazer Alteração
+          </button>
+
           <button
             onClick={handleOpenNewModal}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors shadow-sm text-sm font-medium"
@@ -357,7 +494,7 @@ export const AdminLocais: React.FC = () => {
         </div>
       </header>
 
-      {/* Cards Superiores */}
+      {/* Cards Superiores - Todo azul escuro (#0b1329) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
           <div>
@@ -387,7 +524,7 @@ export const AdminLocais: React.FC = () => {
 
         <div 
           onClick={() => setFilterAlerta(!filterAlerta)} 
-          className={`p-5 rounded-2xl border cursor-pointer transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${filterAlerta ? 'bg-[#1e1b18] border-amber-500/50 ring-2 ring-amber-500/30' : 'bg-[#0b1329] border-[#1e293b] hover:border-amber-500/40'}`}
+          className={`p-5 rounded-2xl border cursor-pointer transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${filterAlerta ? 'bg-[#0b1329] border-amber-500 ring-2 ring-amber-500/30' : 'bg-[#0b1329] border-[#1e293b] hover:border-amber-500/40'}`}
         >
           <div>
             <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Alertas</p>
@@ -404,10 +541,10 @@ export const AdminLocais: React.FC = () => {
         <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total de Setores</p>
-            <p className="text-3xl font-extrabold text-white mt-1">{totalSetores}</p>
+            <p className="text-3xl font-extrabold text-white mt-1">{totalSetoresGeral}</p>
           </div>
           <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
-            <span>Setores mapeados</span>
+            <span>Total cadastrados</span>
             <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
               <Layers className="w-4 h-4" />
             </div>
@@ -417,10 +554,10 @@ export const AdminLocais: React.FC = () => {
         <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Departamentos</p>
-            <p className="text-3xl font-extrabold text-white mt-1">{totalDepartamentos}</p>
+            <p className="text-3xl font-extrabold text-white mt-1">{totalDepartamentosGeral}</p>
           </div>
           <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
-            <span>Departamentos ativos</span>
+            <span>Total cadastrados</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
               <Briefcase className="w-4 h-4" />
             </div>
@@ -428,17 +565,18 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
-      {/* Gráficos com borda neon */}
+      {/* Gráficos com linha circulando em neon no título e fundo azul escuro */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-[#0b1329] p-6 rounded-2xl border border-[#1e293b] shadow-xl relative space-y-4">
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-8 h-8 rounded-full border border-blue-400/50 shadow-[0_0_12px_rgba(59,130,246,0.5)]">
-              <BarChart3 className="w-4 h-4 text-blue-400 animate-pulse" />
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-full border border-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.8)] animate-[spin_6s_linear_infinite]">
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 animate-pulse"></div>
+              <BarChart3 className="w-4 h-4 text-blue-400" />
             </div>
             <h2 className="text-base font-bold text-white tracking-wide">Top 10 Setores com Mais Estações</h2>
           </div>
           <div className="space-y-3 pt-2">
-            {topSetores.map(([setor, count], idx) => {
+            {topSetores.slice(0, 10).map(([setor, count], idx) => {
               const maxVal = topSetores[0]?.[1] || 1;
               const pct = Math.round((count / maxVal) * 100);
               return (
@@ -458,13 +596,14 @@ export const AdminLocais: React.FC = () => {
 
         <div className="bg-[#0b1329] p-6 rounded-2xl border border-[#1e293b] shadow-xl relative space-y-4">
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-8 h-8 rounded-full border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.5)]">
-              <BarChart3 className="w-4 h-4 text-purple-400 animate-pulse" />
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-full border border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.8)] animate-[spin_6s_linear_infinite]">
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-pink-400 animate-pulse"></div>
+              <BarChart3 className="w-4 h-4 text-purple-400" />
             </div>
             <h2 className="text-base font-bold text-white tracking-wide">Top 10 Departamentos</h2>
           </div>
           <div className="space-y-3 pt-2">
-            {topDepartamentos.map(([dept, count], idx) => {
+            {topDepartamentos.slice(0, 10).map(([dept, count], idx) => {
               const maxVal = topDepartamentos[0]?.[1] || 1;
               const pct = Math.round((count / maxVal) * 100);
               return (
@@ -496,28 +635,27 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
+      {/* Tabela com cabeçalho fixo (sticky) */}
       <div className="bg-[#0b1329] border border-[#1e293b] rounded-2xl shadow-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-[#0f172a] text-slate-400 font-semibold uppercase text-xs tracking-wider border-b border-[#1e293b]">
-              <tr>
-                <th className="p-4">Estação de Trabalho</th>
-                <th className="p-4 text-center">Qtd Admins</th>
-                <th className="p-4">Quem são os Administradores</th>
-                <th className="p-4">Setor / Depto</th>
-                <th className="p-4">Modificado Por</th>
-                <th className="p-4 text-center">Status</th>
-                <th className="p-4 text-center">Ações</th>
+        <div className="max-h-[600px] overflow-y-auto relative">
+          <table className="w-full text-left text-sm border-collapse">
+            <thead className="bg-[#0f172a] text-slate-400 font-semibold uppercase text-xs tracking-wider sticky top-0 z-20 shadow-md">
+              <tr className="border-b border-[#1e293b] bg-[#0f172a]">
+                <th className="p-4 bg-[#0f172a]">Estação de Trabalho</th>
+                <th className="p-4 text-center bg-[#0f172a]">Qtd Admins</th>
+                <th className="p-4 bg-[#0f172a]">Quem são os Administradores</th>
+                <th className="p-4 bg-[#0f172a]">Setor / Depto</th>
+                <th className="p-4 bg-[#0f172a]">Modificado Por</th>
+                <th className="p-4 text-center bg-[#0f172a]">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e293b]">
               {loading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">Carregando dados...</td></tr>
+                <tr><td colSpan={6} className="p-8 text-center text-slate-400">Carregando dados...</td></tr>
               ) : filteredData.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
+                <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
               ) : (
                 filteredData.map((item) => {
-                  const temAlerta = item.alerta === 'Revisar permissionamento';
                   const qtdAdminsReal = item.qtd_admin || contarAdmins(item.administradores);
                   return (
                     <tr key={item.id || item.endereco_logico} className="hover:bg-[#111c38] transition-colors">
@@ -539,22 +677,11 @@ export const AdminLocais: React.FC = () => {
                         </div>
                       </td>
                       <td className="p-4 text-center">
-                        {temAlerta ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                            <AlertTriangle className="w-3 h-3 text-amber-400" /> Revisar
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle className="w-3 h-3 text-emerald-400" /> Conforme
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button onClick={() => handleOpenEditModal(item)} title="Editar" className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500/20 border border-blue-500/20">
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => item.id && handleDeleteRecord(item.id, item.endereco_logico)} title="Excluir" className="p-1.5 bg-rose-500/10 text-rose-400 rounded-lg hover:bg-rose-500/20 border border-rose-500/20">
+                          <button onClick={() => item.id && handleDeleteRecord(item.id, item.endereco_logico, item.administradores)} title="Excluir" className="p-1.5 bg-rose-500/10 text-rose-400 rounded-lg hover:bg-rose-500/20 border border-rose-500/20">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -568,6 +695,54 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
+      {/* Modal Histórico / Desfazer Alteração */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0b1329] rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden border border-[#1e293b] text-slate-100">
+            <div className="flex items-center justify-between p-5 border-b border-[#1e293b] bg-[#0f172a]">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-lg font-bold text-white">Histórico de Alterações (Últimas 10)</h3>
+              </div>
+              <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 max-h-[70vh] overflow-y-auto space-y-3">
+              <p className="text-xs text-slate-400 mb-2">Selecione abaixo a alteração que deseja reverter (desfazer):</p>
+              {historico.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">Nenhum histórico recente registrado.</p>
+              ) : (
+                historico.map((hist) => (
+                  <div key={hist.id} className="bg-[#0f172a] border border-[#1e293b] p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-indigo-500/50 transition-colors">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-white bg-blue-500/10 px-2 py-0.5 rounded text-xs border border-blue-500/20">{hist.endereco_logico}</span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{hist.tipo_acao || 'ALTERAÇÃO'}</span>
+                        <span className="text-xs text-slate-400 flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(hist.updated_at).toLocaleString('pt-BR')}</span>
+                      </div>
+                      <p className="text-xs text-slate-300"><strong>Modificado por:</strong> {hist.modificado_por}</p>
+                      <div className="text-xs text-slate-400 grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800">
+                        <div><span className="text-rose-400 font-semibold">Anterior:</span> {hist.administradores_antigos}</div>
+                        <div><span className="text-emerald-400 font-semibold">Novo:</span> {hist.administradores_novos}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDesfazerAlteracao(hist)}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-colors shadow-sm whitespace-nowrap self-end sm:self-center"
+                    >
+                      Desfazer esta
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="p-4 border-t border-[#1e293b] bg-[#0f172a] flex justify-end">
+              <button onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 bg-[#1e293b] text-slate-300 hover:bg-[#334155] rounded-xl text-xs font-medium">Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cadastro / Edição */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0b1329] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-[#1e293b] text-slate-100">
@@ -617,7 +792,7 @@ export const AdminLocais: React.FC = () => {
                     type="text"
                     placeholder="Ex: Suporte"
                     value={currentRecord.setor || ''}
-                    onChange={(e) => setCurrentReport({ ...currentRecord, setor: e.target.value })}
+                    onChange={(e) => setCurrentRecord({ ...currentRecord, setor: e.target.value })}
                     className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>

@@ -143,7 +143,7 @@ export const AdminLocais: React.FC = () => {
         }
       }
 
-      await supabase.from('administradores_locais_historico').insert([
+      const { error } = await supabase.from('administradores_locais_historico').insert([
         {
           endereco_logico: endereco,
           administradores_antigos: adminsAntigos,
@@ -152,6 +152,17 @@ export const AdminLocais: React.FC = () => {
           updated_at: new Date().toISOString(),
           tipo_acao: acao
         }
+      ]);
+
+      if (error) {
+        console.error('Erro ao gravar histórico no Supabase:', error.message, error.details);
+      } else {
+        // Atualiza a lista imediatamente após gravar com sucesso
+        await loadHistorico();
+      }
+    } catch (err) {
+      console.error('Erro crítico ao registrar histórico:', err);
+    }
       ]);
       loadHistorico();
     } catch (err) {

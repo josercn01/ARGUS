@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import {
   Upload,
@@ -17,21 +17,6 @@ interface AdminLocaisProps {
   user: AuthUser | null;
   role: SystemRole;
 }
-
-const SUPABASE_URL = 'https://uwryfadjkscmxlsbpqas.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnlmYWRqa3NjbXhsc2JwcWFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTM5NzEsImV4cCI6MjEwMzE2OTk3MX0.1g6-eFtk-QAWG-q34NZiCmmvDo76hm4YSZGOaSM96RY';
-
-let supabaseInstance: any = null;
-const getSupabaseClient = () => {
-  if (!supabaseInstance) {
-    supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false }
-    });
-  }
-  return supabaseInstance;
-};
-
-const supabase = getSupabaseClient();
 
 export interface AdminRecord {
   id?: string;
@@ -59,7 +44,7 @@ export interface ImportResult {
   removed: number;
 }
 
-export const AdminLocais: React.FC<AdminLocaisProps> = ({ user, role }) => {
+export const AdminLocais: React.FC<AdminLocaisProps> = ({ role }) => {
   const [data, setData] = useState<AdminRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);

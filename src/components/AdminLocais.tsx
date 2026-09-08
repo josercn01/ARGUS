@@ -11,14 +11,16 @@ import {
   FileSpreadsheet,
   Database
 } from 'lucide-react';
+import type { AuthUser, SystemRole } from '@/types';
 
-// ==========================================
-// CONFIGURAÇÃO DO SUPABASE (Segura)
-// ==========================================
+interface AdminLocaisProps {
+  user: AuthUser | null;
+  role: SystemRole;
+}
+
 const SUPABASE_URL = 'https://uwryfadjkscmxlsbpqas.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnlmYWRqa3NjbXhsc2JwcWFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTM5NzEsImV4cCI6MjEwMzE2OTk3MX0.1g6-eFtk-QAWG-q34NZiCmmvDo76hm4YSZGOaSM96RY';
 
-// Evita múltiplas instâncias duplicadas se já houver cache global
 let supabaseInstance: any = null;
 const getSupabaseClient = () => {
   if (!supabaseInstance) {
@@ -31,9 +33,6 @@ const getSupabaseClient = () => {
 
 const supabase = getSupabaseClient();
 
-// ==========================================
-// INTERFACES DE DADOS
-// ==========================================
 export interface AdminRecord {
   id?: string;
   endereco_logico: string;
@@ -60,10 +59,7 @@ export interface ImportResult {
   removed: number;
 }
 
-// ==========================================
-// COMPONENTE PRINCIPAL
-// ==========================================
-export const GerenciadorAdministradores: React.FC = () => {
+export const AdminLocais: React.FC<AdminLocaisProps> = ({ user, role }) => {
   const [data, setData] = useState<AdminRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -266,7 +262,7 @@ export const GerenciadorAdministradores: React.FC = () => {
   const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
 
   return (
-    <div className="w-full bg-slate-900 text-slate-100 p-6 space-y-6 font-sans min-h-[calc(100vh-5rem)]">
+    <div className="w-full space-y-6">
       {/* CABEÇALHO */}
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
@@ -281,21 +277,23 @@ export const GerenciadorAdministradores: React.FC = () => {
 
         {/* BARRA DE AÇÕES */}
         <div className="flex flex-wrap items-center gap-3">
-          <label
-            className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${
-              importing ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <Upload className="w-4 h-4" />
-            {importing ? 'Processando...' : 'Importar Planilha'}
-            <input
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileUpload}
-              disabled={importing}
-              className="hidden"
-            />
-          </label>
+          {role !== 'viewer' && (
+            <label
+              className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${
+                importing ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              {importing ? 'Processando...' : 'Importar Planilha'}
+              <input
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleFileUpload}
+                disabled={importing}
+                className="hidden"
+              />
+            </label>
+          )}
 
           <button
             onClick={exportarAlertasExcel}
@@ -333,7 +331,7 @@ export const GerenciadorAdministradores: React.FC = () => {
 
       {/* PAINEL DE MÉTRICAS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
+        <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total na Base</p>
             <p className="text-2xl font-extrabold text-white mt-1">{totalRegistros}</p>
@@ -348,7 +346,7 @@ export const GerenciadorAdministradores: React.FC = () => {
           className={`p-4 rounded-xl border cursor-pointer transition-all shadow-sm flex items-center justify-between ${
             filterAlerta
               ? 'bg-amber-950 border-amber-600 ring-2 ring-amber-500'
-              : 'bg-slate-800 border-slate-700 hover:border-amber-500'
+              : 'bg-slate-800/80 border-slate-700 hover:border-amber-500'
           }`}
         >
           <div>
@@ -360,7 +358,7 @@ export const GerenciadorAdministradores: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
+        <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Sem Inconsistências</p>
             <p className="text-2xl font-extrabold text-white mt-1">{totalRegistros - totalAlertas}</p>
@@ -389,7 +387,7 @@ export const GerenciadorAdministradores: React.FC = () => {
       )}
 
       {/* BUSCA */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-800/80 p-4 rounded-xl border border-slate-700 shadow-sm">
         <div className="relative w-full sm:w-96">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -411,7 +409,7 @@ export const GerenciadorAdministradores: React.FC = () => {
       </div>
 
       {/* TABELA */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-slate-800/80 border border-slate-700 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-900 text-slate-400 font-semibold uppercase text-xs tracking-wider border-b border-slate-700">
@@ -468,5 +466,4 @@ export const GerenciadorAdministradores: React.FC = () => {
   );
 };
 
-export { GerenciadorAdministradores as AdminLocais };
-export default GerenciadorAdministradores;
+export default AdminLocais;

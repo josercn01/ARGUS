@@ -58,9 +58,6 @@ export const AdminLocais: React.FC = () => {
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
 
-  const currentUser = 'Administrador TI (Senado)';
-  const currentUserEmail = 'admin.sti@senado.leg.br';
-
   useEffect(() => {
     loadData();
     loadHistorico();
@@ -131,15 +128,27 @@ export const AdminLocais: React.FC = () => {
     endereco: string,
     adminsAntigos: string,
     adminsNovos: string,
-    acao: string
+    acao: string,
+    nomeLogado?: string,
+    emailLogado?: string
   ) => {
     try {
+      let autorStr = nomeLogado && emailLogado ? `${nomeLogado} (${emailLogado})` : (nomeLogado || 'Administrador TI');
+      if (!nomeLogado) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const n = user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Administrador TI';
+          const e = user.email || '';
+          autorStr = e ? `${n} (${e})` : n;
+        }
+      }
+
       await supabase.from('administradores_locais_historico').insert([
         {
           endereco_logico: endereco,
           administradores_antigos: adminsAntigos,
           administradores_novos: adminsNovos,
-          modificado_por: `${currentUser} (${currentUserEmail})`,
+          modificado_por: autorStr,
           updated_at: new Date().toISOString(),
           tipo_acao: acao
         }
@@ -203,6 +212,12 @@ export const AdminLocais: React.FC = () => {
       return;
     }
 
+    // Busca o usuário autenticado na sessão atual do Supabase
+    const { data: { user } } = await supabase.auth.getUser();
+    const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
+    const emailUsuario = user?.email || '';
+    const modificadoPorStr = emailUsuario ? `${nomeUsuario} (${emailUsuario})` : nomeUsuario;
+
     const host = currentRecord.endereco_logico.trim().toUpperCase();
     const adminsNovos = currentRecord.administradores.trim();
 
@@ -212,7 +227,7 @@ export const AdminLocais: React.FC = () => {
       departamento: currentRecord.departamento?.trim() || 'Geral',
       setor: currentRecord.setor?.trim() || 'Geral',
       justificativa: currentRecord.justificativa?.trim() || '',
-      modificado_por: `${currentUser} - ${currentUserEmail}`,
+      modificado_por: modificadoPorStr,
       updated_at: new Date().toISOString()
     };
 
@@ -227,12 +242,12 @@ export const AdminLocais: React.FC = () => {
           .eq('id', currentRecord.id);
         if (error) throw error;
 
-        await registrarHistorico(host, adminsAntigos, adminsNovos, 'EDIÇÃO');
+        await registrarHistorico(host, adminsAntigos, adminsNovos, 'EDIÇÃO', nomeUsuario, emailUsuario);
       } else {
         const { error } = await supabase.from('administradores_locais').insert([payload]);
         if (error) throw error;
 
-        await registrarHistorico(host, '(Nenhum)', adminsNovos, 'CRIAÇÃO');
+        await registrarHistorico(host, '(Nenhum)', adminsNovos, 'CRIAÇÃO', nomeUsuario, emailUsuario);
       }
 
       setIsModalOpen(false);
@@ -246,10 +261,14 @@ export const AdminLocais: React.FC = () => {
     if (!confirm(`Deseja realmente excluir o registro da estação ${host}?`)) return;
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
+      const emailUsuario = user?.email || '';
+
       const { error } = await supabase.from('administradores_locais').delete().eq('id', id);
       if (error) throw error;
 
-      await registrarHistorico(host, admins, '(Excluído)', 'EXCLUSÃO');
+      await registrarHistorico(host, admins, '(Excluído)', 'EXCLUSÃO', nomeUsuario, emailUsuario);
       loadData();
     } catch (err: any) {
       alert(`Erro ao excluir: ${err.message}`);
@@ -260,6 +279,11 @@ export const AdminLocais: React.FC = () => {
     if (!confirm(`Deseja reverter a estação ${itemHist.endereco_logico} para o estado anterior?`)) return;
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
+      const emailUsuario = user?.email || '';
+      const modificadoPorStr = emailUsuario ? `${nomeUsuario} (${emailUsuario}) (REVERSÃO)` : `${nomeUsuario} (REVERSÃO)`;
+
       const existente = data.find(
         (i) => i.endereco_logico.toUpperCase() === itemHist.endereco_logico.toUpperCase()
       );
@@ -271,7 +295,7 @@ export const AdminLocais: React.FC = () => {
 
       const payload = {
         administradores: itemHist.administradores_antigos,
-        modificado_por: `${currentUser} - ${currentUserEmail} (REVERSÃO)`,
+        modificado_por: modificadoPorStr,
         updated_at: new Date().toISOString()
       };
 
@@ -297,7 +321,9 @@ export const AdminLocais: React.FC = () => {
         itemHist.endereco_logico,
         itemHist.administradores_novos,
         itemHist.administradores_antigos,
-        'REVERSÃO'
+        'REVERSÃO',
+        nomeUsuario,
+        emailUsuario
       );
 
       alert(`Alteração desfeita com sucesso para a estação ${itemHist.endereco_logico}!`);
@@ -316,6 +342,11 @@ export const AdminLocais: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
+        const emailUsuario = user?.email || '';
+        const modificadoPorStr = emailUsuario ? `${nomeUsuario} (${emailUsuario})` : nomeUsuario;
+
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
@@ -358,10 +389,10 @@ export const AdminLocais: React.FC = () => {
               administradores: admins,
               alerta: 'Revisar permissionamento',
               justificativa: '[NOVO DISPOSITIVO] Importado via planilha',
-              modificado_por: `${currentUser} - ${currentUserEmail}`,
+              modificado_por: modificadoPorStr,
               updated_at: new Date().toISOString()
             });
-            await registrarHistorico(host, '(Nenhum)', admins, 'IMPORTAÇÃO (NOVO)');
+            await registrarHistorico(host, '(Nenhum)', admins, 'IMPORTAÇÃO (NOVO)', nomeUsuario, emailUsuario);
           } else {
             updated++;
             payloadToUpsert.push({
@@ -369,11 +400,11 @@ export const AdminLocais: React.FC = () => {
               endereco_logico: host,
               administradores: admins,
               alerta: existing.alerta || null,
-              modificado_por: `${currentUser} - ${currentUserEmail}`,
+              modificado_por: modificadoPorStr,
               updated_at: new Date().toISOString()
             });
             if (existing.administradores !== admins) {
-              await registrarHistorico(host, existing.administradores, admins, 'IMPORTAÇÃO (ATUALIZAÇÃO)');
+              await registrarHistorico(host, existing.administradores, admins, 'IMPORTAÇÃO (ATUALIZAÇÃO)', nomeUsuario, emailUsuario);
             }
           }
         }
@@ -452,7 +483,7 @@ export const AdminLocais: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setIsHistoryModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600/80 text-white rounded-lg hover:bg-indigo-600 transition-colors shadow-sm text-sm font-medium border border-indigo-500/30"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600/85 text-white rounded-lg hover:bg-indigo-600 transition-colors shadow-sm text-sm font-medium border border-indigo-500/30"
           >
             <RotateCcw className="w-4 h-4" />
             Desfazer Alteração

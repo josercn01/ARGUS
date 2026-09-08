@@ -8,22 +8,16 @@ import {
   CheckCircle,
   Search,
   RefreshCw,
-  ShieldAlert,
   FileSpreadsheet,
   Database,
   Plus,
   Edit2,
   Trash2,
-  History,
   X,
   BarChart3,
   User,
   Clock
 } from 'lucide-react';
-
-// ==========================================
-// INTERFACES DE DADOS
-// ==========================================
 
 export interface AdminRecord {
   id?: string;
@@ -33,10 +27,8 @@ export interface AdminRecord {
   departamento?: string;
   setor?: string;
   justificativa?: string;
-  prefixo?: string;
   alerta?: string | null;
   modificado_por?: string;
-  created_at?: string;
   updated_at?: string;
 }
 
@@ -46,42 +38,22 @@ export interface AlertaItem {
   status: string;
 }
 
-export interface AuditLog {
-  id: string;
-  record_id: string;
-  endereco_logico: string;
-  action: 'INSERT' | 'UPDATE' | 'DELETE';
-  old_data?: any;
-  new_data?: any;
-  modificado_por: string;
-  created_at: string;
-}
-
-// ==========================================
-// COMPONENTE PRINCIPAL
-// ==========================================
-
 export const GerenciadorAdministradores: React.FC = () => {
   const [data, setData] = useState<AdminRecord[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [importing, setImporting] = useState<boolean>(false);
   const [search, setSearch] = useState<string>('');
   const [filterAlerta, setFilterAlerta] = useState<boolean>(false);
   const [alertasRecentes, setAlertasRecentes] = useState<AlertaItem[]>([]);
 
-  // Modais State
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
   const [currentRecord, setCurrentRecord] = useState<Partial<AdminRecord>>({});
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
-  // Usuário atual simulado/obtido (Pode ser integrado com auth do supabase)
   const currentUser = 'Administrador TI (Senado)';
 
   useEffect(() => {
     loadData();
-    loadAuditLogs();
   }, []);
 
   const loadData = async () => {
@@ -95,51 +67,11 @@ export const GerenciadorAdministradores: React.FC = () => {
       if (error) throw error;
       setData(dbData || []);
     } catch (err: any) {
-      alert(`Erro ao carregar dados do Supabase: ${err.message}`);
+      console.error(`Erro ao carregar dados: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
-
-  const loadAuditLogs = async () => {
-    try {
-      const { data: logs, error } = await supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (!error && logs) {
-        setAuditLogs(logs);
-      }
-    } catch (err) {
-      // Tabela de auditoria opcional caso não exista
-      console.log('Tabela de audit_logs não configurada ou vazia.');
-    }
-  };
-
-  const registrarAuditoria = async (recordId: string, host: string, action: 'INSERT' | 'UPDATE' | 'DELETE', oldData?: any, newData?: any) => {
-    try {
-      await supabase.from('audit_logs').insert([
-        {
-          record_id: recordId,
-          endereco_logico: host,
-          action,
-          old_data: oldData ? JSON.stringify(oldData) : null,
-          new_data: newData ? JSON.stringify(newData) : null,
-          modificado_por: currentUser,
-          created_at: new Date().toISOString()
-        }
-      ]);
-      loadAuditLogs();
-    } catch (e) {
-      console.error('Erro ao registrar log de auditoria', e);
-    }
-  };
-
-  // ==========================================
-  // GRÁFICOS (TOP 10 SETORES E DEPARTAMENTOS)
-  // ==========================================
 
   const topSetores = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -162,10 +94,6 @@ export const GerenciadorAdministradores: React.FC = () => {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10);
   }, [data]);
-
-  // ==========================================
-  // CRUD & FORMULÁRIOS
-  // ==========================================
 
   const handleOpenNewModal = () => {
     setCurrentRecord({
@@ -211,16 +139,11 @@ export const GerenciadorAdministradores: React.FC = () => {
           .update(payload)
           .eq('id', currentRecord.id);
         if (error) throw error;
-        await registrarAuditoria(currentRecord.id, payload.endereco_logico, 'UPDATE', currentRecord, payload);
       } else {
-        const { data: inserted, error } = await supabase
+        const { error } = await supabase
           .from('administradores_locais')
-          .insert([payload])
-          .select();
+          .insert([payload]);
         if (error) throw error;
-        if (inserted && inserted[0]) {
-          await registrarAuditoria(inserted[0].id, payload.endereco_logico, 'INSERT', null, payload);
-        }
       }
 
       setIsModalOpen(false);
@@ -236,38 +159,11 @@ export const GerenciadorAdministradores: React.FC = () => {
     try {
       const { error } = await supabase.from('administradores_locais').delete().eq('id', id);
       if (error) throw error;
-      await registrarAuditoria(id, host, 'DELETE');
       loadData();
     } catch (err: any) {
       alert(`Erro ao excluir: ${err.message}`);
     }
   };
-
-  const handleUndoAction = async (log: AuditLog) => {
-    if (!confirm(`Deseja desfazer a ação de ${log.action} para a estação ${log.endereco_logico}?`)) return;
-
-    try {
-      if (log.action === 'UPDATE' && log.old_data) {
-        const oldObj = JSON.parse(log.old_data);
-        await supabase.from('administradores_locais').update(oldObj).eq('id', log.record_id);
-      } else if (log.action === 'INSERT') {
-        await supabase.from('administradores_locais').delete().eq('id', log.record_id);
-      } else if (log.action === 'DELETE' && log.old_data) {
-        const oldObj = JSON.parse(log.old_data);
-        await supabase.from('administradores_locais').insert([oldObj]);
-      }
-
-      alert('Ação desfeita com sucesso!');
-      setIsHistoryModalOpen(false);
-      loadData();
-    } catch (err: any) {
-      alert(`Erro ao desfazer alteração: ${err.message}`);
-    }
-  };
-
-  // ==========================================
-  // IMPORTAÇÃO EXCEL
-  // ==========================================
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -351,10 +247,6 @@ export const GerenciadorAdministradores: React.FC = () => {
     reader.readAsBinaryString(file);
   };
 
-  // ==========================================
-  // EXPORTAÇÃO EXCEL
-  // ==========================================
-
   const exportarBaseCompletaExcel = () => {
     if (data.length === 0) return alert('Sem dados para exportar.');
     const dataToExport = data.map((item) => ({
@@ -374,7 +266,6 @@ export const GerenciadorAdministradores: React.FC = () => {
     XLSX.writeFile(wb, `Base_Administradores_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  // Filtragem
   const filteredData = useMemo(() => {
     const searchLower = search.toLowerCase().trim();
     return data.filter((item) => {
@@ -395,7 +286,6 @@ export const GerenciadorAdministradores: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 space-y-6 font-sans text-slate-800">
-      {/* CABEÇALHO */}
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -414,14 +304,6 @@ export const GerenciadorAdministradores: React.FC = () => {
           >
             <Plus className="w-4 h-4" />
             Novo Cadastro
-          </button>
-
-          <button
-            onClick={() => setIsHistoryModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors shadow-sm text-sm font-medium"
-          >
-            <History className="w-4 h-4" />
-            Desfazer / Histórico
           </button>
 
           <label className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${importing ? 'opacity-50' : ''}`}>
@@ -444,7 +326,6 @@ export const GerenciadorAdministradores: React.FC = () => {
         </div>
       </header>
 
-      {/* PAINEL DE MÉTRICAS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
@@ -471,9 +352,7 @@ export const GerenciadorAdministradores: React.FC = () => {
         </div>
       </div>
 
-      {/* GRÁFICOS MODERNOS EM DEGRADÊ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 10 Setores */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-blue-600" />
@@ -490,19 +369,14 @@ export const GerenciadorAdministradores: React.FC = () => {
                     <span className="font-bold">{count} est.</span>
                   </div>
                   <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
             })}
-            {topSetores.length === 0 && <p className="text-xs text-slate-400">Nenhum dado de setor registrado.</p>}
           </div>
         </div>
 
-        {/* Top 10 Departamentos */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-indigo-600" />
@@ -519,20 +393,15 @@ export const GerenciadorAdministradores: React.FC = () => {
                     <span className="font-bold">{count} est.</span>
                   </div>
                   <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
             })}
-            {topDepartamentos.length === 0 && <p className="text-xs text-slate-400">Nenhum departamento registrado.</p>}
           </div>
         </div>
       </div>
 
-      {/* BARRA DE PESQUISA */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div className="relative w-full sm:w-96">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -544,17 +413,8 @@ export const GerenciadorAdministradores: React.FC = () => {
             className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <button
-          onClick={() => setFilterAlerta(!filterAlerta)}
-          className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border ${
-            filterAlerta ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-          }`}
-        >
-          {filterAlerta ? 'Exibindo Apenas Alertas' : 'Filtrar Somente Alertas'}
-        </button>
       </div>
 
-      {/* TABELA PRINCIPAL COMPLETA */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -624,13 +484,8 @@ export const GerenciadorAdministradores: React.FC = () => {
             </tbody>
           </table>
         </div>
-        <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
-          <span>Exibindo <strong>{filteredData.length}</strong> de <strong>{totalRegistros}</strong> registros</span>
-          <span>Atualizado via Supabase</span>
-        </div>
       </div>
 
-      {/* MODAL DE NOVO / EDITAR CADASTRO */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
@@ -702,48 +557,6 @@ export const GerenciadorAdministradores: React.FC = () => {
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">Salvar Registro</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE DESFAZER / HISTÓRICO (ÚLTIMAS 10 ALTERAÇÕES) */}
-      {isHistoryModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <History className="w-5 h-5 text-violet-600" /> Histórico de Alterações (Últimas 10)
-              </h3>
-              <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 max-h-[60vh] overflow-y-auto space-y-3">
-              {auditLogs.length === 0 ? (
-                <p className="text-center text-slate-500 py-8">Nenhum histórico de alteração recente registrado.</p>
-              ) : (
-                auditLogs.map((log) => (
-                  <div key={log.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${log.action === 'INSERT' ? 'bg-emerald-100 text-emerald-800' : log.action === 'UPDATE' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {log.action}
-                        </span>
-                        <span className="font-mono font-bold text-slate-900">{log.endereco_logico}</span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">Modificado por: <strong>{log.modificado_por}</strong> em {new Date(log.created_at).toLocaleString('pt-BR')}</p>
-                    </div>
-                    <button
-                      onClick={() => handleUndoAction(log)}
-                      className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 shadow-sm shrink-0"
-                    >
-                      Desfazer Esta Ação
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">Fechar</button>
-            </div>
           </div>
         </div>
       )}

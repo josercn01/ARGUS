@@ -2,14 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   ShieldAlert, Plus, Trash2, Search, RotateCcw, 
-  Monitor, Users, Building2, Layers, X, Edit3, Download
+  Monitor, Users, Building2, Layers, X, Edit3, Download, RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { AuthUser, SystemRole } from '@/types';
 
 interface AdminLocaisProps {
-  user: AuthUser | null;
-  role: SystemRole;
+  user?: AuthUser | null;
+  role?: SystemRole;
 }
 
 export interface AdminLocalRow {
@@ -38,7 +38,7 @@ interface AuditLog {
   created_at: string;
 }
 
-export function AdminLocais({ user, role }: AdminLocaisProps) {
+export function AdminLocais({ user, role = 'admin' }: AdminLocaisProps) {
   const [items, setItems] = useState<AdminLocalRow[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,10 +63,10 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   const [justificativa, setJustificativa] = useState('');
 
   const [saving, setSaving] = useState(false);
-  const canEdit = ['super_admin', 'admin', 'editor'].includes(role);
+  const canEdit = ['super_admin', 'admin', 'editor', 'suporte'].includes(role || 'admin');
 
   const getUserIdentifier = () => {
-    if (!user) return 'Sistema';
+    if (!user) return 'Administrador';
     return (
       (user as any).email ||
       (user as any).user_metadata?.email ||
@@ -86,13 +86,12 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         .order('endereco_logico', { ascending: true });
 
       if (error) {
-        console.error('Erro do Supabase ao buscar administradores:', error);
-        throw error;
+        console.error('Erro ao buscar administradores locais:', error);
+      } else {
+        setItems(data || []);
       }
-
-      setItems(data || []);
     } catch (err) {
-      console.error('Erro ao buscar administradores locais:', err);
+      console.error('Erro de conexão:', err);
     } finally {
       setLoading(false);
     }
@@ -106,8 +105,8 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         .order('created_at', { ascending: false })
         .limit(25);
 
-      if (!error) {
-        setAuditLogs(data || []);
+      if (!error && data) {
+        setAuditLogs(data);
       }
     } catch (err) {
       console.error('Erro ao buscar auditoria:', err);
@@ -135,7 +134,7 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         usuario: `${identifier} em ${agora}`
       }]);
     } catch (err) {
-      console.error('Erro ao gravar auditoria:', err);
+      console.error('Erro ao gravar log de auditoria:', err);
     }
   }
 
@@ -226,8 +225,8 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
       setShowFormModal(false);
       await fetchAllData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao salvar registro');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao salvar registro no banco de dados.');
     } finally {
       setSaving(false);
     }
@@ -245,8 +244,8 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       if (error) throw error;
       await recordAuditLog(item.id, 'DELETE', item, null);
       await fetchAllData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao excluir');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir o registro.');
     }
   }
 
@@ -275,8 +274,8 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
       await fetchAllData();
       await fetchAuditLogs();
       alert('Reversão efetuada com sucesso!');
-    } catch (err) {
-      alert(err instanceof Error ? `Erro ao reverter: ${err.message}` : 'Erro ao reverter alteração');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao reverter alteração.');
     }
   }
 
@@ -353,6 +352,15 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={fetchAllData}
+            className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-slate-300 border border-slate-700 px-3 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg"
+            title="Atualizar dados"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Atualizar
+          </button>
+
           <button
             onClick={handleExportExcel}
             className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-emerald-400 border border-emerald-500/30 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg hover:border-emerald-400"

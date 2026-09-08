@@ -15,7 +15,10 @@ import {
   X,
   BarChart3,
   User,
-  Clock
+  Clock,
+  Shield,
+  Layers,
+  Briefcase
 } from 'lucide-react';
 
 export interface AdminRecord {
@@ -57,7 +60,6 @@ export const AdminLocais: React.FC = () => {
 
   const contarAdmins = (adminsStr: string): number => {
     if (!adminsStr) return 0;
-    // Divide por | ou por , para contar corretamente
     const lista = adminsStr.split(/[\|,]/).map((s) => s.trim()).filter(Boolean);
     return lista.length;
   };
@@ -307,16 +309,21 @@ export const AdminLocais: React.FC = () => {
 
   const totalRegistros = data.length;
   const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
+  const totalAdminsGeral = useMemo(() => {
+    return data.reduce((acc, item) => acc + (item.qtd_admin || contarAdmins(item.administradores)), 0);
+  }, [data]);
+  const totalSetores = topSetores.length;
+  const totalDepartamentos = topDepartamentos.length;
 
   return (
-    <div className="space-y-6 font-sans text-slate-800">
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+    <div className="space-y-6 font-sans text-slate-100">
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-[#1e293b] pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Database className="w-7 h-7 text-blue-600" />
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Database className="w-7 h-7 text-blue-400" />
             Auditoria e Gestão de Administradores Locais
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-slate-400 mt-1">
             Painel de controle de permissões, estações de trabalho e histórico de alterações.
           </p>
         </div>
@@ -324,13 +331,13 @@ export const AdminLocais: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={handleOpenNewModal}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors shadow-sm text-sm font-medium"
           >
             <Plus className="w-4 h-4" />
             Novo Cadastro
           </button>
 
-          <label className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${importing ? 'opacity-50' : ''}`}>
+          <label className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 cursor-pointer transition-colors shadow-sm text-sm font-medium ${importing ? 'opacity-50' : ''}`}>
             <Upload className="w-4 h-4" />
             {importing ? 'Importando...' : 'Importar Planilha'}
             <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={importing} className="hidden" />
@@ -338,62 +345,110 @@ export const AdminLocais: React.FC = () => {
 
           <button
             onClick={exportarBaseCompletaExcel}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium"
+            className="flex items-center gap-2 px-4 py-2 bg-[#1e293b] border border-slate-700 text-slate-200 rounded-lg hover:bg-[#334155] transition-colors shadow-sm text-sm font-medium"
           >
-            <FileSpreadsheet className="w-4 h-4" />
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
             Exportar Base (.xlsx)
           </button>
 
-          <button onClick={loadData} title="Recarregar" className="p-2 bg-white border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100">
+          <button onClick={loadData} title="Recarregar" className="p-2 bg-[#0f172a] border border-[#1e293b] rounded-lg text-slate-300 hover:bg-[#1e293b]">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+      {/* Cards Superiores */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total de Estações</p>
-            <p className="text-2xl font-extrabold text-slate-900 mt-1">{totalRegistros}</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Estações</p>
+            <p className="text-3xl font-extrabold text-white mt-1">{totalRegistros}</p>
           </div>
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg"><Database className="w-6 h-6" /></div>
+          <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
+            <span>Total cadastradas</span>
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <Database className="w-4 h-4" />
+            </div>
+          </div>
         </div>
 
-        <div onClick={() => setFilterAlerta(!filterAlerta)} className={`p-4 rounded-xl border cursor-pointer transition-all shadow-sm flex items-center justify-between ${filterAlerta ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400' : 'bg-white border-slate-200 hover:border-amber-300'}`}>
+        <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
           <div>
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Alertas de Permissionamento</p>
-            <p className="text-2xl font-extrabold text-amber-900 mt-1">{totalAlertas}</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Administradores</p>
+            <p className="text-3xl font-extrabold text-blue-400 mt-1">{totalAdminsGeral}</p>
           </div>
-          <div className="p-3 bg-amber-100 text-amber-700 rounded-lg"><AlertTriangle className="w-6 h-6" /></div>
+          <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
+            <span>Atribuídos nas estações</span>
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <Shield className="w-4 h-4" />
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div 
+          onClick={() => setFilterAlerta(!filterAlerta)} 
+          className={`p-5 rounded-2xl border cursor-pointer transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${filterAlerta ? 'bg-[#1e1b18] border-amber-500/50 ring-2 ring-amber-500/30' : 'bg-[#0b1329] border-[#1e293b] hover:border-amber-500/40'}`}
+        >
           <div>
-            <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Estações Conformes</p>
-            <p className="text-2xl font-extrabold text-slate-900 mt-1">{totalRegistros - totalAlertas}</p>
+            <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Alertas</p>
+            <p className="text-3xl font-extrabold text-amber-400 mt-1">{totalAlertas}</p>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg"><CheckCircle className="w-6 h-6" /></div>
+          <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
+            <span>Revisar permissão</span>
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total de Setores</p>
+            <p className="text-3xl font-extrabold text-white mt-1">{totalSetores}</p>
+          </div>
+          <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
+            <span>Setores mapeados</span>
+            <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+              <Layers className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Departamentos</p>
+            <p className="text-3xl font-extrabold text-white mt-1">{totalDepartamentos}</p>
+          </div>
+          <div className="mt-4 flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-[#1e293b]">
+            <span>Departamentos ativos</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <Briefcase className="w-4 h-4" />
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Gráficos com borda neon */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-          <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-blue-600" />
-            Top 10 Setores com Mais Estações
-          </h2>
-          <div className="space-y-3">
+        <div className="bg-[#0b1329] p-6 rounded-2xl border border-[#1e293b] shadow-xl relative space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-full border border-blue-400/50 shadow-[0_0_12px_rgba(59,130,246,0.5)]">
+              <BarChart3 className="w-4 h-4 text-blue-400 animate-pulse" />
+            </div>
+            <h2 className="text-base font-bold text-white tracking-wide">Top 10 Setores com Mais Estações</h2>
+          </div>
+          <div className="space-y-3 pt-2">
             {topSetores.map(([setor, count], idx) => {
               const maxVal = topSetores[0]?.[1] || 1;
               const pct = Math.round((count / maxVal) * 100);
               return (
                 <div key={setor} className="space-y-1">
-                  <div className="flex justify-between text-xs font-medium text-slate-700">
+                  <div className="flex justify-between text-xs font-medium text-slate-300">
                     <span>{idx + 1}. {setor}</span>
-                    <span className="font-bold">{count} est.</span>
+                    <span className="font-bold text-blue-400">{count} est.</span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500" style={{ width: `${pct}%` }} />
+                  <div className="w-full bg-[#1e293b] h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+                    <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400 shadow-[0_0_8px_rgba(59,130,246,0.6)] transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -401,23 +456,25 @@ export const AdminLocais: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-          <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-indigo-600" />
-            Top 10 Departamentos
-          </h2>
-          <div className="space-y-3">
+        <div className="bg-[#0b1329] p-6 rounded-2xl border border-[#1e293b] shadow-xl relative space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-full border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.5)]">
+              <BarChart3 className="w-4 h-4 text-purple-400 animate-pulse" />
+            </div>
+            <h2 className="text-base font-bold text-white tracking-wide">Top 10 Departamentos</h2>
+          </div>
+          <div className="space-y-3 pt-2">
             {topDepartamentos.map(([dept, count], idx) => {
               const maxVal = topDepartamentos[0]?.[1] || 1;
               const pct = Math.round((count / maxVal) * 100);
               return (
                 <div key={dept} className="space-y-1">
-                  <div className="flex justify-between text-xs font-medium text-slate-700">
+                  <div className="flex justify-between text-xs font-medium text-slate-300">
                     <span>{idx + 1}. {dept}</span>
-                    <span className="font-bold">{count} est.</span>
+                    <span className="font-bold text-purple-400">{count} est.</span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                  <div className="w-full bg-[#1e293b] h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+                    <div className="h-full rounded-full bg-gradient-to-r from-indigo-600 via-purple-500 to-pink-500 shadow-[0_0_8px_rgba(168,85,247,0.6)] transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -426,7 +483,7 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#0b1329] p-4 rounded-2xl border border-[#1e293b] shadow-xl">
         <div className="relative w-full sm:w-96">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -434,15 +491,15 @@ export const AdminLocais: React.FC = () => {
             placeholder="Buscar por Estação, Administrador, Setor..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-9 pr-4 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-[#0b1329] border border-[#1e293b] rounded-2xl shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-100 text-slate-700 font-semibold uppercase text-xs tracking-wider border-b border-slate-200">
+            <thead className="bg-[#0f172a] text-slate-400 font-semibold uppercase text-xs tracking-wider border-b border-[#1e293b]">
               <tr>
                 <th className="p-4">Estação de Trabalho</th>
                 <th className="p-4 text-center">Qtd Admins</th>
@@ -453,51 +510,51 @@ export const AdminLocais: React.FC = () => {
                 <th className="p-4 text-center">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-[#1e293b]">
               {loading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-500">Carregando dados...</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">Carregando dados...</td></tr>
               ) : filteredData.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-500">Nenhum registro encontrado.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
               ) : (
                 filteredData.map((item) => {
                   const temAlerta = item.alerta === 'Revisar permissionamento';
                   const qtdAdminsReal = item.qtd_admin || contarAdmins(item.administradores);
                   return (
-                    <tr key={item.id || item.endereco_logico} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 font-mono font-bold text-slate-900">{item.endereco_logico}</td>
-                      <td className="p-4 text-center font-bold text-blue-600">{qtdAdminsReal}</td>
-                      <td className="p-4 text-slate-700 max-w-xs break-words">{item.administradores}</td>
-                      <td className="p-4 text-xs text-slate-600">
-                        <span className="font-semibold block">{item.setor || 'Geral'}</span>
-                        <span className="text-slate-400">{item.departamento || 'Geral'}</span>
+                    <tr key={item.id || item.endereco_logico} className="hover:bg-[#111c38] transition-colors">
+                      <td className="p-4 font-mono font-bold text-white">{item.endereco_logico}</td>
+                      <td className="p-4 text-center font-bold text-blue-400">{qtdAdminsReal}</td>
+                      <td className="p-4 text-slate-300 max-w-xs break-words">{item.administradores}</td>
+                      <td className="p-4 text-xs text-slate-400">
+                        <span className="font-semibold text-slate-200 block">{item.setor || 'Geral'}</span>
+                        <span className="text-slate-500">{item.departamento || 'Geral'}</span>
                       </td>
-                      <td className="p-4 text-xs text-slate-500">
-                        <div className="flex items-center gap-1 font-medium text-slate-700">
-                          <User className="w-3 h-3 text-slate-400" />
+                      <td className="p-4 text-xs text-slate-400">
+                        <div className="flex items-center gap-1 font-medium text-slate-300">
+                          <User className="w-3 h-3 text-slate-500" />
                           {item.modificado_por || 'Sistema'}
                         </div>
-                        <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
+                        <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
                           <Clock className="w-3 h-3" />
                           {item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR') : '-'}
                         </div>
                       </td>
                       <td className="p-4 text-center">
                         {temAlerta ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                            <AlertTriangle className="w-3 h-3 text-amber-600" /> Revisar
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" /> Revisar
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle className="w-3 h-3 text-emerald-500" /> Conforme
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle className="w-3 h-3 text-emerald-400" /> Conforme
                           </span>
                         )}
                       </td>
                       <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => handleOpenEditModal(item)} title="Editar" className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">
+                          <button onClick={() => handleOpenEditModal(item)} title="Editar" className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500/20 border border-blue-500/20">
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => item.id && handleDeleteRecord(item.id, item.endereco_logico)} title="Excluir" className="p-1.5 bg-rose-50 text-rose-600 rounded hover:bg-rose-100">
+                          <button onClick={() => item.id && handleDeleteRecord(item.id, item.endereco_logico)} title="Excluir" className="p-1.5 bg-rose-500/10 text-rose-400 rounded-lg hover:bg-rose-500/20 border border-rose-500/20">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -512,74 +569,74 @@ export const AdminLocais: React.FC = () => {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-900">{isEditing ? 'Editar Estação e Administradores' : 'Novo Cadastro de Estação'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0b1329] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-[#1e293b] text-slate-100">
+            <div className="flex items-center justify-between p-5 border-b border-[#1e293b] bg-[#0f172a]">
+              <h3 className="text-lg font-bold text-white">{isEditing ? 'Editar Estação e Administradores' : 'Novo Cadastro de Estação'}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSaveRecord} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Endereço Lógico (Hostname/Estação)</label>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Endereço Lógico (Hostname/Estação)</label>
                 <input
                   type="text"
                   required
                   placeholder="EX: ST01234"
                   value={currentRecord.endereco_logico || ''}
                   onChange={(e) => setCurrentRecord({ ...currentRecord, endereco_logico: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase font-mono"
+                  className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm uppercase font-mono text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Administradores Locais (separados por vírgula ou |)</label>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Administradores Locais (separados por vírgula ou |)</label>
                 <textarea
                   required
                   rows={3}
                   placeholder="usuario1 | usuario2 | Administrator"
                   value={currentRecord.administradores || ''}
                   onChange={(e) => setCurrentRecord({ ...currentRecord, administradores: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Departamento</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Departamento</label>
                   <input
                     type="text"
                     placeholder="Ex: STI"
                     value={currentRecord.departamento || ''}
                     onChange={(e) => setCurrentRecord({ ...currentRecord, departamento: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Setor</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Setor</label>
                   <input
                     type="text"
                     placeholder="Ex: Suporte"
                     value={currentRecord.setor || ''}
-                    onChange={(e) => setCurrentRecord({ ...currentRecord, setor: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    onChange={(e) => setCurrentReport({ ...currentRecord, setor: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Justificativa / Observações</label>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Justificativa / Observações</label>
                 <input
                   type="text"
                   placeholder="Motivo da permissão especial..."
                   value={currentRecord.justificativa || ''}
                   onChange={(e) => setCurrentRecord({ ...currentRecord, justificativa: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">Salvar Registro</button>
+              <div className="flex justify-end gap-3 pt-4 border-t border-[#1e293b]">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-[#1e293b] text-slate-300 rounded-xl text-sm font-medium hover:bg-[#1e293b]">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-500 shadow-sm">Salvar Registro</button>
               </div>
             </form>
           </div>

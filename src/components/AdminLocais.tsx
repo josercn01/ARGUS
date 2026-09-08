@@ -26,7 +26,6 @@ export interface AdminRecord {
   id?: string;
   endereco_logico: string;
   administradores: string;
-  qtd_admin?: number;
   departamento?: string;
   setor?: string;
   justificativa?: string;
@@ -119,8 +118,6 @@ export const AdminLocais: React.FC = () => {
         .limit(10);
 
       if (error) {
-        // Se a tabela de histórico não existir, apenas ignora ou simula
-        console.warn('Tabela de histórico não encontrada ou vazia:', error.message);
         setHistorico([]);
         return;
       }
@@ -212,7 +209,6 @@ export const AdminLocais: React.FC = () => {
     const payload = {
       endereco_logico: host,
       administradores: adminsNovos,
-      qtd_admin: contarAdmins(adminsNovos),
       departamento: currentRecord.departamento?.trim() || 'Geral',
       setor: currentRecord.setor?.trim() || 'Geral',
       justificativa: currentRecord.justificativa?.trim() || '',
@@ -264,7 +260,6 @@ export const AdminLocais: React.FC = () => {
     if (!confirm(`Deseja reverter a estação ${itemHist.endereco_logico} para o estado anterior?`)) return;
 
     try {
-      // Localiza se a estação existe na base atual
       const existente = data.find(
         (i) => i.endereco_logico.toUpperCase() === itemHist.endereco_logico.toUpperCase()
       );
@@ -276,7 +271,6 @@ export const AdminLocais: React.FC = () => {
 
       const payload = {
         administradores: itemHist.administradores_antigos,
-        qtd_admin: contarAdmins(itemHist.administradores_antigos),
         modificado_por: `${currentUser} - ${currentUserEmail} (REVERSÃO)`,
         updated_at: new Date().toISOString()
       };
@@ -362,7 +356,6 @@ export const AdminLocais: React.FC = () => {
             payloadToUpsert.push({
               endereco_logico: host,
               administradores: admins,
-              qtd_admin: contarAdmins(admins),
               alerta: 'Revisar permissionamento',
               justificativa: '[NOVO DISPOSITIVO] Importado via planilha',
               modificado_por: `${currentUser} - ${currentUserEmail}`,
@@ -375,7 +368,6 @@ export const AdminLocais: React.FC = () => {
               id: existing.id,
               endereco_logico: host,
               administradores: admins,
-              qtd_admin: contarAdmins(admins),
               alerta: existing.alerta || null,
               modificado_por: `${currentUser} - ${currentUserEmail}`,
               updated_at: new Date().toISOString()
@@ -408,7 +400,7 @@ export const AdminLocais: React.FC = () => {
     if (data.length === 0) return alert('Sem dados para exportar.');
     const dataToExport = data.map((item) => ({
       'ESTAÇÃO DE TRABALHO': item.endereco_logico,
-      'QTD ADMINS': item.qtd_admin || contarAdmins(item.administradores),
+      'QTD ADMINS': contarAdmins(item.administradores),
       'ADMINISTRADORES LOCAIS': item.administradores,
       'DEPARTAMENTO': item.departamento || '',
       'SETOR': item.setor || '',
@@ -441,7 +433,7 @@ export const AdminLocais: React.FC = () => {
   const totalRegistros = data.length;
   const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
   const totalAdminsGeral = useMemo(() => {
-    return data.reduce((acc, item) => acc + (item.qtd_admin || contarAdmins(item.administradores)), 0);
+    return data.reduce((acc, item) => acc + contarAdmins(item.administradores), 0);
   }, [data]);
 
   return (
@@ -494,7 +486,7 @@ export const AdminLocais: React.FC = () => {
         </div>
       </header>
 
-      {/* Cards Superiores - Todo azul escuro (#0b1329) */}
+      {/* Cards Superiores */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-[#0b1329] border border-[#1e293b] p-5 rounded-2xl shadow-lg relative overflow-hidden flex flex-col justify-between">
           <div>
@@ -565,7 +557,7 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
-      {/* Gráficos com linha circulando em neon no título e fundo azul escuro */}
+      {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-[#0b1329] p-6 rounded-2xl border border-[#1e293b] shadow-xl relative space-y-4">
           <div className="flex items-center gap-3">
@@ -635,7 +627,7 @@ export const AdminLocais: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabela com cabeçalho fixo (sticky) */}
+      {/* Tabela com cabeçalho fixo (sticky) e sem a coluna status */}
       <div className="bg-[#0b1329] border border-[#1e293b] rounded-2xl shadow-xl overflow-hidden">
         <div className="max-h-[600px] overflow-y-auto relative">
           <table className="w-full text-left text-sm border-collapse">
@@ -656,7 +648,7 @@ export const AdminLocais: React.FC = () => {
                 <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
               ) : (
                 filteredData.map((item) => {
-                  const qtdAdminsReal = item.qtd_admin || contarAdmins(item.administradores);
+                  const qtdAdminsReal = contarAdmins(item.administradores);
                   return (
                     <tr key={item.id || item.endereco_logico} className="hover:bg-[#111c38] transition-colors">
                       <td className="p-4 font-mono font-bold text-white">{item.endereco_logico}</td>
@@ -787,6 +779,7 @@ export const AdminLocais: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase md:hidden">Setor</label>
                   <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Setor</label>
                   <input
                     type="text"

@@ -80,32 +80,17 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
   async function fetchAllData() {
     setLoading(true);
     try {
-      let allRows: AdminLocalRow[] = [];
-      let page = 0;
-      const pageSize = 1000;
-      let hasMore = true;
+      const { data, error } = await supabase
+        .from('administradores_locais')
+        .select('*')
+        .order('endereco_logico', { ascending: true });
 
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('administradores_locais')
-          .select('*')
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          allRows = [...allRows, ...data];
-          if (data.length < pageSize) {
-            hasMore = false;
-          } else {
-            page++;
-          }
-        } else {
-          hasMore = false;
-        }
+      if (error) {
+        console.error('Erro do Supabase ao buscar administradores:', error);
+        throw error;
       }
 
-      setItems(allRows);
+      setItems(data || []);
     } catch (err) {
       console.error('Erro ao buscar administradores locais:', err);
     } finally {
@@ -115,13 +100,15 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
 
   async function fetchAuditLogs() {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('administradores_locais_auditoria')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(25);
 
-      setAuditLogs(data || []);
+      if (!error) {
+        setAuditLogs(data || []);
+      }
     } catch (err) {
       console.error('Erro ao buscar auditoria:', err);
     }
@@ -137,15 +124,19 @@ export function AdminLocais({ user, role }: AdminLocaisProps) {
     antigos: AdminLocalRow | null, 
     novos: AdminLocalRow | null
   ) {
-    const identifier = getUserIdentifier();
-    const agora = new Date().toLocaleString('pt-BR');
-    await supabase.from('administradores_locais_auditoria').insert([{
-      registro_id: registroId,
-      operacao,
-      dados_antigos: antigos,
-      dados_novos: novos,
-      usuario: `${identifier} em ${agora}`
-    }]);
+    try {
+      const identifier = getUserIdentifier();
+      const agora = new Date().toLocaleString('pt-BR');
+      await supabase.from('administradores_locais_auditoria').insert([{
+        registro_id: registroId,
+        operacao,
+        dados_antigos: antigos,
+        dados_novos: novos,
+        usuario: `${identifier} em ${agora}`
+      }]);
+    } catch (err) {
+      console.error('Erro ao gravar auditoria:', err);
+    }
   }
 
   function handleOpenForm(item?: AdminLocalRow) {

@@ -11,9 +11,10 @@ import {
   FileSpreadsheet,
   Database
 } from 'lucide-react';
-import type { SystemRole } from '@/types';
+import type { AuthUser, SystemRole } from '@/types';
 
 interface AdminLocaisProps {
+  user: AuthUser | null;
   role: SystemRole;
 }
 
@@ -57,19 +58,43 @@ export const AdminLocais: React.FC<AdminLocaisProps> = ({ role }) => {
     loadData();
   }, []);
 
+  // Função para buscar TODOS os registros do Supabase ultrapassando o limite padrão de 1000 linhas
   const loadData = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const { data: dbData, error } = await supabase
-        .from('administradores_locais')
-        .select('*')
-        .order('endereco_logico', { ascending: true });
+      let allRecords: AdminRecord[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let fetchMore = true;
 
-      if (error) {
-        throw new Error(error.message);
+      while (fetchMore) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data: dbData, error } = await supabase
+          .from('administradores_locais')
+          .select('*')
+          .order('endereco_logico', { ascending: true })
+          .range(from, to);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        if (dbData && dbData.length > 0) {
+          allRecords = [...allRecords, ...dbData];
+          if (dbData.length < pageSize) {
+            fetchMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          fetchMore = false;
+        }
       }
-      setData(dbData || []);
+
+      setData(allRecords);
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err);
       setErrorMsg(err.message || 'Erro desconhecido ao conectar com o banco.');
@@ -261,7 +286,7 @@ export const AdminLocais: React.FC<AdminLocaisProps> = ({ role }) => {
 
         {/* BARRA DE AÇÕES */}
         <div className="flex flex-wrap items-center gap-3">
-          {(role === 'super_admin' || role === 'admin' || role === 'editor') && (
+          {role !== 'viewer' && (
             <label
               className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${
                 importing ? 'opacity-50 cursor-not-allowed' : ''
@@ -407,7 +432,7 @@ export const AdminLocais: React.FC<AdminLocaisProps> = ({ role }) => {
             <tbody className="divide-y divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-slate-400">Carregando dados da tabela base...</td>
+                  <td colSpan={4} className="p-8 text-center text-slate-400">Carregando todos os registros da base...</td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
@@ -442,7 +467,7 @@ export const AdminLocais: React.FC<AdminLocaisProps> = ({ role }) => {
           </table>
         </div>
         <div className="p-4 bg-slate-900 border-t border-slate-700 text-xs text-slate-400 flex justify-between items-center">
-          <span>Exibindo <strong>{filteredData.length}</strong> de <strong>{totalRegistros}</strong> registros</span>
+          <span>Exibindo <strong>{filteredData.length}</strong> de <strong>{totalRegistros}</strong> registros totais</span>
           <span>Atualização automática via Supabase</span>
         </div>
       </div>

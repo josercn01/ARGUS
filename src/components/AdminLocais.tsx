@@ -157,16 +157,10 @@ export const AdminLocais: React.FC = () => {
       if (error) {
         console.error('Erro ao gravar histórico no Supabase:', error.message, error.details);
       } else {
-        // Atualiza a lista imediatamente após gravar com sucesso
         await loadHistorico();
       }
     } catch (err) {
       console.error('Erro crítico ao registrar histórico:', err);
-    }
-      ]);
-      loadHistorico();
-    } catch (err) {
-      console.error('Erro ao registrar histórico:', err);
     }
   };
 
@@ -223,7 +217,6 @@ export const AdminLocais: React.FC = () => {
       return;
     }
 
-    // Busca o usuário autenticado na sessão atual do Supabase
     const { data: { user } } = await supabase.auth.getUser();
     const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
     const emailUsuario = user?.email || '';

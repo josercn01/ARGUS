@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import {
   Upload,
-  Download,
   AlertTriangle,
   CheckCircle,
   Search,
@@ -38,7 +37,7 @@ export interface AlertaItem {
   status: string;
 }
 
-export const GerenciadorAdministradores: React.FC = () => {
+export const AdminLocais: React.FC = () => {
   const [data, setData] = useState<AdminRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [importing, setImporting] = useState<boolean>(false);
@@ -564,4 +563,4 @@ export const GerenciadorAdministradores: React.FC = () => {
   );
 };
 
-export default GerenciadorAdministradores;
+export default AdminLocais;

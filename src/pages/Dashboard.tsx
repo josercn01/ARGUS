@@ -89,9 +89,8 @@ export function Dashboard({ user, role }: DashboardProps) {
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <MetricsCards
-              licencas={licencas}
+              data={licencas}
               softwares={softwares}
-              locais={locais}
             />
 
             <FiltersBar
@@ -119,25 +118,15 @@ export function Dashboard({ user, role }: DashboardProps) {
         )}
 
         {activeTab === 'softwares' && (
-          <SoftwareManagement
-            softwares={softwares}
-            role={role}
-            onRefresh={loadData}
-          />
+          <SoftwareManagement />
         )}
 
         {activeTab === 'admin-locais' && (
-          <AdminLocais
-            user={user}
-            role={role}
-          />
+          <AdminLocais role={role} />
         )}
 
         {activeTab === 'permissoes' && (
-          <AccessManagement
-            currentUser={user}
-            role={role}
-          />
+          <AccessManagement currentRole={role} />
         )}
       </main>
     </div>

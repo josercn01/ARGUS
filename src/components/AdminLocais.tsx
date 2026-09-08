@@ -11,10 +11,9 @@ import {
   FileSpreadsheet,
   Database
 } from 'lucide-react';
-import type { AuthUser, SystemRole } from '@/types';
+import type { SystemRole } from '@/types';
 
 interface AdminLocaisProps {
-  user: AuthUser | null;
   role: SystemRole;
 }
 
@@ -262,7 +261,7 @@ export const AdminLocais: React.FC<AdminLocaisProps> = ({ role }) => {
 
         {/* BARRA DE AÇÕES */}
         <div className="flex flex-wrap items-center gap-3">
-          {role !== 'viewer' && (
+          {(role === 'super_admin' || role === 'admin' || role === 'editor') && (
             <label
               className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${
                 importing ? 'opacity-50 cursor-not-allowed' : ''

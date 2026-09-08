@@ -10,7 +10,7 @@ interface MetricsCardsProps {
 interface SoftwareMetric {
   id: string;
   nome: string;
-  fabricante?: string;
+  fabricante?: string | null;
   total: number;
   emUso: number;
   livre: number;

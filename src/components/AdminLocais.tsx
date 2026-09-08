@@ -55,16 +55,43 @@ export const AdminLocais: React.FC = () => {
     loadData();
   }, []);
 
+  const contarAdmins = (adminsStr: string): number => {
+    if (!adminsStr) return 0;
+    // Divide por | ou por , para contar corretamente
+    const lista = adminsStr.split(/[\|,]/).map((s) => s.trim()).filter(Boolean);
+    return lista.length;
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const { data: dbData, error } = await supabase
-        .from('administradores_locais')
-        .select('*')
-        .order('endereco_logico', { ascending: true });
+      let allData: AdminRecord[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let fetchMore = true;
 
-      if (error) throw error;
-      setData(dbData || []);
+      while (fetchMore) {
+        const { data: dbData, error } = await supabase
+          .from('administradores_locais')
+          .select('*')
+          .order('endereco_logico', { ascending: true })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+
+        if (dbData && dbData.length > 0) {
+          allData = [...allData, ...dbData];
+          if (dbData.length < pageSize) {
+            fetchMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          fetchMore = false;
+        }
+      }
+
+      setData(allData);
     } catch (err: any) {
       console.error(`Erro ao carregar dados: ${err.message}`);
     } finally {
@@ -119,11 +146,10 @@ export const AdminLocais: React.FC = () => {
       return;
     }
 
-    const adminsList = currentRecord.administradores.split(',').map((s) => s.trim()).filter(Boolean);
     const payload = {
       endereco_logico: currentRecord.endereco_logico.trim().toUpperCase(),
       administradores: currentRecord.administradores.trim(),
-      qtd_admin: adminsList.length,
+      qtd_admin: contarAdmins(currentRecord.administradores),
       departamento: currentRecord.departamento?.trim() || 'Geral',
       setor: currentRecord.setor?.trim() || 'Geral',
       justificativa: currentRecord.justificativa?.trim() || '',
@@ -197,7 +223,6 @@ export const AdminLocais: React.FC = () => {
           ).toString().trim();
 
           if (!host) return;
-          const adminsList = admins.split(',').map((s: string) => s.trim()).filter(Boolean);
 
           if (!currentMap.has(host)) {
             added++;
@@ -205,7 +230,7 @@ export const AdminLocais: React.FC = () => {
             payloadToUpsert.push({
               endereco_logico: host,
               administradores: admins,
-              qtd_admin: adminsList.length,
+              qtd_admin: contarAdmins(admins),
               alerta: 'Revisar permissionamento',
               justificativa: '[NOVO DISPOSITIVO] Não consta na base cadastrada',
               modificado_por: currentUser,
@@ -218,7 +243,7 @@ export const AdminLocais: React.FC = () => {
               id: existing.id,
               endereco_logico: host,
               administradores: admins,
-              qtd_admin: adminsList.length,
+              qtd_admin: contarAdmins(admins),
               alerta: existing.alerta || null,
               modificado_por: currentUser,
               updated_at: new Date().toISOString()
@@ -250,7 +275,7 @@ export const AdminLocais: React.FC = () => {
     if (data.length === 0) return alert('Sem dados para exportar.');
     const dataToExport = data.map((item) => ({
       'ESTAÇÃO DE TRABALHO': item.endereco_logico,
-      'QTD ADMINS': item.qtd_admin || 1,
+      'QTD ADMINS': item.qtd_admin || contarAdmins(item.administradores),
       'ADMINISTRADORES LOCAIS': item.administradores,
       'DEPARTAMENTO': item.departamento || '',
       'SETOR': item.setor || '',
@@ -284,7 +309,7 @@ export const AdminLocais: React.FC = () => {
   const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 space-y-6 font-sans text-slate-800">
+    <div className="space-y-6 font-sans text-slate-800">
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -436,10 +461,11 @@ export const AdminLocais: React.FC = () => {
               ) : (
                 filteredData.map((item) => {
                   const temAlerta = item.alerta === 'Revisar permissionamento';
+                  const qtdAdminsReal = item.qtd_admin || contarAdmins(item.administradores);
                   return (
                     <tr key={item.id || item.endereco_logico} className="hover:bg-slate-50 transition-colors">
                       <td className="p-4 font-mono font-bold text-slate-900">{item.endereco_logico}</td>
-                      <td className="p-4 text-center font-bold text-blue-600">{item.qtd_admin || item.administradores.split(',').length}</td>
+                      <td className="p-4 text-center font-bold text-blue-600">{qtdAdminsReal}</td>
                       <td className="p-4 text-slate-700 max-w-xs break-words">{item.administradores}</td>
                       <td className="p-4 text-xs text-slate-600">
                         <span className="font-semibold block">{item.setor || 'Geral'}</span>
@@ -506,11 +532,11 @@ export const AdminLocais: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Administradores Locais (separados por vírgula)</label>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Administradores Locais (separados por vírgula ou |)</label>
                 <textarea
                   required
                   rows={3}
-                  placeholder="usuario1, usuario2, Administrator"
+                  placeholder="usuario1 | usuario2 | Administrator"
                   value={currentRecord.administradores || ''}
                   onChange={(e) => setCurrentRecord({ ...currentRecord, administradores: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"

@@ -16,8 +16,8 @@ import {
 // ==========================================
 // CONFIGURAÇÃO DO SUPABASE
 // ==========================================
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://seu-projeto.supabase.co';
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'sua-chave-anonima';
+const SUPABASE_URL = 'https://uwryfadjkscmxlsbpqas.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnlmYWRqa3NjbXhsc2JwcWFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTM5NzEsImV4cCI6MjEwMzE2OTk3MX0.1g6-eFtk-QAWG-q34NZiCmmvDo76hm4YSZGOaSM96RY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ==========================================
@@ -135,7 +135,6 @@ export const GerenciadorAdministradores: React.FC = () => {
             ''
           ).toString().trim();
 
-          // Log de diagnóstico opcional para inspecionar caso alguma linha venha vazia
           if (index < 5) {
             console.log(`[Diagnóstico Linha ${index + 1}] Host detectado: "${host}" | Admins detectados: "${admins}"`);
           }
@@ -144,7 +143,6 @@ export const GerenciadorAdministradores: React.FC = () => {
 
           // VERIFICAÇÃO DE INCONSISTÊNCIA NA TABELA BASE
           if (!currentMap.has(host)) {
-            // Endereço lógico não detectado na base cadastrada
             added++;
             const statusAlerta = 'Revisar permissionamento';
 
@@ -162,24 +160,22 @@ export const GerenciadorAdministradores: React.FC = () => {
               updated_at: new Date().toISOString(),
             });
           } else {
-            // Endereço lógico já existe na tabela base
             updated++;
             const existingRecord = currentMap.get(host)!;
 
             payloadToUpsert.push({
               id: existingRecord.id,
               endereco_logico: host,
-              administradores: admins, // Garante que atualiza corretamente com o valor lido
-              alerta: existingRecord.alerta || null, // Preserva alertas existentes se houver
+              administradores: admins,
+              alerta: existingRecord.alerta || null,
               updated_at: new Date().toISOString(),
             });
           }
         });
 
-        // Atualiza a lista de alertas recentes em memória
         setAlertasRecentes(novosAlertas);
 
-        // Persiste no Supabase fatiando em lotes de 300 para garantir estabilidade do payload
+        // Persiste no Supabase fatiando em lotes de 300
         const chunkSize = 300;
         for (let i = 0; i < payloadToUpsert.length; i += chunkSize) {
           const chunk = payloadToUpsert.slice(i, i + chunkSize);
@@ -188,7 +184,7 @@ export const GerenciadorAdministradores: React.FC = () => {
         }
 
         setImportResult({ added, updated, removed: 0 });
-        await loadData(); // Recarrega os dados atualizados do banco
+        await loadData();
 
       } catch (err: any) {
         alert(`Falha no processamento do arquivo: ${err.message}`);
@@ -272,7 +268,6 @@ export const GerenciadorAdministradores: React.FC = () => {
     });
   }, [data, search, filterAlerta]);
 
-  // Contadores para os Cards Dashboard
   const totalRegistros = data.length;
   const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
 
@@ -495,4 +490,6 @@ export const GerenciadorAdministradores: React.FC = () => {
   );
 };
 
+// EXPORTAÇÕES COMPATÍVEIS PARA RESOLVER O ERRO DE BUILD NO RENDER
+export { GerenciadorAdministradores as AdminLocais };
 export default GerenciadorAdministradores;

@@ -153,7 +153,33 @@ export const AdminLocais: React.FC<AdminLocaisProps> = ({ user, role }) => {
   const logAction = async (acao: string, detalhes: string, previousState?: any) => {
     const userName = user?.name || user?.email || 'Usuário Sistema';
     const newLog: AuditLogItem = {
-      id: Math.random().toString(36.substring(2, 9)),
+      id: Math.random().toString(36).substring(2, 9),
+      acao,
+      detalhes,
+      usuario: userName,
+      timestamp: new Date().toISOString(),
+      previous_state: previousState
+    };
+
+    const updatedLogs = [newLog, ...auditLogs].slice(0, 10);
+    setAuditLogs(updatedLogs);
+
+    try {
+      await supabase.from('audit_logs_admin').insert([newLog]);
+    } catch (e) {
+      // Falha silenciosa caso tabela de log não esteja criada no banco do usuário
+    }
+  };
+
+    const updatedLogs = [newLog, ...auditLogs].slice(0, 10);
+    setAuditLogs(updatedLogs);
+
+    try {
+      await supabase.from('audit_logs_admin').insert([newLog]);
+    } catch (e) {
+      // Falha silenciosa caso tabela de log não esteja criada no banco do usuário
+    }
+  };
       acao,
       detalhes,
       usuario: userName,

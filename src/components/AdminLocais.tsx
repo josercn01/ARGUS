@@ -1,744 +1,498 @@
-import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
-import { 
-  ShieldAlert, Plus, Trash2, Search, RotateCcw, 
-  Monitor, Users, Building2, Layers, X, Edit3, Download, RefreshCw
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
-import type { AuthUser, SystemRole } from '@/types';
+import {
+  Upload,
+  Download,
+  AlertTriangle,
+  CheckCircle,
+  Search,
+  RefreshCw,
+  ShieldAlert,
+  FileSpreadsheet,
+  Database
+} from 'lucide-react';
 
-interface AdminLocaisProps {
-  user?: AuthUser | null;
-  role?: SystemRole;
-}
+// ==========================================
+// CONFIGURAÇÃO DO SUPABASE
+// ==========================================
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://seu-projeto.supabase.co';
+const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'sua-chave-anonima';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-export interface AdminLocalRow {
-  id: string;
+// ==========================================
+// INTERFACES DE DADOS
+// ==========================================
+export interface AdminRecord {
+  id?: string;
   endereco_logico: string;
-  qntd_admin: number;
-  administradores?: string;
+  administradores: string;
+  qntd_admin?: number;
   departamento?: string;
   setor?: string;
   justificativa?: string;
   prefixo?: string;
-  modificado_por?: string;
-  updated_by?: string;
-  lote_import?: string;
+  alerta?: string | null;
   created_at?: string;
   updated_at?: string;
 }
 
-interface AuditLog {
-  id: string;
-  registro_id: string;
-  operacao: string;
-  dados_antigos: AdminLocalRow | null;
-  dados_novos: AdminLocalRow | null;
-  usuario: string;
-  created_at: string;
+export interface AlertaItem {
+  endereco_logico: string;
+  administradores: string;
+  status: string;
 }
 
-export function AdminLocais({ user, role = 'admin' }: AdminLocaisProps) {
-  const [items, setItems] = useState<AdminLocalRow[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Filtros
-  const [search, setSearch] = useState('');
-  const [selectedSetor, setSelectedSetor] = useState<string>('todos');
-  const [selectedDepto, setSelectedDepto] = useState<string>('todos');
+export interface ImportResult {
+  added: number;
+  updated: number;
+  removed: number;
+}
 
-  // Modais
-  const [showFormModal, setShowFormModal] = useState(false);
-  const [showUndoModal, setShowUndoModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<AdminLocalRow | null>(null);
+// ==========================================
+// COMPONENTE PRINCIPAL
+// ==========================================
+export const GerenciadorAdministradores: React.FC = () => {
+  // Estados da Aplicação
+  const [data, setData] = useState<AdminRecord[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [importing, setImporting] = useState<boolean>(false);
+  const [search, setSearch] = useState<string>('');
+  const [filterAlerta, setFilterAlerta] = useState<boolean>(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [alertasRecentes, setAlertasRecentes] = useState<AlertaItem[]>([]);
 
-  // Form State
-  const [enderecoLogico, setEnderecoLogico] = useState('');
-  const [setor, setSetor] = useState('');
-  const [departamento, setDepartamento] = useState('');
-  const [prefixo, setPrefixo] = useState('');
-  const [qntdAdmin, setQntdAdmin] = useState<number>(1);
-  const [listaAdmins, setListaAdmins] = useState<string[]>(['']);
-  const [justificativa, setJustificativa] = useState('');
+  // Carga inicial dos dados da Tabela Base
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const [saving, setSaving] = useState(false);
-  const canEdit = ['super_admin', 'admin', 'editor', 'suporte'].includes(role || 'admin');
-
-  const getUserIdentifier = () => {
-    if (!user) return 'Administrador';
-    return (
-      (user as any).email ||
-      (user as any).user_metadata?.email ||
-      (user as any).nome ||
-      (user as any).user_metadata?.nome ||
-      (user as any).id ||
-      'Administrador'
-    );
-  };
-
-  async function fetchAllData() {
+  const loadData = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data: dbData, error } = await supabase
         .from('administradores_locais')
         .select('*')
         .order('endereco_logico', { ascending: true });
 
-      if (error) {
-        console.error('Erro ao buscar administradores locais:', error);
-      } else {
-        setItems(data || []);
-      }
-    } catch (err) {
-      console.error('Erro de conexão:', err);
+      if (error) throw error;
+      setData(dbData || []);
+    } catch (err: any) {
+      alert(`Erro ao carregar dados do Supabase: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  async function fetchAuditLogs() {
-    try {
-      const { data, error } = await supabase
-        .from('administradores_locais_auditoria')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(25);
+  // ==========================================
+  // PROCESSAMENTO DE IMPORTAÇÃO DA PLANILHA
+  // ==========================================
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-      if (!error && data) {
-        setAuditLogs(data);
+    setImporting(true);
+    setImportResult(null);
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const importedRows: any[] = XLSX.utils.sheet_to_json(ws);
+
+        // Mapeia a tabela base atual usando o endereço lógico como chave
+        const currentMap = new Map(
+          data.map((item) => [item.endereco_logico.toString().trim().toUpperCase(), item])
+        );
+
+        const novosAlertas: AlertaItem[] = [];
+        const payloadToUpsert: any[] = [];
+        let added = 0;
+        let updated = 0;
+
+        importedRows.forEach((row, index) => {
+          // Normalização e Fallbacks robustos para os nomes das colunas
+          const host = (
+            row['ENDEREÇO LÓGICO'] ||
+            row['ENDERECO_LOGICO'] ||
+            row['Host'] ||
+            row['HOSTNAME'] ||
+            row['host'] ||
+            ''
+          ).toString().trim().toUpperCase();
+
+          const admins = (
+            row['ADMINISTRADORES LOCAIS'] ||
+            row['ADMINISTRADORES_LOCAIS'] ||
+            row['ADMINISTRADORES'] ||
+            row['ADMIN LOCAL'] ||
+            row['ADMINS'] ||
+            row['Admins'] ||
+            row['Administradores'] ||
+            ''
+          ).toString().trim();
+
+          // Log de diagnóstico opcional para inspecionar caso alguma linha venha vazia
+          if (index < 5) {
+            console.log(`[Diagnóstico Linha ${index + 1}] Host detectado: "${host}" | Admins detectados: "${admins}"`);
+          }
+
+          if (!host) return; // Ignora linhas sem endereço lógico
+
+          // VERIFICAÇÃO DE INCONSISTÊNCIA NA TABELA BASE
+          if (!currentMap.has(host)) {
+            // Endereço lógico não detectado na base cadastrada
+            added++;
+            const statusAlerta = 'Revisar permissionamento';
+
+            novosAlertas.push({
+              endereco_logico: host,
+              administradores: admins,
+              status: statusAlerta,
+            });
+
+            payloadToUpsert.push({
+              endereco_logico: host,
+              administradores: admins,
+              alerta: statusAlerta,
+              justificativa: '[NOVO DISPOSITIVO] Não consta na tabela base cadastrada',
+              updated_at: new Date().toISOString(),
+            });
+          } else {
+            // Endereço lógico já existe na tabela base
+            updated++;
+            const existingRecord = currentMap.get(host)!;
+
+            payloadToUpsert.push({
+              id: existingRecord.id,
+              endereco_logico: host,
+              administradores: admins, // Garante que atualiza corretamente com o valor lido
+              alerta: existingRecord.alerta || null, // Preserva alertas existentes se houver
+              updated_at: new Date().toISOString(),
+            });
+          }
+        });
+
+        // Atualiza a lista de alertas recentes em memória
+        setAlertasRecentes(novosAlertas);
+
+        // Persiste no Supabase fatiando em lotes de 300 para garantir estabilidade do payload
+        const chunkSize = 300;
+        for (let i = 0; i < payloadToUpsert.length; i += chunkSize) {
+          const chunk = payloadToUpsert.slice(i, i + chunkSize);
+          const { error } = await supabase.from('administradores_locais').upsert(chunk);
+          if (error) throw error;
+        }
+
+        setImportResult({ added, updated, removed: 0 });
+        await loadData(); // Recarrega os dados atualizados do banco
+
+      } catch (err: any) {
+        alert(`Falha no processamento do arquivo: ${err.message}`);
+      } finally {
+        setImporting(false);
+        if (e.target) e.target.value = '';
       }
-    } catch (err) {
-      console.error('Erro ao buscar auditoria:', err);
-    }
-  }
-
-  useEffect(() => {
-    fetchAllData();
-  }, []);
-
-  async function recordAuditLog(
-    registroId: string, 
-    operacao: 'INSERT' | 'UPDATE' | 'DELETE', 
-    antigos: AdminLocalRow | null, 
-    novos: AdminLocalRow | null
-  ) {
-    try {
-      const identifier = getUserIdentifier();
-      const agora = new Date().toLocaleString('pt-BR');
-      await supabase.from('administradores_locais_auditoria').insert([{
-        registro_id: registroId,
-        operacao,
-        dados_antigos: antigos,
-        dados_novos: novos,
-        usuario: `${identifier} em ${agora}`
-      }]);
-    } catch (err) {
-      console.error('Erro ao gravar log de auditoria:', err);
-    }
-  }
-
-  function handleOpenForm(item?: AdminLocalRow) {
-    if (item) {
-      setEditingItem(item);
-      setEnderecoLogico(item.endereco_logico || '');
-      setSetor(item.setor || '');
-      setDepartamento(item.departamento || '');
-      setPrefixo(item.prefixo || '');
-      setJustificativa(item.justificativa || '');
-      
-      const adminsArray = item.administradores ? item.administradores.split(',').map(s => s.trim()) : [''];
-      setQntdAdmin(Math.max(1, adminsArray.length));
-      setListaAdmins(adminsArray);
-    } else {
-      setEditingItem(null);
-      setEnderecoLogico('');
-      setSetor('');
-      setDepartamento('');
-      setPrefixo('');
-      setJustificativa('');
-      setQntdAdmin(1);
-      setListaAdmins(['']);
-    }
-    setShowFormModal(true);
-  }
-
-  function handleQntdChange(novaQtd: number) {
-    const qtd = Math.max(1, novaQtd);
-    setQntdAdmin(qtd);
-    setListaAdmins(prev => {
-      if (qtd > prev.length) {
-        return [...prev, ...Array(qtd - prev.length).fill('')];
-      } else {
-        return prev.slice(0, qtd);
-      }
-    });
-  }
-
-  function handleAdminNameChange(index: number, value: string) {
-    const novaLista = [...listaAdmins];
-    novaLista[index] = value;
-    setListaAdmins(novaLista);
-  }
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!enderecoLogico.trim()) return;
-
-    setSaving(true);
-    const identifier = getUserIdentifier();
-    const userSignature = `${identifier} em ${new Date().toLocaleString('pt-BR')}`;
-    const administradoresConcatenados = listaAdmins.filter(Boolean).join(', ');
-
-    const payload = {
-      endereco_logico: enderecoLogico.toUpperCase().trim(),
-      administradores: administradoresConcatenados,
-      qntd_admin: Number(qntdAdmin),
-      setor: setor.trim(),
-      departamento: departamento.trim(),
-      prefixo: prefixo.trim(),
-      justificativa: justificativa.trim(),
-      modificado_por: userSignature,
-      updated_by: identifier,
-      updated_at: new Date().toISOString()
     };
 
-    try {
-      if (editingItem) {
-        const { error } = await supabase
-          .from('administradores_locais')
-          .update(payload)
-          .eq('id', editingItem.id);
+    reader.readAsBinaryString(file);
+  };
 
-        if (error) throw error;
-        await recordAuditLog(editingItem.id, 'UPDATE', editingItem, { id: editingItem.id, ...payload });
-      } else {
-        const { data, error } = await supabase
-          .from('administradores_locais')
-          .insert([payload])
-          .select()
-          .single();
+  // ==========================================
+  // EXPORTAÇÕES PARA EXCEL
+  // ==========================================
+  const exportarAlertasExcel = () => {
+    const listaParaExportar =
+      alertasRecentes.length > 0
+        ? alertasRecentes
+        : data
+            .filter((item) => item.alerta === 'Revisar permissionamento')
+            .map((item) => ({
+              endereco_logico: item.endereco_logico,
+              administradores: item.administradores,
+              status: item.alerta || 'Revisar permissionamento',
+            }));
 
-        if (error) throw error;
-        if (data) await recordAuditLog(data.id, 'INSERT', null, data);
-      }
-
-      setShowFormModal(false);
-      await fetchAllData();
-    } catch (err: any) {
-      alert(err?.message || 'Erro ao salvar registro no banco de dados.');
-    } finally {
-      setSaving(false);
+    if (listaParaExportar.length === 0) {
+      alert('Nenhum alerta de "Revisar permissionamento" encontrado para exportar.');
+      return;
     }
-  }
 
-  async function handleDelete(item: AdminLocalRow) {
-    if (!window.confirm(`Confirma a exclusão da estação ${item.endereco_logico}?`)) return;
-
-    try {
-      const { error } = await supabase
-        .from('administradores_locais')
-        .delete()
-        .eq('id', item.id);
-
-      if (error) throw error;
-      await recordAuditLog(item.id, 'DELETE', item, null);
-      await fetchAllData();
-    } catch (err: any) {
-      alert(err?.message || 'Erro ao excluir o registro.');
-    }
-  }
-
-  async function handleUndo(log: AuditLog) {
-    if (!window.confirm(`Deseja reverter a alteração feita por ${log.usuario}?`)) return;
-
-    try {
-      if (log.operacao === 'INSERT' && log.registro_id) {
-        await supabase.from('administradores_locais').delete().eq('id', log.registro_id);
-      } else if (log.operacao === 'DELETE' && log.dados_antigos) {
-        await supabase.from('administradores_locais').delete().eq('id', log.dados_antigos.id);
-        const { error: insertErr } = await supabase
-          .from('administradores_locais')
-          .insert([log.dados_antigos]);
-        if (insertErr) throw insertErr;
-      } else if (log.operacao === 'UPDATE' && log.dados_antigos && log.registro_id) {
-        const { error: updateErr } = await supabase
-          .from('administradores_locais')
-          .update(log.dados_antigos)
-          .eq('id', log.registro_id);
-        if (updateErr) throw updateErr;
-      }
-
-      await supabase.from('administradores_locais_auditoria').delete().eq('id', log.id);
-      setShowUndoModal(false);
-      await fetchAllData();
-      await fetchAuditLogs();
-      alert('Reversão efetuada com sucesso!');
-    } catch (err: any) {
-      alert(err?.message || 'Erro ao reverter alteração.');
-    }
-  }
-
-  function handleExportExcel() {
-    const exportData = filteredItems.map(item => ({
-      'Endereço Lógico': item.endereco_logico,
-      'Qtd Admins': item.qntd_admin,
-      'Administradores': item.administradores || '',
-      'Departamento': item.departamento || '',
-      'Setor': item.setor || '',
-      'Prefixo': item.prefixo || '',
-      'Justificativa / Motivo': item.justificativa || '',
-      'Modificado Por': item.modificado_por || ''
+    const dataToExport = listaParaExportar.map((item) => ({
+      'ENDEREÇO LÓGICO': item.endereco_logico,
+      'ADMINISTRADORES LOCAIS': item.administradores,
+      'STATUS DO ALERTA': item.status,
     }));
 
-    const dashboardSummary = [
-      { Métrica: 'Total de Estações Exibidas', Valor: filteredItems.length },
-      { Métrica: 'Total de Administradores Locais', Valor: totalAdminsLocais },
-      { Métrica: 'Total de Setores Distintos', Valor: listaSetores.length },
-      { Métrica: 'Total de Departamentos', Valor: listaDeptos.length },
-    ];
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Alertas');
+    const filename = `Alertas_Permissionamento_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
 
-    const wb = XLSX.utils.book_new();
-    const wsData = XLSX.utils.json_to_sheet(exportData);
-    XLSX.utils.book_append_sheet(wb, wsData, 'Administradores Locais');
+  const exportarBaseCompletaExcel = () => {
+    if (data.length === 0) {
+      alert('Não há dados disponíveis para exportação.');
+      return;
+    }
 
-    const wsSummary = XLSX.utils.json_to_sheet(dashboardSummary);
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo Dashboard');
+    const dataToExport = data.map((item) => ({
+      'ENDEREÇO LÓGICO': item.endereco_logico,
+      'ADMINISTRADORES LOCAIS': item.administradores,
+      'ALERTAS': item.alerta || 'OK',
+      'JUSTIFICATIVA': item.justificativa || '',
+      'ÚLTIMA ATUALIZAÇÃO': item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR') : '',
+    }));
 
-    XLSX.writeFile(wb, `ARGUS_Administradores_Locais_${new Date().toISOString().slice(0,10)}.xlsx`);
-  }
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Base_Administradores');
+    const filename = `Base_Administradores_Locais_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
 
-  const listaSetores = useMemo(() => Array.from(new Set(items.map((i) => i.setor).filter(Boolean))), [items]);
-  const listaDeptos = useMemo(() => Array.from(new Set(items.map((i) => i.departamento).filter(Boolean))), [items]);
-
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+  // ==========================================
+  // FILTRAGEM E BUSCA EM TEMPO REAL
+  // ==========================================
+  const filteredData = useMemo(() => {
+    const searchLower = search.toLowerCase().trim();
+    return data.filter((item) => {
       const matchesSearch =
-        !search.trim() ||
-        item.endereco_logico?.toLowerCase().includes(search.toLowerCase()) ||
-        item.administradores?.toLowerCase().includes(search.toLowerCase()) ||
-        item.setor?.toLowerCase().includes(search.toLowerCase()) ||
-        item.departamento?.toLowerCase().includes(search.toLowerCase()) ||
-        item.prefixo?.toLowerCase().includes(search.toLowerCase()) ||
-        item.justificativa?.toLowerCase().includes(search.toLowerCase());
+        !searchLower ||
+        item.endereco_logico.toLowerCase().includes(searchLower) ||
+        item.administradores.toLowerCase().includes(searchLower) ||
+        (item.justificativa && item.justificativa.toLowerCase().includes(searchLower));
 
-      const matchesSetor = selectedSetor === 'todos' || item.setor === selectedSetor;
-      const matchesDepto = selectedDepto === 'todos' || item.departamento === selectedDepto;
-
-      return matchesSearch && matchesSetor && matchesDepto;
+      const matchesAlertaFilter = !filterAlerta || item.alerta === 'Revisar permissionamento';
+      return matchesSearch && matchesAlertaFilter;
     });
-  }, [items, search, selectedSetor, selectedDepto]);
+  }, [data, search, filterAlerta]);
 
-  const totalMaquinas = useMemo(() => {
-    return new Set(filteredItems.map((i) => i.endereco_logico).filter(Boolean)).size;
-  }, [filteredItems]);
-
-  const totalAdminsLocais = useMemo(() => {
-    return filteredItems.reduce((acc, curr) => acc + (curr.qntd_admin || 1), 0);
-  }, [filteredItems]);
+  // Contadores para os Cards Dashboard
+  const totalRegistros = data.length;
+  const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Cabeçalho */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="min-h-screen bg-slate-50 p-6 space-y-6 font-sans text-slate-800">
+      {/* CABEÇALHO */}
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <h2 className="text-2xl font-black text-white tracking-wide flex items-center gap-2">
-            <ShieldAlert className="w-7 h-7 text-[#D4AF37]" />
-            Administradores Locais
-          </h2>
-          <p className="text-slate-400 text-xs mt-1">
-            Gestão de privilégios elevados, log de alterações e auditoria de estações de trabalho.
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Database className="w-7 h-7 text-blue-600" />
+            Auditoria de Administradores Locais
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Comparação da base cadastrada vs. relatórios semanais de permissionamento.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={fetchAllData}
-            className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-slate-300 border border-slate-700 px-3 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg"
-            title="Atualizar dados"
+        {/* BARRA DE AÇÕES / BOTOES */}
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${
+              importing ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
-            <RefreshCw className="w-4 h-4" />
-            Atualizar
+            <Upload className="w-4 h-4" />
+            {importing ? 'Processando...' : 'Importar Planilha'}
+            <input
+              type="file"
+              accept=".xlsx, .xls, .csv"
+              onChange={handleFileUpload}
+              disabled={importing}
+              className="hidden"
+            />
+          </label>
+
+          <button
+            onClick={exportarAlertasExcel}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors shadow-sm text-sm font-medium"
+          >
+            <ShieldAlert className="w-4 h-4" />
+            Exportar Alertas (.xlsx)
           </button>
 
           <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-emerald-400 border border-emerald-500/30 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg hover:border-emerald-400"
+            onClick={exportarBaseCompletaExcel}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm text-sm font-medium"
           >
-            <Download className="w-4 h-4" />
-            Exportar Excel
+            <FileSpreadsheet className="w-4 h-4" />
+            Exportar Base (.xlsx)
           </button>
 
-          {canEdit && (
-            <button
-              onClick={() => {
-                fetchAuditLogs();
-                setShowUndoModal(true);
-              }}
-              className="flex items-center gap-2 bg-[#001726] hover:bg-[#00223a] text-amber-400 border border-amber-500/30 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer shadow-lg hover:border-amber-400"
-            >
-              <RotateCcw className="w-4 h-4 text-amber-400" />
-              Desfazer
-            </button>
-          )}
-
-          {canEdit && (
-            <button
-              onClick={() => handleOpenForm()}
-              className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#B38F24] hover:brightness-110 text-[#001726] font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-lg shadow-[#D4AF37]/10"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              Novo Cadastro
-            </button>
-          )}
+          <button
+            onClick={loadData}
+            title="Recarregar Dados"
+            className="p-2 bg-white border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* CARDS DE DASHBOARD */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total de Máquinas</span>
-            <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
-              <Monitor className="w-5 h-5" />
-            </div>
+      {/* PAINEL DE MÉTRICAS */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total na Base</p>
+            <p className="text-2xl font-extrabold text-slate-900 mt-1">{totalRegistros}</p>
           </div>
-          <div className="mt-3">
-            <span className="text-3xl font-black text-white tracking-tight">{totalMaquinas}</span>
-            <span className="text-[11px] text-slate-400 block mt-1 font-mono">Endereços lógicos únicos</span>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+            <Database className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Admins Locais</span>
-            <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
-              <Users className="w-5 h-5" />
-            </div>
+        <div
+          onClick={() => setFilterAlerta(!filterAlerta)}
+          className={`p-4 rounded-xl border cursor-pointer transition-all shadow-sm flex items-center justify-between ${
+            filterAlerta
+              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400'
+              : 'bg-white border-slate-200 hover:border-amber-300'
+          }`}
+        >
+          <div>
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Alertas de Permissionamento</p>
+            <p className="text-2xl font-extrabold text-amber-900 mt-1">{totalAlertas}</p>
           </div>
-          <div className="mt-3">
-            <span className="text-3xl font-black text-[#D4AF37] tracking-tight">{totalAdminsLocais}</span>
-            <span className="text-[11px] text-slate-400 block mt-1 font-mono">Contas com permissão</span>
-          </div>
-        </div>
-
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Setores Mapeados</span>
-            <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
-              <Layers className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className="text-3xl font-black text-white tracking-tight">{listaSetores.length}</span>
-            <span className="text-[11px] text-slate-400 block mt-1">Setores com concessão</span>
+          <div className="p-3 bg-amber-100 text-amber-700 rounded-lg">
+            <AlertTriangle className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#001E33] via-[#001726] to-[#000d16] border border-[#1e293b] p-5 rounded-2xl shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Departamentos</span>
-            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
-              <Building2 className="w-5 h-5" />
-            </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Sem Inconsistências</p>
+            <p className="text-2xl font-extrabold text-slate-900 mt-1">{totalRegistros - totalAlertas}</p>
           </div>
-          <div className="mt-3">
-            <span className="text-3xl font-black text-white tracking-tight">{listaDeptos.length}</span>
-            <span className="text-[11px] text-slate-400 block mt-1">Departamentos cadastrados</span>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+            <CheckCircle className="w-6 h-6" />
           </div>
         </div>
       </div>
 
-      {/* FILTROS DE BUSCA */}
-      <div className="bg-[#001E33] p-4 rounded-2xl border border-[#1e293b] flex flex-col md:flex-row items-center gap-3 shadow-md">
-        <div className="relative flex-1 w-full">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+      {/* FEEDBACK DE IMPORTAÇÃO */}
+      {importResult && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
+            <div>
+              <span className="font-semibold">Importação concluída com sucesso!</span>
+              <div className="mt-1 text-xs text-blue-700 flex gap-4">
+                <span>Identificados/Atualizados: <strong>{importResult.updated}</strong></span>
+                <span>Novos com Alerta (Fora da Base): <strong>{importResult.added}</strong></span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setImportResult(null)}
+            className="text-xs text-blue-500 hover:text-blue-700 font-semibold"
+          >
+            Fechar
+          </button>
+        </div>
+      )}
+
+      {/* BARRA DE FILTROS E PESQUISA */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="relative w-full sm:w-96">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar por Endereço Lógico, Admins, Setor, Departamento, Prefixo ou Justificativa..."
+            placeholder="Buscar por Endereço Lógico ou Administrador..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#001726] border border-[#1e293b] text-white pl-9 pr-4 py-2.5 rounded-xl text-xs focus:outline-none focus:border-[#D4AF37]"
+            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-
-        <select
-          value={selectedSetor}
-          onChange={(e) => setSelectedSetor(e.target.value)}
-          className="w-full md:w-48 bg-[#001726] border border-[#1e293b] text-white px-3 py-2.5 rounded-xl text-xs focus:outline-none focus:border-[#D4AF37]"
-        >
-          <option value="todos">Todos os Setores</option>
-          {listaSetores.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-
-        <select
-          value={selectedDepto}
-          onChange={(e) => setSelectedDepto(e.target.value)}
-          className="w-full md:w-48 bg-[#001726] border border-[#1e293b] text-white px-3 py-2.5 rounded-xl text-xs focus:outline-none focus:border-[#D4AF37]"
-        >
-          <option value="todos">Todos os Departamentos</option>
-          {listaDeptos.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={() => setFilterAlerta(!filterAlerta)}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border ${
+              filterAlerta
+                ? 'bg-amber-600 text-white border-amber-600'
+                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            {filterAlerta ? 'Exibindo Apenas Alertas' : 'Filtrar Somente Alertas'}
+          </button>
+        </div>
       </div>
 
       {/* TABELA DE DADOS */}
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl overflow-hidden shadow-2xl">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-[#001726] border-b border-[#1e293b]">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-100 text-slate-700 font-semibold uppercase text-xs tracking-wider border-b border-slate-200">
               <tr>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Endereço Lógico</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Admins Locais</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Setor</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Departamento</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Prefixo</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Justificativa / Motivo</th>
-                <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5">Modificado Por</th>
-                {canEdit && <th className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-4 py-3.5 text-right">Ações</th>}
+                <th className="p-4">Endereço Lógico</th>
+                <th className="p-4">Administradores Locais</th>
+                <th className="p-4 text-center">Status / Alertas</th>
+                <th className="p-4">Observações / Justificativa</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1e293b]">
-              {loading && (
+            <tbody className="divide-y divide-slate-200">
+              {loading ? (
                 <tr>
-                  <td colSpan={8} className="text-center text-slate-400 py-10 text-xs">
-                    Carregando registros do banco de dados...
+                  <td colSpan={4} className="p-8 text-center text-slate-500">
+                    Carregando dados da tabela base...
                   </td>
                 </tr>
-              )}
-
-              {!loading && filteredItems.length === 0 && (
+              ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center text-slate-400 py-10 text-xs">
+                  <td colSpan={4} className="p-8 text-center text-slate-500">
                     Nenhum registro encontrado.
                   </td>
                 </tr>
-              )}
-
-              {!loading &&
-                filteredItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-[#001726]/60 transition-colors">
-                    <td className="px-4 py-3 font-mono font-bold text-cyan-400 text-xs">
-                      {item.endereco_logico}
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      <div className="font-semibold text-amber-300">{item.administradores || '-'}</div>
-                      <div className="text-[10px] text-slate-500">Qtd: {item.qntd_admin || 1}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
-                      {item.setor || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
-                      {item.departamento || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400 font-mono">
-                      {item.prefixo || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400 max-w-xs truncate">
-                      {item.justificativa || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-[11px] text-slate-400 font-mono">
-                      {item.modificado_por || item.updated_by || '-'}
-                    </td>
-                    {canEdit && (
-                      <td className="px-4 py-3 text-right space-x-1">
-                        <button
-                          onClick={() => handleOpenForm(item)}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center"
-                          title="Editar Cadastro"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center"
-                          title="Excluir Cadastro"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+              ) : (
+                filteredData.map((item) => {
+                  const temAlerta = item.alerta === 'Revisar permissionamento';
+                  return (
+                    <tr key={item.id || item.endereco_logico} className="hover:bg-slate-50 transition-colors">
+                      {/* Endereço Lógico */}
+                      <td className="p-4 font-mono font-bold text-slate-900">
+                        {item.endereco_logico}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {/* Administradores Locais */}
+                      <td className="p-4 text-slate-700 max-w-md break-words">
+                        {item.administradores || <span className="text-slate-400 italic">Nenhum informado</span>}
+                      </td>
+                      {/* Alerta */}
+                      <td className="p-4 text-center">
+                        {temAlerta ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            Revisar permissionamento
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                            Conforme
+                          </span>
+                        )}
+                      </td>
+                      {/* Justificativa / Observação */}
+                      <td className="p-4 text-xs text-slate-500">
+                        {item.justificativa || '-'}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
+        {/* RODAPÉ DA TABELA */}
+        <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
+          <span>Exibindo <strong>{filteredData.length}</strong> de <strong>{totalRegistros}</strong> registros</span>
+          <span>Atualização automática via Supabase</span>
+        </div>
       </div>
-
-      {/* MODAL DE NOVO CADASTRO / EDIÇÃO */}
-      {showFormModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#1e293b] pb-3">
-              <h3 className="text-white font-bold text-base flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-[#D4AF37]" />
-                {editingItem ? 'Editar Administrador Local' : 'Novo Cadastro de Administrador Local'}
-              </h3>
-              <button onClick={() => setShowFormModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="text-slate-400 text-xs font-semibold block mb-1">Endereço Lógico (Estação) *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="EX: MP7003"
-                    value={enderecoLogico}
-                    onChange={(e) => setEnderecoLogico(e.target.value)}
-                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 text-xs font-semibold block mb-1">Prefixo</label>
-                  <input
-                    type="text"
-                    placeholder="Prefixo"
-                    value={prefixo}
-                    onChange={(e) => setPrefixo(e.target.value)}
-                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Quantidade de Admins</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={qntdAdmin}
-                  onChange={(e) => handleQntdChange(Number(e.target.value))}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-slate-400 text-xs font-semibold block">Nomes / Contas dos Administradores</label>
-                {listaAdmins.map((adm, index) => (
-                  <div key={index} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder={`Administrador ${index + 1}`}
-                      value={adm}
-                      onChange={(e) => handleAdminNameChange(index, e.target.value)}
-                      className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 text-xs font-semibold block mb-1">Setor</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: SUPIM / COATEN"
-                    value={setor}
-                    onChange={(e) => setSetor(e.target.value)}
-                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 text-xs font-semibold block mb-1">Departamento</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: PRODASEN"
-                    value={departamento}
-                    onChange={(e) => setDepartamento(e.target.value)}
-                    className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 text-xs font-semibold block mb-1">Justificativa / Motivo</label>
-                <textarea
-                  rows={3}
-                  placeholder="Justificativa para a concessão de privilégios..."
-                  value={justificativa}
-                  onChange={(e) => setJustificativa(e.target.value)}
-                  className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#D4AF37] resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-[#1e293b]">
-                <button
-                  type="button"
-                  onClick={() => setShowFormModal(false)}
-                  className="px-4 py-2 bg-[#001726] text-slate-300 hover:text-white rounded-xl text-xs font-bold cursor-pointer border border-[#1e293b]"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 bg-[#D4AF37] hover:brightness-110 text-[#001726] rounded-xl text-xs font-extrabold cursor-pointer disabled:opacity-50"
-                >
-                  {saving ? 'Salvando...' : 'Salvar Registro'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE HISTÓRICO / DESFAZER (UNDO) */}
-      {showUndoModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 max-w-2xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#1e293b] pb-3">
-              <h3 className="text-white font-bold text-base flex items-center gap-2">
-                <RotateCcw className="w-5 h-5 text-amber-400" />
-                Histórico de Auditoria e Reversão (Desfazer)
-              </h3>
-              <button onClick={() => setShowUndoModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {auditLogs.length === 0 && (
-                <p className="text-slate-400 text-xs text-center py-6">Nenhum log de auditoria recente encontrado.</p>
-              )}
-
-              {auditLogs.map((log) => (
-                <div key={log.id} className="bg-[#001726] border border-[#1e293b] p-3.5 rounded-xl flex items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        log.operacao === 'INSERT' ? 'bg-emerald-500/20 text-emerald-400' :
-                        log.operacao === 'UPDATE' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
-                      }`}>
-                        {log.operacao}
-                      </span>
-                      <span className="text-xs text-white font-mono font-bold">
-                        {log.dados_novos?.endereco_logico || log.dados_antigos?.endereco_logico || 'Registro'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-1">{log.usuario}</p>
-                    <span className="text-[10px] text-slate-500 block font-mono">
-                      {new Date(log.created_at).toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => handleUndo(log)}
-                    className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-                  >
-                    Reverter
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
+};
+
+export default GerenciadorAdministradores;

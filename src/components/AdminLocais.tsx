@@ -3,7 +3,6 @@ import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import {
   Upload,
-  Download,
   AlertTriangle,
   CheckCircle,
   Search,
@@ -14,11 +13,23 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// CONFIGURAÇÃO DO SUPABASE
+// CONFIGURAÇÃO DO SUPABASE (Segura)
 // ==========================================
 const SUPABASE_URL = 'https://uwryfadjkscmxlsbpqas.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnlmYWRqa3NjbXhsc2JwcWFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTM5NzEsImV4cCI6MjEwMzE2OTk3MX0.1g6-eFtk-QAWG-q34NZiCmmvDo76hm4YSZGOaSM96RY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Evita múltiplas instâncias duplicadas se já houver cache global
+let supabaseInstance: any = null;
+const getSupabaseClient = () => {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false }
+    });
+  }
+  return supabaseInstance;
+};
+
+const supabase = getSupabaseClient();
 
 // ==========================================
 // INTERFACES DE DADOS
@@ -53,40 +64,40 @@ export interface ImportResult {
 // COMPONENTE PRINCIPAL
 // ==========================================
 export const GerenciadorAdministradores: React.FC = () => {
-  // Estados da Aplicação
   const [data, setData] = useState<AdminRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [importing, setImporting] = useState<boolean>(false);
   const [search, setSearch] = useState<string>('');
   const [filterAlerta, setFilterAlerta] = useState<boolean>(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [alertasRecentes, setAlertasRecentes] = useState<AlertaItem[]>([]);
 
-  // Carga inicial dos dados da Tabela Base
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const { data: dbData, error } = await supabase
         .from('administradores_locais')
         .select('*')
         .order('endereco_logico', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message);
+      }
       setData(dbData || []);
     } catch (err: any) {
-      alert(`Erro ao carregar dados do Supabase: ${err.message}`);
+      console.error('Erro ao carregar dados:', err);
+      setErrorMsg(err.message || 'Erro desconhecido ao conectar com o banco.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ==========================================
-  // PROCESSAMENTO DE IMPORTAÇÃO DA PLANILHA
-  // ==========================================
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -103,7 +114,6 @@ export const GerenciadorAdministradores: React.FC = () => {
         const ws = wb.Sheets[wsname];
         const importedRows: any[] = XLSX.utils.sheet_to_json(ws);
 
-        // Mapeia a tabela base atual usando o endereço lógico como chave
         const currentMap = new Map(
           data.map((item) => [item.endereco_logico.toString().trim().toUpperCase(), item])
         );
@@ -113,8 +123,7 @@ export const GerenciadorAdministradores: React.FC = () => {
         let added = 0;
         let updated = 0;
 
-        importedRows.forEach((row, index) => {
-          // Normalização e Fallbacks robustos para os nomes das colunas
+        importedRows.forEach((row) => {
           const host = (
             row['ENDEREÇO LÓGICO'] ||
             row['ENDERECO_LOGICO'] ||
@@ -135,13 +144,8 @@ export const GerenciadorAdministradores: React.FC = () => {
             ''
           ).toString().trim();
 
-          if (index < 5) {
-            console.log(`[Diagnóstico Linha ${index + 1}] Host detectado: "${host}" | Admins detectados: "${admins}"`);
-          }
+          if (!host) return;
 
-          if (!host) return; // Ignora linhas sem endereço lógico
-
-          // VERIFICAÇÃO DE INCONSISTÊNCIA NA TABELA BASE
           if (!currentMap.has(host)) {
             added++;
             const statusAlerta = 'Revisar permissionamento';
@@ -175,7 +179,6 @@ export const GerenciadorAdministradores: React.FC = () => {
 
         setAlertasRecentes(novosAlertas);
 
-        // Persiste no Supabase fatiando em lotes de 300
         const chunkSize = 300;
         for (let i = 0; i < payloadToUpsert.length; i += chunkSize) {
           const chunk = payloadToUpsert.slice(i, i + chunkSize);
@@ -185,7 +188,6 @@ export const GerenciadorAdministradores: React.FC = () => {
 
         setImportResult({ added, updated, removed: 0 });
         await loadData();
-
       } catch (err: any) {
         alert(`Falha no processamento do arquivo: ${err.message}`);
       } finally {
@@ -197,9 +199,6 @@ export const GerenciadorAdministradores: React.FC = () => {
     reader.readAsBinaryString(file);
   };
 
-  // ==========================================
-  // EXPORTAÇÕES PARA EXCEL
-  // ==========================================
   const exportarAlertasExcel = () => {
     const listaParaExportar =
       alertasRecentes.length > 0
@@ -226,8 +225,7 @@ export const GerenciadorAdministradores: React.FC = () => {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Alertas');
-    const filename = `Alertas_Permissionamento_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+    XLSX.writeFile(workbook, `Alertas_Permissionamento_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const exportarBaseCompletaExcel = () => {
@@ -247,13 +245,9 @@ export const GerenciadorAdministradores: React.FC = () => {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Base_Administradores');
-    const filename = `Base_Administradores_Locais_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+    XLSX.writeFile(workbook, `Base_Administradores_Locais_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  // ==========================================
-  // FILTRAGEM E BUSCA EM TEMPO REAL
-  // ==========================================
   const filteredData = useMemo(() => {
     const searchLower = search.toLowerCase().trim();
     return data.filter((item) => {
@@ -272,20 +266,20 @@ export const GerenciadorAdministradores: React.FC = () => {
   const totalAlertas = data.filter((i) => i.alerta === 'Revisar permissionamento').length;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 space-y-6 font-sans text-slate-800">
+    <div className="w-full bg-slate-900 text-slate-100 p-6 space-y-6 font-sans min-h-[calc(100vh-5rem)]">
       {/* CABEÇALHO */}
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Database className="w-7 h-7 text-blue-600" />
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Database className="w-7 h-7 text-blue-500" />
             Auditoria de Administradores Locais
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-slate-400 mt-1">
             Comparação da base cadastrada vs. relatórios semanais de permissionamento.
           </p>
         </div>
 
-        {/* BARRA DE AÇÕES / BOTOES */}
+        {/* BARRA DE AÇÕES */}
         <div className="flex flex-wrap items-center gap-3">
           <label
             className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors shadow-sm text-sm font-medium ${
@@ -322,21 +316,29 @@ export const GerenciadorAdministradores: React.FC = () => {
           <button
             onClick={loadData}
             title="Recarregar Dados"
-            className="p-2 bg-white border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </header>
 
+      {/* MENSAGEM DE ERRO CASO OCORREU FALHA NO SUPABASE */}
+      {errorMsg && (
+        <div className="bg-red-950 border border-red-800 rounded-xl p-4 text-sm text-red-200 flex items-center justify-between">
+          <span><strong>Erro de Conexão/Banco:</strong> {errorMsg} (Verifique se a tabela 'administradores_locais' existe no Supabase).</span>
+          <button onClick={loadData} className="px-3 py-1 bg-red-800 hover:bg-red-700 rounded text-xs font-bold">Tentar Novamente</button>
+        </div>
+      )}
+
       {/* PAINEL DE MÉTRICAS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total na Base</p>
-            <p className="text-2xl font-extrabold text-slate-900 mt-1">{totalRegistros}</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total na Base</p>
+            <p className="text-2xl font-extrabold text-white mt-1">{totalRegistros}</p>
           </div>
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+          <div className="p-3 bg-blue-950 text-blue-400 rounded-lg">
             <Database className="w-6 h-6" />
           </div>
         </div>
@@ -345,25 +347,25 @@ export const GerenciadorAdministradores: React.FC = () => {
           onClick={() => setFilterAlerta(!filterAlerta)}
           className={`p-4 rounded-xl border cursor-pointer transition-all shadow-sm flex items-center justify-between ${
             filterAlerta
-              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400'
-              : 'bg-white border-slate-200 hover:border-amber-300'
+              ? 'bg-amber-950 border-amber-600 ring-2 ring-amber-500'
+              : 'bg-slate-800 border-slate-700 hover:border-amber-500'
           }`}
         >
           <div>
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Alertas de Permissionamento</p>
-            <p className="text-2xl font-extrabold text-amber-900 mt-1">{totalAlertas}</p>
+            <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Alertas de Permissionamento</p>
+            <p className="text-2xl font-extrabold text-amber-200 mt-1">{totalAlertas}</p>
           </div>
-          <div className="p-3 bg-amber-100 text-amber-700 rounded-lg">
+          <div className="p-3 bg-amber-950 text-amber-400 rounded-lg">
             <AlertTriangle className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Sem Inconsistências</p>
-            <p className="text-2xl font-extrabold text-slate-900 mt-1">{totalRegistros - totalAlertas}</p>
+            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Sem Inconsistências</p>
+            <p className="text-2xl font-extrabold text-white mt-1">{totalRegistros - totalAlertas}</p>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+          <div className="p-3 bg-emerald-950 text-emerald-400 rounded-lg">
             <CheckCircle className="w-6 h-6" />
           </div>
         </div>
@@ -371,28 +373,23 @@ export const GerenciadorAdministradores: React.FC = () => {
 
       {/* FEEDBACK DE IMPORTAÇÃO */}
       {importResult && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900 flex items-start justify-between">
+        <div className="bg-blue-950 border border-blue-800 rounded-xl p-4 text-sm text-blue-200 flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
+            <CheckCircle className="w-5 h-5 text-blue-400 shrink-0" />
             <div>
               <span className="font-semibold">Importação concluída com sucesso!</span>
-              <div className="mt-1 text-xs text-blue-700 flex gap-4">
+              <div className="mt-1 text-xs text-blue-300 flex gap-4">
                 <span>Identificados/Atualizados: <strong>{importResult.updated}</strong></span>
                 <span>Novos com Alerta (Fora da Base): <strong>{importResult.added}</strong></span>
               </div>
             </div>
           </div>
-          <button
-            onClick={() => setImportResult(null)}
-            className="text-xs text-blue-500 hover:text-blue-700 font-semibold"
-          >
-            Fechar
-          </button>
+          <button onClick={() => setImportResult(null)} className="text-xs text-blue-400 hover:text-blue-200 font-semibold">Fechar</button>
         </div>
       )}
 
-      {/* BARRA DE FILTROS E PESQUISA */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      {/* BUSCA */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
         <div className="relative w-full sm:w-96">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -400,28 +397,24 @@ export const GerenciadorAdministradores: React.FC = () => {
             placeholder="Buscar por Endereço Lógico ou Administrador..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => setFilterAlerta(!filterAlerta)}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border ${
-              filterAlerta
-                ? 'bg-amber-600 text-white border-amber-600'
-                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-            }`}
-          >
-            {filterAlerta ? 'Exibindo Apenas Alertas' : 'Filtrar Somente Alertas'}
-          </button>
-        </div>
+        <button
+          onClick={() => setFilterAlerta(!filterAlerta)}
+          className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border ${
+            filterAlerta ? 'bg-amber-600 text-white border-amber-600' : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+          }`}
+        >
+          {filterAlerta ? 'Exibindo Apenas Alertas' : 'Filtrar Somente Alertas'}
+        </button>
       </div>
 
-      {/* TABELA DE DADOS */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      {/* TABELA */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-100 text-slate-700 font-semibold uppercase text-xs tracking-wider border-b border-slate-200">
+            <thead className="bg-slate-900 text-slate-400 font-semibold uppercase text-xs tracking-wider border-b border-slate-700">
               <tr>
                 <th className="p-4">Endereço Lógico</th>
                 <th className="p-4">Administradores Locais</th>
@@ -429,50 +422,36 @@ export const GerenciadorAdministradores: React.FC = () => {
                 <th className="p-4">Observações / Justificativa</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-slate-500">
-                    Carregando dados da tabela base...
-                  </td>
+                  <td colSpan={4} className="p-8 text-center text-slate-400">Carregando dados da tabela base...</td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-slate-500">
-                    Nenhum registro encontrado.
-                  </td>
+                  <td colSpan={4} className="p-8 text-center text-slate-400">Nenhum registro encontrado.</td>
                 </tr>
               ) : (
                 filteredData.map((item) => {
                   const temAlerta = item.alerta === 'Revisar permissionamento';
                   return (
-                    <tr key={item.id || item.endereco_logico} className="hover:bg-slate-50 transition-colors">
-                      {/* Endereço Lógico */}
-                      <td className="p-4 font-mono font-bold text-slate-900">
-                        {item.endereco_logico}
-                      </td>
-                      {/* Administradores Locais */}
-                      <td className="p-4 text-slate-700 max-w-md break-words">
-                        {item.administradores || <span className="text-slate-400 italic">Nenhum informado</span>}
-                      </td>
-                      {/* Alerta */}
+                    <tr key={item.id || item.endereco_logico} className="hover:bg-slate-750 transition-colors">
+                      <td className="p-4 font-mono font-bold text-white">{item.endereco_logico}</td>
+                      <td className="p-4 text-slate-300 max-w-md break-words">{item.administradores || <span className="text-slate-500 italic">Nenhum informado</span>}</td>
                       <td className="p-4 text-center">
                         {temAlerta ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-950 text-amber-300 border border-amber-700">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                             Revisar permissionamento
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-300 border border-emerald-700">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
                             Conforme
                           </span>
                         )}
                       </td>
-                      {/* Justificativa / Observação */}
-                      <td className="p-4 text-xs text-slate-500">
-                        {item.justificativa || '-'}
-                      </td>
+                      <td className="p-4 text-xs text-slate-400">{item.justificativa || '-'}</td>
                     </tr>
                   );
                 })
@@ -480,8 +459,7 @@ export const GerenciadorAdministradores: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {/* RODAPÉ DA TABELA */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
+        <div className="p-4 bg-slate-900 border-t border-slate-700 text-xs text-slate-400 flex justify-between items-center">
           <span>Exibindo <strong>{filteredData.length}</strong> de <strong>{totalRegistros}</strong> registros</span>
           <span>Atualização automática via Supabase</span>
         </div>
@@ -490,6 +468,5 @@ export const GerenciadorAdministradores: React.FC = () => {
   );
 };
 
-// EXPORTAÇÕES COMPATÍVEIS PARA RESOLVER O ERRO DE BUILD NO RENDER
 export { GerenciadorAdministradores as AdminLocais };
 export default GerenciadorAdministradores;

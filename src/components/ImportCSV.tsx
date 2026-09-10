@@ -7,6 +7,7 @@ interface ImportCSVProps {
   onImport: (rows: Partial<LicencaUsuario>[]) => Promise<{ success: number; errors: string[] }>;
 }
 
+// Modelo exato do seu CSV
 const TEMPLATE_HEADERS = ['nome','email','setor','tipo_licenca','tipo_produto','produto','status','possui_licenca'] as const;
 
 const TEMPLATE_EXAMPLE = {
@@ -19,6 +20,9 @@ const TEMPLATE_EXAMPLE = {
   status: 'Ativo',
   possui_licenca: 'true',
 };
+
+// Colunas que EXISTEM no seu banco licencas_usuarios - só isso vai pro insert
+const ALLOWED_KEYS = ['nome','email','login','departamento_raiz','tipo_licenca','tipo_produto','produto','status','possui_licenca'] as const;
 
 function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> {
   const row: Record<string, unknown> = {};
@@ -35,7 +39,7 @@ function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> 
         row.email = val.toLowerCase();
         row.login = val.split('@')[0].toLowerCase();
         break;
-      case 'login': row.login = val; break;
+      case 'login': row.login = val.toLowerCase(); break;
       case 'setor':
       case 'departamento':
       case 'departamento_raiz':
@@ -57,16 +61,23 @@ function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> 
       case 'possui_licenca':
         row.possui_licenca = true;
         break;
+      // NUNCA cria local_nome ou local_id aqui
     }
   });
 
-  if (row.email &&!row.possui_licenca) row.possui_licenca = true;
+  if (row.email && row.possui_licenca === undefined) row.possui_licenca = true;
   if (row.email &&!row.status) row.status = 'Ativo';
   if (row.email &&!row.tipo_licenca) row.tipo_licenca = 'Adobe';
   if (row.email &&!row.tipo_produto) row.tipo_produto = 'ADOBE PRO DC';
   if (row.email &&!row.produto) row.produto = 'Acrobat Pro DC';
 
-  return row as Partial<LicencaUsuario>;
+  // FILTRA SÓ O QUE EXISTE NO BANCO
+  const clean: Record<string, unknown> = {};
+  ALLOWED_KEYS.forEach(key => {
+    if (row[key]!== undefined) clean[key] = row[key];
+  });
+
+  return clean as Partial<LicencaUsuario>;
 }
 
 export function ImportCSV({ onImport }: ImportCSVProps) {
@@ -106,9 +117,14 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     setImporting(true);
     setError(null);
     try {
-      const res = await onImport(preview);
+      // Garante de novo que não vai local_nome
+      const payload = preview.map(r => {
+        const { local_nome, local_id, local,...rest } = r as any;
+        return rest;
+      });
+      const res = await onImport(payload);
       setResult(res);
-      setPreview([]);
+      if(res.success > 0) setPreview([]);
     } catch (err) {
       setError(err instanceof Error? err.message : 'Erro durante a importação.');
     } finally { setImporting(false); }

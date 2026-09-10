@@ -98,34 +98,6 @@ export function Dashboard({ user, role }: DashboardProps) {
       const possuiLicencaStr = (rowData['POSSUI_LICENCA'] || 'VERDADEIRO').toUpperCase();
       const possui_licenca = possuiLicencaStr === 'VERDADEIRO' || possuiLicencaStr === 'TRUE' || possuiLicencaStr === '1';
 
-      // Objeto estritamente limpo contendo apenas as colunas existentes na tabela
-      registros.push({
-        email: email,
-        nome: rowData['NOME'] || null,
-        login: rowData['LOGIN'] || null,
-        departamento_raiz: rowData['DEPARTAMENTO'] || null,
-        tipo_licenca: rowData['FABRICANTE'] || null,
-        tipo_produto: tipo_produto_final || null,
-        produto: rowData['PRODUTO'] || null,
-        status: rowData['STATUS'] || 'Ativo',
-        possui_licenca: possui_licenca
-      });
-    }
-
-    for (const reg of registros) {
-      const { error } = await supabase
-        .from('licencas_usuarios')
-        .upsert(reg, { onConflict: 'email' });
-
-      if (error) {
-        throw new Error(`Erro ao importar e-mail ${reg.email}: ${error.message}`);
-      }
-    }
-
-    await loadData();
-  };
-
-      // Objeto limpo enviado ao Supabase contendo SOMENTE as colunas reais da tabela
       registros.push({
         email: email,
         nome: rowData['NOME'] || null,

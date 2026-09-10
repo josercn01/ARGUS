@@ -7,29 +7,76 @@ interface ImportCSVProps {
   onImport: (rows: Partial<LicencaUsuario>[]) => Promise<{ success: number; errors: string[] }>;
 }
 
-// Modelo exato do seu CSV
-const TEMPLATE_HEADERS = ['nome','email','setor','tipo_licenca','tipo_produto','produto','status','possui_licenca'] as const;
+const ADOBE_SINGLE_APPS = [
+  "Photoshop", "Illustrator", "InDesign", "Premiere Pro",
+  "After Effects", "Audition", "Lightroom", "Lightroom Classic",
+  "XD", "Animate", "Dreamweaver", "Acrobat Pro", "InCopy"
+] as const;
 
-const TEMPLATE_EXAMPLE = {
-  nome: 'Ellen Virginia Alves Torres',
-  email: 'ELLENV@senado.leg.br',
-  setor: 'SF-GABSEN-GSIRAJA',
-  tipo_licenca: 'Adobe',
-  tipo_produto: 'ADOBE PRO DC',
-  produto: 'Acrobat Pro DC',
-  status: 'Ativo',
-  possui_licenca: 'true',
-};
+const TEMPLATE_HEADERS = ['nome','email','setor','tipo_licenca','tipo_produto','produto','app_individual','status','possui_licenca'] as const;
 
-// Colunas que EXISTEM no seu banco licencas_usuarios - só isso vai pro insert
-const ALLOWED_KEYS = ['nome','email','login','departamento_raiz','tipo_licenca','tipo_produto','produto','status','possui_licenca'] as const;
+const TEMPLATE_EXAMPLES = [
+  {
+    nome: 'Ellen Virginia Alves Torres',
+    email: 'ellenv@senado.leg.br',
+    setor: 'SF-GABSEN-GSIRAJA',
+    tipo_licenca: 'Adobe',
+    tipo_produto: 'ADOBE PRO DC',
+    produto: 'Acrobat Pro DC',
+    app_individual: '',
+    status: 'Ativo',
+    possui_licenca: 'true',
+  },
+  {
+    nome: 'João Silva',
+    email: 'joao@senado.leg.br',
+    setor: 'SEGP',
+    tipo_licenca: 'Adobe',
+    tipo_produto: 'SUITE - TODOS APPS',
+    produto: 'Suite - Todos os Apps',
+    app_individual: '',
+    status: 'Ativo',
+    possui_licenca: 'true',
+  },
+  {
+    nome: 'Maria Souza',
+    email: 'maria@senado.leg.br',
+    setor: 'SEGP',
+    tipo_licenca: 'Adobe',
+    tipo_produto: 'APLICATIVO INDIVIDUAL',
+    produto: 'Aplicativo Individual',
+    app_individual: 'Photoshop',
+    status: 'Ativo',
+    possui_licenca: 'true',
+  },
+];
+
+const ALLOWED_KEYS = ['nome','email','login','departamento_raiz','tipo_licenca','tipo_produto','produto','app_individual','status','possui_licenca'] as const;
+
+function normalizeTipoProduto(valor: string): string {
+  if (!valor) return '';
+  const v = valor.toLowerCase().trim();
+  if (v.includes('acrobat') || v === 'adobe pro dc' || v.includes('pro dc')) return 'ADOBE PRO DC';
+  if (v.includes('todos') || v.includes('suite') || v.includes('all apps') || v.includes('edição') || v.includes('edicao')) return 'SUITE - TODOS APPS';
+  if (v.includes('individual') || v.includes('single') || ADOBE_SINGLE_APPS.some(a => v.includes(a.toLowerCase()))) return 'APLICATIVO INDIVIDUAL';
+  return valor.toUpperCase().trim();
+}
+
+function normalizeProduto(valor: string, tipoNormalizado: string, appIndividual?: string): string {
+  if (tipoNormalizado === 'ADOBE PRO DC') return 'Acrobat Pro DC';
+  if (tipoNormalizado === 'SUITE - TODOS APPS') return 'Suite - Todos os Apps';
+  if (tipoNormalizado === 'APLICATIVO INDIVIDUAL') return 'Aplicativo Individual';
+  return valor || 'Acrobat Pro DC';
+}
 
 function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> {
   const row: Record<string, unknown> = {};
+  let rawProduto = '';
+  let rawAppIndividual = '';
 
   Object.keys(rawRow).forEach((key) => {
     const k = key.toLowerCase().trim().replace(/\s+/g, '_');
-    const val = rawRow[key]!= null? String(rawRow[key]).trim() : null;
+    const val = rawRow[key]!= null? String(rawRow[key]).trim() : '';
     if (!val) return;
 
     switch (k) {
@@ -53,7 +100,12 @@ function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> 
         row.tipo_produto = val;
         break;
       case 'produto':
-        row.produto = val.toLowerCase() === 'adobe'? 'Acrobat Pro DC' : val;
+        rawProduto = val;
+        break;
+      case 'app_individual':
+      case 'app':
+      case 'aplicativo':
+        rawAppIndividual = val;
         break;
       case 'status':
         row.status = val;
@@ -61,9 +113,28 @@ function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> 
       case 'possui_licenca':
         row.possui_licenca = true;
         break;
-      // NUNCA cria local_nome ou local_id aqui
     }
   });
+
+  // Normalização fixa sem versão
+  const tipoNorm = normalizeTipoProduto(String(row.tipo_produto || rawProduto || ''));
+  row.tipo_produto = tipoNorm;
+
+  // Se o produto for um app solto tipo "Photoshop", detecta como Individual
+  const isSingleAppName = ADOBE_SINGLE_APPS.some(a =>
+    rawProduto.toLowerCase() === a.toLowerCase() || rawAppIndividual.toLowerCase() === a.toLowerCase()
+  );
+
+  if (isSingleAppName) {
+    row.tipo_produto = 'APLICATIVO INDIVIDUAL';
+    row.app_individual = ADOBE_SINGLE_APPS.find(a =>
+      a.toLowerCase() === rawProduto.toLowerCase() || a.toLowerCase() === rawAppIndividual.toLowerCase()
+    ) || rawAppIndividual || rawProduto;
+  } else {
+    if (rawAppIndividual) row.app_individual = rawAppIndividual;
+  }
+
+  row.produto = normalizeProduto(rawProduto, row.tipo_produto as string, row.app_individual as string);
 
   if (row.email && row.possui_licenca === undefined) row.possui_licenca = true;
   if (row.email &&!row.status) row.status = 'Ativo';
@@ -71,10 +142,9 @@ function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> 
   if (row.email &&!row.tipo_produto) row.tipo_produto = 'ADOBE PRO DC';
   if (row.email &&!row.produto) row.produto = 'Acrobat Pro DC';
 
-  // FILTRA SÓ O QUE EXISTE NO BANCO
   const clean: Record<string, unknown> = {};
   ALLOWED_KEYS.forEach(key => {
-    if (row[key]!== undefined) clean[key] = row[key];
+    if (row[key]!== undefined && row[key]!== '') clean[key] = row[key];
   });
 
   return clean as Partial<LicencaUsuario>;
@@ -91,7 +161,7 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
 
   function downloadTemplate() {
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet([TEMPLATE_EXAMPLE], { header: [...TEMPLATE_HEADERS] });
+    const ws = XLSX.utils.json_to_sheet(TEMPLATE_EXAMPLES, { header: [...TEMPLATE_HEADERS] });
     XLSX.utils.book_append_sheet(wb, ws, 'Modelo');
     XLSX.writeFile(wb, 'modelo_importacao_licencas.xlsx');
   }
@@ -117,7 +187,6 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     setImporting(true);
     setError(null);
     try {
-      // Garante de novo que não vai local_nome
       const payload = preview.map(r => {
         const { local_nome, local_id, local,...rest } = r as any;
         return rest;
@@ -140,7 +209,7 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="text-white font-bold text-sm flex items-center gap-2"><Upload className="w-4 h-4 text-[#D4AF37]" />Importar Alocações</h3>
-          <p className="text-[#94a3b8] text-xs mt-0.5">Modelo atual: nome;email;setor;tipo_licenca;tipo_produto;produto;status;possui_licenca</p>
+          <p className="text-[#94a3b8] text-xs mt-0.5">Modelo fixo: ADOBE PRO DC (202) | SUITE - TODOS APPS (202) | APLICATIVO INDIVIDUAL (225)</p>
         </div>
         <button onClick={downloadTemplate} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-[#D4AF37] border border-[#1e293b] hover:border-[#D4AF37]/40 px-3 py-2 rounded-lg transition-all cursor-pointer"><Download className="w-3.5 h-3.5" />Baixar modelo</button>
       </div>
@@ -156,8 +225,8 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
           <div className="flex items-center justify-between"><p className="text-[#94a3b8] text-xs"><span className="text-[#D4AF37] font-bold">{preview.length}</span> registro(s) prontos.</p><button onClick={reset} className="p-1 text-[#94a3b8] hover:text-rose-400 rounded-md"><X className="w-4 h-4" /></button></div>
           <div className="max-h-48 overflow-auto border border-[#1e293b] rounded-lg">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#001726] sticky top-0"><tr><th className="px-3 py-2 text-[#94a3b8]">Nome</th><th className="px-3 py-2 text-[#94a3b8]">E-mail</th><th className="px-3 py-2 text-[#94a3b8]">Setor</th><th className="px-3 py-2 text-[#94a3b8]">Produto</th></tr></thead>
-              <tbody className="divide-y divide-[#1e293b]">{preview.slice(0, 50).map((r, i) => (<tr key={`${r.email}-${i}`}><td className="px-3 py-1.5 text-white">{r.nome?? '—'}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.email}</td><td className="px-3 py-1.5 text-[#94a3b8]">{(r as any).departamento_raiz?? '—'}</td><td className="px-3 py-1.5 text-[#D4AF37]">{r.produto?? '—'}</td></tr>))}</tbody>
+              <thead className="bg-[#001726] sticky top-0"><tr><th className="px-3 py-2 text-[#94a3b8]">Nome</th><th className="px-3 py-2 text-[#94a3b8]">E-mail</th><th className="px-3 py-2 text-[#94a3b8]">Tipo</th><th className="px-3 py-2 text-[#94a3b8]">Produto</th><th className="px-3 py-2 text-[#94a3b8]">App</th></tr></thead>
+              <tbody className="divide-y divide-[#1e293b]">{preview.slice(0, 50).map((r, i) => (<tr key={`${r.email}-${i}`}><td className="px-3 py-1.5 text-white">{r.nome?? '—'}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.email}</td><td className="px-3 py-1.5 text-[#D4AF37]">{r.tipo_produto}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.produto?? '—'}</td><td className="px-3 py-1.5 text-emerald-300">{(r as any).app_individual || '—'}</td></tr>))}</tbody>
             </table>
           </div>
           <div className="flex justify-end"><button onClick={handleImport} disabled={importing} className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg disabled:opacity-50"><Upload className="w-4 h-4" />{importing? 'Importando...' : `Importar ${preview.length}`}</button></div>

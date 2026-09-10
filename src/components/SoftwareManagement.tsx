@@ -29,8 +29,11 @@ export function SoftwareManagement() {
   }, []);
 
   async function handleSave(data: Partial<Software>) {
+    const isAdobe = data.fabricante?.toLowerCase() === 'adobe';
+    const isAdobeIndividual = isAdobe && data.tipo_produto === 'Aplicativo Único / Individual';
+
     const payload = {
-      nome: data.nome,
+      nome: isAdobeIndividual ? data.produto : data.nome,
       fabricante: data.fabricante ?? null,
       tipo_produto: data.tipo_produto ?? null,
       produto: data.produto ?? null,
@@ -164,14 +167,14 @@ export function SoftwareManagement() {
 const FABRICANTES = ['Adobe', 'Outros Softwares'];
 const ADOBE_TIPOS = ['Adobe Acrobat Pro DC', 'Creative Cloud (Suite CC)', 'Aplicativo Único / Individual'];
 const ADOBE_APPS_INDIVIDUAIS = [
-  'Adobe Lightroom Classic: Aplicativo único - Lightroom Classic',
-  'Adobe XD: Aplicativo único - XD',
-  'Audição: Aplicativo individual - Audicão',
-  'Illustrator: Aplicativo único - Illustrator',
-  'InDesign: Aplicativo único - InDesign',
-  'Photoshop: Aplicativo único - Photoshop',
-  'Premiere Pro: Aplicativo único - Premiere',
-  'Premiere Rush: Aplicativo Único - Rush',
+  'Photoshop',
+  'Illustrator',
+  'InDesign',
+  'Premiere Pro',
+  'Lightroom Classic',
+  'Adobe XD',
+  'Audition',
+  'Premiere Rush',
 ];
 
 function SoftwareModal({
@@ -212,8 +215,8 @@ function SoftwareModal({
       return {
         ...prev,
         tipo_produto: v,
-        produto: isAdobe && v !== 'Aplicativo Único / Individual' ? v : '',
-        nome: isAdobe && v !== 'Aplicativo Único / Individual' ? 'Adobe' : prev.nome,
+        produto: '',
+        nome: isAdobe && v !== 'Aplicativo Único / Individual' ? v : (isAdobe ? 'Adobe' : prev.nome),
       };
     });
   }
@@ -235,7 +238,7 @@ function SoftwareModal({
     }
 
     if (isAdobeIndividual && !form.produto) {
-      setError('Selecione o Aplicativo Único Individual.');
+      setError('Selecione o Aplicativo Específico.');
       return;
     }
 

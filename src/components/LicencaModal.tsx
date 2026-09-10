@@ -8,7 +8,10 @@ interface LicencaModalProps {
   locais: LocalTrabalho[];
   onClose: () => void;
   onSave: (data: Partial<LicencaUsuario>) => Promise<void>;
-  onImportBatch?: (file: File) => Promise<void>;
+  onImportBatch?: (
+    file: File, 
+    onProgress?: (progress: { current: number; total: number; percent: number; message: string }) => void
+  ) => Promise<void>;
 }
 
 const STATUS_OPTIONS = ['Ativo', 'Pendente', 'Inativo'];
@@ -36,11 +39,13 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
   const [error, setError] = useState<string | null>(null);
   const [batchFile, setBatchFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const [progressInfo, setProgressInfo] = useState<{ current: number; total: number; percent: number; message: string } | null>(null);
 
   useEffect(() => {
     setForm(item ?? {});
     setError(null);
     setBatchFile(null);
+    setProgressInfo(null);
   }, [item]);
 
   if (item === null) return null;
@@ -159,12 +164,19 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
 
     setImporting(true);
     setError(null);
+    setProgressInfo({ current: 0, total: 0, percent: 0, message: 'Iniciando importação...' });
+
     try {
-      await onImportBatch(batchFile);
-      setBatchFile(null);
+      await onImportBatch(batchFile, (info) => {
+        setProgressInfo(info);
+      });
+      setTimeout(() => {
+        setBatchFile(null);
+        setImporting(false);
+        setProgressInfo(null);
+      }, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao processar a importação em lote.');
-    } finally {
       setImporting(false);
     }
   }
@@ -235,7 +247,8 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
                 type="file"
                 accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
                 onChange={(e) => setBatchFile(e.target.files?.[0] ?? null)}
-                className="w-full text-xs text-[#94a3b8] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#1e293b] file:text-white hover:file:bg-[#334155] cursor-pointer bg-[#001726] border border-[#1e293b] rounded-lg"
+                disabled={importing}
+                className="w-full text-xs text-[#94a3b8] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#1e293b] file:text-white hover:file:bg-[#334155] cursor-pointer bg-[#001726] border border-[#1e293b] rounded-lg disabled:opacity-50"
               />
               <button
                 type="submit"
@@ -246,6 +259,22 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
                 {importing ? 'Importando...' : 'Importar Lote'}
               </button>
             </form>
+
+            {/* Barra de Progresso em Tempo Real */}
+            {importing && progressInfo && (
+              <div className="mt-4 space-y-2 bg-[#00121E] border border-[#1e293b] p-3.5 rounded-lg">
+                <div className="flex justify-between text-xs text-[#94a3b8]">
+                  <span>{progressInfo.message}</span>
+                  <span className="font-bold text-[#D4AF37]">{progressInfo.percent}%</span>
+                </div>
+                <div className="w-full bg-[#1e293b] h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-[#D4AF37] h-full transition-all duration-200" 
+                    style={{ width: `${progressInfo.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 

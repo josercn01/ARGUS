@@ -33,7 +33,7 @@ export function SoftwareManagement() {
     const isAdobeIndividual = isAdobe && data.tipo_produto === 'Aplicativo Único / Individual';
 
     const payload = {
-      nome: isAdobeIndividual ? data.produto : data.nome,
+      nome: isAdobeIndividual ? 'Adobe Aplicativo Único / Individual' : data.nome,
       fabricante: data.fabricante ?? null,
       tipo_produto: data.tipo_produto ?? null,
       produto: data.produto ?? null,
@@ -166,16 +166,6 @@ export function SoftwareManagement() {
 
 const FABRICANTES = ['Adobe', 'Outros Softwares'];
 const ADOBE_TIPOS = ['Adobe Acrobat Pro DC', 'Creative Cloud (Suite CC)', 'Aplicativo Único / Individual'];
-const ADOBE_APPS_INDIVIDUAIS = [
-  'Photoshop',
-  'Illustrator',
-  'InDesign',
-  'Premiere Pro',
-  'Lightroom Classic',
-  'Adobe XD',
-  'Audition',
-  'Premiere Rush',
-];
 
 function SoftwareModal({
   item,
@@ -225,7 +215,6 @@ function SoftwareModal({
     e.preventDefault();
     const isAdobe = form.fabricante?.toLowerCase() === 'adobe';
     const isOutros = form.fabricante === 'Outros Softwares';
-    const isAdobeIndividual = isAdobe && form.tipo_produto === 'Aplicativo Único / Individual';
 
     if (!form.fabricante) {
       setError('Selecione o Fabricante / Software Principal.');
@@ -234,11 +223,6 @@ function SoftwareModal({
 
     if (isAdobe && !form.tipo_produto) {
       setError('Selecione o Tipo de Produto.');
-      return;
-    }
-
-    if (isAdobeIndividual && !form.produto) {
-      setError('Selecione o Aplicativo Específico.');
       return;
     }
 
@@ -260,7 +244,6 @@ function SoftwareModal({
 
   const isAdobe = form.fabricante?.toLowerCase() === 'adobe';
   const isOutros = form.fabricante === 'Outros Softwares';
-  const isAdobeIndividual = isAdobe && form.tipo_produto === 'Aplicativo Único / Individual';
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -318,30 +301,6 @@ function SoftwareModal({
                   ))}
                 </select>
               </div>
-
-              {isAdobeIndividual && (
-                <div>
-                  <label className="text-[#94a3b8] text-xs font-semibold block mb-1">
-                    Aplicativo Específico *
-                  </label>
-                  <select
-                    value={form.produto ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setField('produto', val);
-                      setField('nome', val);
-                    }}
-                    className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
-                  >
-                    <option value="">Selecione o aplicativo...</option>
-                    {(ADOBE_APPS_INDIVIDUAIS || []).map((app) => (
-                      <option key={app} value={app}>
-                        {app}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
           )}
 

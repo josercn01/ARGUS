@@ -213,6 +213,7 @@ function SoftwareModal({
         ...prev,
         tipo_produto: v,
         produto: isAdobe && v !== 'Aplicativo Único / Individual' ? v : '',
+        nome: isAdobe && v !== 'Aplicativo Único / Individual' ? 'Adobe' : prev.nome,
       };
     });
   }
@@ -322,7 +323,11 @@ function SoftwareModal({
                   </label>
                   <select
                     value={form.produto ?? ''}
-                    onChange={(e) => setField('produto', e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setField('produto', val);
+                      setField('nome', val);
+                    }}
                     className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
                   >
                     <option value="">Selecione o aplicativo...</option>

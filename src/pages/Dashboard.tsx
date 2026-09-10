@@ -39,7 +39,6 @@ export function Dashboard({ user, role }: DashboardProps) {
       if (licRes.data) setLicencas(licRes.data);
       if (softRes.data) setSoftwares(softRes.data);
       if (locRes.data) {
-        // Mapeia para o formato esperado caso necessário
         const mappedLocais = locRes.data.map((item: any) => ({
           id: item.id,
           nome: item.endereco_logico,
@@ -58,6 +57,74 @@ export function Dashboard({ user, role }: DashboardProps) {
     loadData();
   }, [loadData]);
 
+  // Função de Importação em Lote alinhada ao modelo novo
+  const handleImportBatch = async (file: File) => {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+    if (lines.length < 2) throw new Error('O arquivo CSV está vazio ou sem dados.');
+
+    const separator = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].split(separator).map(h => h.trim().toUpperCase().replace(/"/g, ''));
+
+    const registros = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(separator).map(v => v.trim().replace(/^"|"$/g, ''));
+      if (values.length === 0 || !values.some(Boolean)) continue;
+
+      const rowData: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        if (values[index] !== undefined) {
+          rowData[header] = values[index];
+        }
+      });
+
+      const email = rowData['EMAIL'] || rowData['E-MAIL'];
+      if (!email) continue;
+
+      let tipoProdutoRaw = rowData['TIPO_PRODUTO'] || '';
+      const prodVal = (rowData['PRODUTO'] || '').toUpperCase();
+      const tipoVal = tipoProdutoRaw.toUpperCase();
+
+      let tipo_produto_final = tipoProdutoRaw;
+      if (tipoVal.includes('PRO') || prodVal.includes('PRO')) {
+        tipo_produto_final = 'ADOBE PRO DC';
+      } else if (tipoVal.includes('SUITE') || tipoVal.includes('CC') || prodVal.includes('SUITE')) {
+        tipo_produto_final = 'SUITE CC';
+      } else if (tipoVal.includes('INDIVIDUAL') || tipoVal.includes('APLICATIVO') || prodVal.includes('PHOTOSHOP') || prodVal.includes('ILLUSTRATOR')) {
+        tipo_produto_final = 'APLICATIVO INDIVIDUAL';
+      }
+
+      const possuiLicencaStr = (rowData['POSSUI_LICENCA'] || 'VERDADEIRO').toUpperCase();
+      const possui_licenca = possuiLicencaStr === 'VERDADEIRO' || possuiLicencaStr === 'TRUE' || possuiLicencaStr === '1';
+
+      // Objeto limpo enviado ao Supabase contendo SOMENTE as colunas reais da tabela
+      registros.push({
+        email: email,
+        nome: rowData['NOME'] || null,
+        login: rowData['LOGIN'] || null,
+        departamento_raiz: rowData['DEPARTAMENTO'] || null,
+        tipo_licenca: rowData['FABRICANTE'] || null,
+        tipo_produto: tipo_produto_final || null,
+        produto: rowData['PRODUTO'] || null,
+        status: rowData['STATUS'] || 'Ativo',
+        possui_licenca: possui_licenca
+      });
+    }
+
+    for (const reg of registros) {
+      const { error } = await supabase
+        .from('licencas_usuarios')
+        .upsert(reg, { onConflict: 'email' });
+
+      if (error) {
+        throw new Error(`Erro ao importar e-mail ${reg.email}: ${error.message}`);
+      }
+    }
+
+    await loadData();
+  };
+
   // Aplicar filtros
   const filteredLicencas = licencas.filter((item) => {
     if (search.trim()) {
@@ -65,8 +132,7 @@ export function Dashboard({ user, role }: DashboardProps) {
       const matchNome = item.nome?.toLowerCase().includes(q);
       const matchEmail = item.email?.toLowerCase().includes(q);
       const matchLogin = (item as any).login?.toLowerCase().includes(q);
-      const matchChapa = ((item as any).chapa_matricula || item.matricula)?.toLowerCase().includes(q);
-      if (!matchNome && !matchEmail && !matchLogin && !matchChapa) return false;
+      if (!matchNome && !matchEmail && !matchLogin) return false;
     }
 
     if (selectedSoftware && (item as any).software_id !== selectedSoftware) return false;
@@ -113,6 +179,7 @@ export function Dashboard({ user, role }: DashboardProps) {
               role={role}
               loading={loading}
               onRefresh={loadData}
+              onImportBatch={handleImportBatch}
             />
           </div>
         )}

@@ -57,8 +57,13 @@ export function Dashboard({ user, role }: DashboardProps) {
     loadData();
   }, [loadData]);
 
-  // Função de Importação em Lote alinhada ao modelo novo
-  const handleImportBatch = async (file: File) => {
+  // Função de Importação em Lote com Progresso em Tempo Real e Porcentagem
+  const handleImportBatch = async (
+    file: File, 
+    onProgress?: (progress: { current: number; total: number; percent: number; message: string }) => void
+  ) => {
+    if (onProgress) onProgress({ current: 0, total: 0, percent: 0, message: 'Lendo arquivo...' });
+    
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
     if (lines.length < 2) throw new Error('O arquivo CSV está vazio ou sem dados.');
@@ -111,7 +116,23 @@ export function Dashboard({ user, role }: DashboardProps) {
       });
     }
 
-    for (const reg of registros) {
+    const totalRegs = registros.length;
+    if (totalRegs === 0) throw new Error('Nenhum registro válido encontrado no arquivo.');
+
+    for (let index = 0; index < totalRegs; index++) {
+      const reg = registros[index];
+      const currentNum = index + 1;
+      const percent = Math.round((currentNum / totalRegs) * 100);
+
+      if (onProgress) {
+        onProgress({
+          current: currentNum,
+          total: totalRegs,
+          percent,
+          message: `Importando ${currentNum} de ${totalRegs} (${reg.email})...`
+        });
+      }
+
       const { error } = await supabase
         .from('licencas_usuarios')
         .upsert(reg, { onConflict: 'email' });
@@ -119,6 +140,10 @@ export function Dashboard({ user, role }: DashboardProps) {
       if (error) {
         throw new Error(`Erro ao importar e-mail ${reg.email}: ${error.message}`);
       }
+    }
+
+    if (onProgress) {
+      onProgress({ current: totalRegs, total: totalRegs, percent: 100, message: 'Importação concluída com sucesso!' });
     }
 
     await loadData();

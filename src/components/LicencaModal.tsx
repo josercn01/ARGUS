@@ -8,7 +8,7 @@ interface LicencaModalProps {
   locais: LocalTrabalho[];
   onClose: () => void;
   onSave: (data: Partial<LicencaUsuario>) => Promise<void>;
-  onImportBatch?: (file: File) => Promise<void>; // Prop opcional para lidar com a importação em lote se já houver
+  onImportBatch?: (file: File) => Promise<void>;
 }
 
 const STATUS_OPTIONS = ['Ativo', 'Pendente', 'Inativo'];
@@ -48,8 +48,6 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
   function setField<K extends keyof LicencaUsuario>(field: K, value: LicencaUsuario[K] | null) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
-
-  /* --- Cascata Fabricante -> Tipo de Produto -> Produto --- */
 
   const fabricantes = useMemo(() => {
     const set = new Set<string>();
@@ -141,12 +139,12 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
     }));
   }
 
-  // Função para baixar a planilha modelo em CSV compatível com Excel (separador por ponto e vírgula)
+  // Planilha modelo sem a coluna chapa/matrícula
   function handleDownloadTemplate() {
     const csvContent = 
-      '\uFEFFnome;email;login;matricula;departamento_raiz;sub_departamento;tipo_licenca;tipo_produto;produto;status;possui_licenca\n' +
-      'João da Silva;joao.silva@senado.leg.br;jsilva;12345;SEGRAF;COATEN;Microsoft;Licenciamento de Servidor;Windows Server;Ativo;true\n' +
-      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;67890;DILEG;SECEM;Adobe;Aplicativo Único / Individual;Photoshop;Ativo;true';
+      '\uFEFFnome;email;login;departamento_raiz;sub_departamento;tipo_licenca;tipo_produto;produto;status;possui_licenca\n' +
+      'João da Silva;joao.silva@senado.leg.br;jsilva;SEGRAF;COATEN;Microsoft;Licenciamento de Servidor;Windows Server;Ativo;true\n' +
+      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;DILEG;SECEM;Adobe;Aplicativo Único / Individual;Photoshop;Ativo;true';
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -242,7 +240,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
             <p className="text-[#94a3b8] text-xs mb-3">
               Utilize a planilha modelo para cadastrar múltiplos registros de uma só vez. 
               <strong className="text-white"> Campos obrigatórios:</strong> <code className="text-[#D4AF37]">email</code>. 
-              <strong className="text-white"> Campos opcionais:</strong> <code className="text-white">nome</code>, <code className="text-white">login</code>, <code className="text-white">matricula</code>, <code className="text-white">departamento_raiz</code>, <code className="text-white">sub_departamento</code>, <code className="text-white">tipo_licenca</code>, <code className="text-white">tipo_produto</code>, <code className="text-white">produto</code>, <code className="text-white">status</code> e <code className="text-white">possui_licenca</code> (true/false).
+              <strong className="text-white"> Campos opcionais:</strong> <code className="text-white">nome</code>, <code className="text-white">login</code>, <code className="text-white">departamento_raiz</code>, <code className="text-white">sub_departamento</code>, <code className="text-white">tipo_licenca</code>, <code className="text-white">tipo_produto</code>, <code className="text-white">produto</code>, <code className="text-white">status</code> e <code className="text-white">possui_licenca</code>.
             </p>
 
             <form onSubmit={handleBatchSubmit} className="flex flex-col sm:flex-row items-center gap-3">
@@ -265,7 +263,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
         )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
-          {/* Identificação do colaborador */}
+          {/* Identificação do colaborador (Sem campo de matrícula) */}
           <section className="space-y-4">
             <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
               Identificação Individual do Colaborador
@@ -295,24 +293,13 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className={labelClass}>Login de rede</label>
                 <input
                   type="text"
                   placeholder="Ex: msouza"
                   value={form.login ?? ''}
                   onChange={(e) => setField('login', e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Chapa / Matrícula</label>
-                <input
-                  type="text"
-                  placeholder="Ex: 123456"
-                  value={form.chapa_matricula ?? form.matricula ?? ''}
-                  onChange={(e) => setField('chapa_matricula', e.target.value)}
                   className={inputClass}
                 />
               </div>

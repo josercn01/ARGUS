@@ -77,7 +77,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
 
   const isAdobeIndividual =
     form.tipo_licenca?.toLowerCase() === 'adobe' &&
-    form.tipo_produto === 'Aplicativo Único / Individual';
+    (form.tipo_produto === 'APLICATIVO INDIVIDUAL' || form.tipo_produto === 'Aplicativo Único / Individual');
 
   const produtos = useMemo(() => {
     if (isAdobeIndividual) {
@@ -109,7 +109,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
       const sw = (softwares || []).find(
         (s) =>
           (s.fabricante || '').toLowerCase() === 'adobe' &&
-          s.tipo_produto === 'Aplicativo Único / Individual',
+          (s.tipo_produto === 'APLICATIVO INDIVIDUAL' || s.tipo_produto === 'Aplicativo Único / Individual'),
       );
       setForm((prev) => ({
         ...prev,
@@ -130,21 +130,11 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
     }
   }
 
-  function handleLocal(localId: string) {
-    const local = (locais || []).find((l) => l.id === localId);
-    setForm((prev) => ({
-      ...prev,
-      local_id: localId || null,
-      local_nome: local?.nome ?? null,
-    }));
-  }
-
-  // Planilha modelo sem a coluna chapa/matrícula
   function handleDownloadTemplate() {
     const csvContent = 
-      '\uFEFFnome;email;login;departamento_raiz;sub_departamento;tipo_licenca;tipo_produto;produto;status;possui_licenca\n' +
-      'João da Silva;joao.silva@senado.leg.br;jsilva;SEGRAF;COATEN;Microsoft;Licenciamento de Servidor;Windows Server;Ativo;true\n' +
-      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;DILEG;SECEM;Adobe;Aplicativo Único / Individual;Photoshop;Ativo;true';
+      '\uFEFFNOME;EMAIL;LOGIN;DEPARTAMENTO;SUBDEPARTAMENTO;FABRICANTE;TIPO_PRODUTO;PRODUTO;POSSUI_LICENCA;STATUS\n' +
+      'João da Silva;joao.silva@senado.leg.br;jsilva;SEGRAF;COATEN;Adobe;ADOBE PRO DC;Acrobat Pro DC;VERDADEIRO;Ativo\n' +
+      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;DILEG;SECEM;Adobe;APLICATIVO INDIVIDUAL;Photoshop;VERDADEIRO;Ativo';
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -217,14 +207,13 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
           </button>
         </div>
 
-        {/* Seção de Importação em Lote por Planilha Modelo */}
         {!form.id && (
           <div className="p-5 border-b border-[#1e293b] bg-[#001726]/40">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" />
                 <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
-                  Importação de Usuários em Lote
+                  Importação de Alocações em Lote
                 </h4>
               </div>
               <button
@@ -238,9 +227,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
             </div>
 
             <p className="text-[#94a3b8] text-xs mb-3">
-              Utilize a planilha modelo para cadastrar múltiplos registros de uma só vez. 
-              <strong className="text-white"> Campos obrigatórios:</strong> <code className="text-[#D4AF37]">email</code>. 
-              <strong className="text-white"> Campos opcionais:</strong> <code className="text-white">nome</code>, <code className="text-white">login</code>, <code className="text-white">departamento_raiz</code>, <code className="text-white">sub_departamento</code>, <code className="text-white">tipo_licenca</code>, <code className="text-white">tipo_produto</code>, <code className="text-white">produto</code>, <code className="text-white">status</code> e <code className="text-white">possui_licenca</code>.
+              Utilize o modelo com as colunas: <code className="text-[#D4AF37]">NOME, EMAIL, LOGIN, DEPARTAMENTO, SUBDEPARTAMENTO, FABRICANTE, TIPO_PRODUTO, PRODUTO, POSSUI_LICENCA, STATUS</code>. Indicadores aceitos: <strong className="text-white">ADOBE PRO DC</strong>, <strong className="text-white">SUITE CC</strong> e <strong className="text-white">APLICATIVO INDIVIDUAL</strong>.
             </p>
 
             <form onSubmit={handleBatchSubmit} className="flex flex-col sm:flex-row items-center gap-3">
@@ -263,7 +250,6 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
         )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
-          {/* Identificação do colaborador (Sem campo de matrícula) */}
           <section className="space-y-4">
             <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
               Identificação Individual do Colaborador
@@ -306,29 +292,12 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
             </div>
           </section>
 
-          {/* Vínculo local e setorial */}
           <section className="space-y-4 pt-4 border-t border-[#1e293b]">
             <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
-              Vínculo Local e Setorial
+              Vínculo Setorial
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className={labelClass}>Local de Trabalho / Unidade</label>
-                <select
-                  value={form.local_id ?? ''}
-                  onChange={(e) => handleLocal(e.target.value)}
-                  className={selectClass}
-                >
-                  <option value="">Não informado</option>
-                  {(locais || []).map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Departamento</label>
                 <input
@@ -341,7 +310,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
               </div>
 
               <div>
-                <label className={labelClass}>Setor / Subdepartamento</label>
+                <label className={labelClass}>Subdepartamento</label>
                 <input
                   type="text"
                   placeholder="Ex: COATEN"
@@ -353,7 +322,6 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
             </div>
           </section>
 
-          {/* Licença atribuída */}
           <section className="space-y-4 pt-4 border-t border-[#1e293b]">
             <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
               Licença Atribuída
@@ -377,7 +345,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
               </div>
 
               <div>
-                <label className={labelClass}>Tipo de Produto</label>
+                <label className={labelClass}>Tipo de Produto (Indicador)</label>
                 <select
                   value={form.tipo_produto ?? ''}
                   onChange={(e) => handleTipo(e.target.value)}
@@ -428,7 +396,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
               <div>
                 <label className={labelClass}>Status do Acesso</label>
                 <select
-                  value={form.status ?? 'Pendente'}
+                  value={form.status ?? 'Ativo'}
                   onChange={(e) => setField('status', e.target.value)}
                   className={selectClass}
                 >

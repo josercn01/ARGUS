@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Save, AlertCircle } from 'lucide-react';
+import { X, Save, AlertCircle, Download, FileSpreadsheet, Upload } from 'lucide-react';
 import type { LicencaUsuario, Software, LocalTrabalho } from '@/types';
 
 interface LicencaModalProps {
@@ -8,6 +8,7 @@ interface LicencaModalProps {
   locais: LocalTrabalho[];
   onClose: () => void;
   onSave: (data: Partial<LicencaUsuario>) => Promise<void>;
+  onImportBatch?: (file: File) => Promise<void>; // Prop opcional para lidar com a importação em lote se já houver
 }
 
 const STATUS_OPTIONS = ['Ativo', 'Pendente', 'Inativo'];
@@ -29,14 +30,17 @@ const selectClass =
   'w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] disabled:opacity-50';
 const labelClass = 'text-[#94a3b8] text-xs font-semibold block mb-1';
 
-export function LicencaModal({ item, softwares, locais, onClose, onSave }: LicencaModalProps) {
+export function LicencaModal({ item, softwares, locais, onClose, onSave, onImportBatch }: LicencaModalProps) {
   const [form, setForm] = useState<Partial<LicencaUsuario>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchFile, setBatchFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     setForm(item ?? {});
     setError(null);
+    setBatchFile(null);
   }, [item]);
 
   if (item === null) return null;
@@ -73,7 +77,6 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [softwaresDoFabricante]);
 
-  // Identifica se o tipo selecionado é Aplicativo Único / Individual da Adobe
   const isAdobeIndividual =
     form.tipo_licenca?.toLowerCase() === 'adobe' &&
     form.tipo_produto === 'Aplicativo Único / Individual';
@@ -105,7 +108,6 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
 
   function handleProduto(val: string) {
     if (isAdobeIndividual) {
-      // Para aplicativos individuais, vincula ao registro pai do Adobe ou busca o ID correspondente
       const sw = (softwares || []).find(
         (s) =>
           (s.fabricante || '').toLowerCase() === 'adobe' &&
@@ -139,6 +141,46 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
     }));
   }
 
+  // Função para baixar a planilha modelo em CSV compatível com Excel (separador por ponto e vírgula)
+  function handleDownloadTemplate() {
+    const csvContent = 
+      '\uFEFFnome;email;login;matricula;departamento_raiz;sub_departamento;tipo_licenca;tipo_produto;produto;status;possui_licenca\n' +
+      'João da Silva;joao.silva@senado.leg.br;jsilva;12345;SEGRAF;COATEN;Microsoft;Licenciamento de Servidor;Windows Server;Ativo;true\n' +
+      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;67890;DILEG;SECEM;Adobe;Aplicativo Único / Individual;Photoshop;Ativo;true';
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'modelo_importacao_licencas.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function handleBatchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!batchFile) {
+      setError('Selecione um arquivo CSV preenchido para importar.');
+      return;
+    }
+    if (!onImportBatch) {
+      setError('A função de importação em lote não está configurada neste componente.');
+      return;
+    }
+
+    setImporting(true);
+    setError(null);
+    try {
+      await onImportBatch(batchFile);
+      setBatchFile(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao processar a importação em lote.');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -167,7 +209,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
       <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e293b] sticky top-0 bg-[#001E33] z-10">
           <h3 className="text-white font-bold text-base">
-            {form.id ? 'Editar Licença do Colaborador' : 'Novo Registro de Licença'}
+            {form.id ? 'Editar Licença do Colaborador' : 'Novo Registro / Importação em Lote'}
           </h3>
           <button
             onClick={onClose}
@@ -177,11 +219,56 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
           </button>
         </div>
 
+        {/* Seção de Importação em Lote por Planilha Modelo */}
+        {!form.id && (
+          <div className="p-5 border-b border-[#1e293b] bg-[#001726]/40">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" />
+                <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
+                  Importação de Usuários em Lote
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="flex items-center gap-1.5 text-xs bg-[#1e293b] hover:bg-[#2e3b52] text-white font-medium px-3 py-1.5 rounded-lg transition-all cursor-pointer border border-[#334155]"
+              >
+                <Download className="w-3.5 h-3.5 text-[#D4AF37]" />
+                Baixar Planilha Modelo (CSV)
+              </button>
+            </div>
+
+            <p className="text-[#94a3b8] text-xs mb-3">
+              Utilize a planilha modelo para cadastrar múltiplos registros de uma só vez. 
+              <strong className="text-white"> Campos obrigatórios:</strong> <code className="text-[#D4AF37]">email</code>. 
+              <strong className="text-white"> Campos opcionais:</strong> <code className="text-white">nome</code>, <code className="text-white">login</code>, <code className="text-white">matricula</code>, <code className="text-white">departamento_raiz</code>, <code className="text-white">sub_departamento</code>, <code className="text-white">tipo_licenca</code>, <code className="text-white">tipo_produto</code>, <code className="text-white">produto</code>, <code className="text-white">status</code> e <code className="text-white">possui_licenca</code> (true/false).
+            </p>
+
+            <form onSubmit={handleBatchSubmit} className="flex flex-col sm:flex-row items-center gap-3">
+              <input
+                type="file"
+                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                onChange={(e) => setBatchFile(e.target.files?.[0] ?? null)}
+                className="w-full text-xs text-[#94a3b8] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#1e293b] file:text-white hover:file:bg-[#334155] cursor-pointer bg-[#001726] border border-[#1e293b] rounded-lg"
+              />
+              <button
+                type="submit"
+                disabled={!batchFile || importing}
+                className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 text-xs bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {importing ? 'Importando...' : 'Importar Lote'}
+              </button>
+            </form>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           {/* Identificação do colaborador */}
           <section className="space-y-4">
             <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
-              Identificação do Colaborador
+              Identificação Individual do Colaborador
             </h4>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -399,7 +486,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
               className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Salvando...' : 'Salvar'}
+              {saving ? 'Salvando...' : 'Salvar Registro'}
             </button>
           </div>
         </form>

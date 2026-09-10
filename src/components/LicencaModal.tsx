@@ -12,6 +12,17 @@ interface LicencaModalProps {
 
 const STATUS_OPTIONS = ['Ativo', 'Pendente', 'Inativo'];
 
+const ADOBE_APPS_INDIVIDUAIS = [
+  'Photoshop',
+  'Illustrator',
+  'InDesign',
+  'Premiere Pro',
+  'Lightroom Classic',
+  'Adobe XD',
+  'Audition',
+  'Premiere Rush',
+];
+
 const inputClass =
   'w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]';
 const selectClass =
@@ -62,12 +73,21 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [softwaresDoFabricante]);
 
+  // Identifica se o tipo selecionado é Aplicativo Único / Individual da Adobe
+  const isAdobeIndividual =
+    form.tipo_licenca?.toLowerCase() === 'adobe' &&
+    form.tipo_produto === 'Aplicativo Único / Individual';
+
   const produtos = useMemo(() => {
+    if (isAdobeIndividual) {
+      return ADOBE_APPS_INDIVIDUAIS;
+    }
     const tipo = form.tipo_produto?.trim().toLowerCase();
-    return softwaresDoFabricante.filter(
+    const filtrados = softwaresDoFabricante.filter(
       (s) => !tipo || (s.tipo_produto || '').trim().toLowerCase() === tipo,
     );
-  }, [softwaresDoFabricante, form.tipo_produto]);
+    return filtrados.map((s) => s.produto || s.tipo_produto || s.nome).filter(Boolean) as string[];
+  }, [isAdobeIndividual, softwaresDoFabricante, form.tipo_produto]);
 
   function handleFabricante(v: string) {
     setForm((prev) => ({
@@ -83,16 +103,31 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
     setForm((prev) => ({ ...prev, tipo_produto: v || null, produto: null, software_id: null }));
   }
 
-  function handleProduto(softwareId: string) {
-    const sw = (softwares || []).find((s) => s.id === softwareId);
-    setForm((prev) => ({
-      ...prev,
-      software_id: softwareId || null,
-      produto: sw?.produto ?? sw?.nome ?? null,
-      tipo_produto: sw?.tipo_produto ?? prev.tipo_produto ?? null,
-      tipo_licenca: sw?.fabricante ?? prev.tipo_licenca ?? null,
-      possui_licenca: softwareId ? true : prev.possui_licenca,
-    }));
+  function handleProduto(val: string) {
+    if (isAdobeIndividual) {
+      // Para aplicativos individuais, vincula ao registro pai do Adobe ou busca o ID correspondente
+      const sw = (softwares || []).find(
+        (s) =>
+          (s.fabricante || '').toLowerCase() === 'adobe' &&
+          s.tipo_produto === 'Aplicativo Único / Individual',
+      );
+      setForm((prev) => ({
+        ...prev,
+        software_id: sw?.id ?? null,
+        produto: val || null,
+        possui_licenca: val ? true : prev.possui_licenca,
+      }));
+    } else {
+      const sw = (softwares || []).find((s) => s.id === val);
+      setForm((prev) => ({
+        ...prev,
+        software_id: val || null,
+        produto: sw?.produto ?? sw?.nome ?? null,
+        tipo_produto: sw?.tipo_produto ?? prev.tipo_produto ?? null,
+        tipo_licenca: sw?.fabricante ?? prev.tipo_licenca ?? null,
+        possui_licenca: val ? true : prev.possui_licenca,
+      }));
+    }
   }
 
   function handleLocal(localId: string) {
@@ -111,7 +146,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
       setError('O e-mail do colaborador é obrigatório.');
       return;
     }
-    if (form.possui_licenca && !form.software_id) {
+    if (form.possui_licenca && !form.produto) {
       setError('Selecione o produto/perfil de licença atribuído ao colaborador.');
       return;
     }
@@ -287,17 +322,30 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave }: Licen
               <div>
                 <label className={labelClass}>Produto / Perfil</label>
                 <select
-                  value={form.software_id ?? ''}
+                  value={isAdobeIndividual ? form.produto ?? '' : form.software_id ?? ''}
                   onChange={(e) => handleProduto(e.target.value)}
-                  disabled={!form.tipo_licenca}
+                  disabled={!form.tipo_licenca || !form.tipo_produto}
                   className={selectClass}
                 >
                   <option value="">Selecione...</option>
-                  {produtos.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.produto || s.tipo_produto || s.nome}
-                    </option>
-                  ))}
+                  {isAdobeIndividual
+                    ? produtos.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))
+                    : softwaresDoFabricante
+                        .filter(
+                          (s) =>
+                            !form.tipo_produto ||
+                            (s.tipo_produto || '').trim().toLowerCase() ===
+                              form.tipo_produto.trim().toLowerCase(),
+                        )
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.produto || s.tipo_produto || s.nome}
+                          </option>
+                        ))}
                 </select>
               </div>
             </div>

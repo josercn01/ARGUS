@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Package, Users, CheckCircle2, Sparkles, Layers, AlertTriangle } from 'lucide-react';
+import { Package, Users, CheckCircle2, Sparkles, Layers, AlertTriangle, Palette } from 'lucide-react';
 import type { LicencaUsuario, Software } from '@/types';
 
 interface MetricsCardsProps {
@@ -10,11 +10,13 @@ interface MetricsCardsProps {
 interface SoftwareMetric {
   id: string;
   nome: string;
+  tipo: string;
   fabricante?: string | null;
   total: number;
   emUso: number;
   livre: number;
   percentual: number;
+  breakdown?: { app: string; qtd: number }[];
 }
 
 export function MetricsCards({ data = [], softwares = [] }: MetricsCardsProps) {
@@ -22,52 +24,56 @@ export function MetricsCards({ data = [], softwares = [] }: MetricsCardsProps) {
     let globalTotal = 0;
     let globalEmUso = 0;
 
-    // Garante que ambos os parâmetros sejam iteráveis de forma segura
     const safeUsuarios = Array.isArray(data) ? data : [];
     const safeSoftwares = Array.isArray(softwares) ? softwares : [];
 
-    const listMetrics: SoftwareMetric[] = safeSoftwares.map((sw) => {
-      if (!sw) {
+    const listMetrics: SoftwareMetric[] = safeSoftwares
+      .filter(sw => sw && (sw.quantidade_total || sw.qtd_licencas))
+      .map((sw) => {
+        const total = Number(sw.quantidade_total || sw.qtd_licencas || sw.quantidade || 0);
+        const tipoSw = (sw.tipo_produto || '').toUpperCase().trim();
+
+        // CONTAGEM EXATA POR TIPO_PRODUTO - sem includes
+        const emUso = safeUsuarios.filter((u) => {
+          if (!u || !u.possui_licenca) return false;
+          const tipoUser = (u.tipo_produto || '').toUpperCase().trim();
+          return tipoUser === tipoSw;
+        }).length;
+
+        const livre = Math.max(0, total - emUso);
+        const percentual = total > 0 ? Math.min(100, Math.round((emUso / total) * 100)) : 0;
+
+        globalTotal += total;
+        globalEmUso += emUso;
+
+        // Breakdown só para APLICATIVO INDIVIDUAL
+        let breakdown: { app: string; qtd: number }[] | undefined = undefined;
+        if (tipoSw === 'APLICATIVO INDIVIDUAL') {
+          const map = new Map<string, number>();
+          safeUsuarios.forEach(u => {
+            if ((u.tipo_produto || '').toUpperCase() === 'APLICATIVO INDIVIDUAL' && u.possui_licenca) {
+              const app = (u as any).app_individual || u.produto || 'Não informado';
+              map.set(app, (map.get(app) || 0) + 1);
+            }
+          });
+          breakdown = Array.from(map.entries()).map(([app, qtd]) => ({ app, qtd })).sort((a,b) => b.qtd - a.qtd);
+        }
+
         return {
-          id: String(Math.random()),
-          nome: 'Desconhecido',
-          total: 0,
-          emUso: 0,
-          livre: 0,
-          percentual: 0,
+          id: sw.id || tipoSw,
+          nome: tipoSw === 'ADOBE PRO DC' ? 'Adobe PRO DC' 
+              : tipoSw === 'SUITE - TODOS APPS' ? 'Suite - Todos os Apps'
+              : tipoSw === 'APLICATIVO INDIVIDUAL' ? 'Aplicativo Individual'
+              : sw.produto || sw.nome || tipoSw,
+          tipo: tipoSw,
+          fabricante: sw.fabricante,
+          total,
+          emUso,
+          livre,
+          percentual,
+          breakdown
         };
-      }
-
-      const total = Number(sw.qtd_licencas || sw.quantidade_total || sw.quantidade || 0);
-
-      const emUso = safeUsuarios.filter((u) => {
-        if (!u || !u.possui_licenca) return false;
-        const prodUser = `${u.produto || ''} ${u.tipo_licenca || ''}`.toLowerCase().trim();
-        const swNome = (sw.nome || '').toLowerCase().trim();
-        const swProd = (sw.produto || '').toLowerCase().trim();
-        return (
-          (swNome && prodUser.includes(swNome)) ||
-          (swProd && prodUser.includes(swProd)) ||
-          (swNome && swNome.includes(prodUser))
-        );
-      }).length;
-
-      const livre = Math.max(0, total - emUso);
-      const percentual = total > 0 ? Math.min(100, Math.round((emUso / total) * 100)) : 0;
-
-      globalTotal += total;
-      globalEmUso += emUso;
-
-      return {
-        id: sw.id || String(Math.random()),
-        nome: sw.nome || 'Software sem nome',
-        fabricante: sw.fabricante || sw.tipo_produto,
-        total,
-        emUso,
-        livre,
-        percentual,
-      };
-    });
+      });
 
     const globalLivre = Math.max(0, globalTotal - globalEmUso);
     const globalOcupacao = globalTotal > 0 ? Math.round((globalEmUso / globalTotal) * 100) : 0;
@@ -95,7 +101,7 @@ export function MetricsCards({ data = [], softwares = [] }: MetricsCardsProps) {
             </div>
           </div>
           <p className="text-xs text-[#94a3b8] mt-3 flex items-center gap-1">
-            <Layers className="w-3.5 h-3.5 text-[#0078D4]" /> Soma dos softwares cadastrados
+            <Layers className="w-3.5 h-3.5 text-[#0078D4]" /> 202 + 202 + 225 + 91
           </p>
         </div>
 
@@ -136,21 +142,16 @@ export function MetricsCards({ data = [], softwares = [] }: MetricsCardsProps) {
             </div>
           </div>
           <div className="w-full bg-[#001726] h-2 rounded-full mt-3 overflow-hidden border border-[#1e293b]">
-            <div
-              className="bg-[#D4AF37] h-full transition-all duration-500"
-              style={{ width: `${ocupacaoGlobal}%` }}
-            />
+            <div className="bg-[#D4AF37] h-full transition-all duration-500" style={{ width: `${ocupacaoGlobal}%` }} />
           </div>
         </div>
       </div>
 
-      {(metrics || []).length > 0 && (
+      {metrics.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-[#94a3b8] uppercase tracking-wider">
-              Disponibilidade por Software
-            </h2>
-            <span className="text-xs text-[#94a3b8]">{metrics.length} software(s) cadastrado(s)</span>
+            <h2 className="text-sm font-semibold text-[#94a3b8] uppercase tracking-wider">Disponibilidade por Software</h2>
+            <span className="text-xs text-[#94a3b8]">Modelo fixo sem Edição 4</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -159,61 +160,44 @@ export function MetricsCards({ data = [], softwares = [] }: MetricsCardsProps) {
               const isCritico = sw.percentual >= 85 && !isEsgotado;
 
               return (
-                <div
-                  key={sw.id}
-                  className="bg-[#001E33] border border-[#1e293b] hover:border-[#D4AF37]/40 rounded-xl p-4 transition-all shadow-md flex flex-col justify-between"
-                >
+                <div key={sw.id} className="bg-[#001E33] border border-[#1e293b] hover:border-[#D4AF37]/40 rounded-xl p-4 transition-all shadow-md flex flex-col justify-between">
                   <div>
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h4 className="font-semibold text-white text-base leading-tight">{sw.nome}</h4>
-                        {sw.fabricante && (
-                          <span className="text-xs text-[#94a3b8] block mt-0.5">{sw.fabricante}</span>
-                        )}
+                        <span className="text-xs text-[#94a3b8] block mt-0.5">{sw.tipo} • {sw.total} licenças</span>
                       </div>
                       {isEsgotado ? (
-                        <span className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold uppercase flex items-center gap-1 shrink-0">
-                          <AlertTriangle className="w-3 h-3" /> Esgotado
-                        </span>
+                        <span className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold uppercase flex items-center gap-1 shrink-0"><AlertTriangle className="w-3 h-3" /> Esgotado</span>
                       ) : isCritico ? (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold uppercase shrink-0">
-                          Poucas vagas
-                        </span>
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold uppercase shrink-0">Poucas vagas</span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase shrink-0">
-                          Normal
-                        </span>
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase shrink-0">Normal</span>
                       )}
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 my-3 bg-[#001726] border border-[#1e293b] rounded-lg p-2.5 text-center">
-                      <div>
-                        <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Total</p>
-                        <p className="text-base font-bold text-white">{sw.total}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Em Uso</p>
-                        <p className="text-base font-bold text-emerald-400">{sw.emUso}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Livre</p>
-                        <p className="text-base font-bold text-sky-400">{sw.livre}</p>
-                      </div>
+                      <div><p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Total</p><p className="text-base font-bold text-white">{sw.total}</p></div>
+                      <div><p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Em Uso</p><p className="text-base font-bold text-emerald-400">{sw.emUso}</p></div>
+                      <div><p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Livre</p><p className="text-base font-bold text-sky-400">{sw.livre}</p></div>
                     </div>
+
+                    {sw.breakdown && sw.breakdown.length > 0 && (
+                      <div className="bg-[#00121E] border border-[#1e293b] rounded-lg p-2.5 mb-3">
+                        <p className="text-[10px] text-[#D4AF37] uppercase font-bold flex items-center gap-1 mb-1.5"><Palette className="w-3 h-3" /> Leque de Apps</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sw.breakdown.map(b => (
+                            <span key={b.app} className="text-[11px] px-2 py-0.5 bg-[#001E33] border border-[#1e293b] rounded text-white">{b.app} <span className="text-[#94a3b8]">({b.qtd})</span></span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
-                    <div className="flex justify-between items-center text-xs mb-1">
-                      <span className="text-[#94a3b8]">Ocupação</span>
-                      <span className="font-semibold text-white">{sw.percentual}%</span>
-                    </div>
+                    <div className="flex justify-between items-center text-xs mb-1"><span className="text-[#94a3b8]">Ocupação</span><span className="font-semibold text-white">{sw.percentual}%</span></div>
                     <div className="w-full bg-[#001726] h-1.5 rounded-full overflow-hidden border border-[#1e293b]">
-                      <div
-                        className={`h-full transition-all duration-500 ${
-                          isEsgotado ? 'bg-rose-500' : isCritico ? 'bg-amber-400' : 'bg-[#0078D4]'
-                        }`}
-                        style={{ width: `${sw.percentual}%` }}
-                      />
+                      <div className={`h-full transition-all duration-500 ${isEsgotado ? 'bg-rose-500' : isCritico ? 'bg-amber-400' : 'bg-[#0078D4]'}`} style={{ width: `${sw.percentual}%` }} />
                     </div>
                   </div>
                 </div>

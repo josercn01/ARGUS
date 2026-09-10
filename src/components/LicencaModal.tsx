@@ -132,9 +132,9 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
 
   function handleDownloadTemplate() {
     const csvContent = 
-      '\uFEFFNOME;EMAIL;LOGIN;DEPARTAMENTO;SUBDEPARTAMENTO;FABRICANTE;TIPO_PRODUTO;PRODUTO;POSSUI_LICENCA;STATUS\n' +
-      'João da Silva;joao.silva@senado.leg.br;jsilva;SEGRAF;COATEN;Adobe;ADOBE PRO DC;Acrobat Pro DC;VERDADEIRO;Ativo\n' +
-      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;DILEG;SECEM;Adobe;APLICATIVO INDIVIDUAL;Photoshop;VERDADEIRO;Ativo';
+      '\uFEFFNOME;EMAIL;LOGIN;DEPARTAMENTO;FABRICANTE;TIPO_PRODUTO;PRODUTO;POSSUI_LICENCA;STATUS\n' +
+      'João da Silva;joao.silva@senado.leg.br;jsilva;SEGRAF;Adobe;ADOBE PRO DC;Acrobat Pro DC;VERDADEIRO;Ativo\n' +
+      'Maria Oliveira;maria.oliveira@senado.leg.br;moliveira;DILEG;Adobe;APLICATIVO INDIVIDUAL;Photoshop;VERDADEIRO;Ativo';
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -227,7 +227,7 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
             </div>
 
             <p className="text-[#94a3b8] text-xs mb-3">
-              Utilize o modelo com as colunas: <code className="text-[#D4AF37]">NOME, EMAIL, LOGIN, DEPARTAMENTO, SUBDEPARTAMENTO, FABRICANTE, TIPO_PRODUTO, PRODUTO, POSSUI_LICENCA, STATUS</code>. Indicadores aceitos: <strong className="text-white">ADOBE PRO DC</strong>, <strong className="text-white">SUITE CC</strong> e <strong className="text-white">APLICATIVO INDIVIDUAL</strong>.
+              Colunas do modelo: <code className="text-[#D4AF37]">NOME, EMAIL, LOGIN, DEPARTAMENTO, FABRICANTE, TIPO_PRODUTO, PRODUTO, POSSUI_LICENCA, STATUS</code>. Indicadores: <strong className="text-white">ADOBE PRO DC</strong>, <strong className="text-white">SUITE CC</strong> e <strong className="text-white">APLICATIVO INDIVIDUAL</strong>.
             </p>
 
             <form onSubmit={handleBatchSubmit} className="flex flex-col sm:flex-row items-center gap-3">
@@ -297,28 +297,15 @@ export function LicencaModal({ item, softwares, locais, onClose, onSave, onImpor
               Vínculo Setorial
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Departamento</label>
-                <input
-                  type="text"
-                  placeholder="Ex: SEGRAF"
-                  value={form.departamento_raiz ?? ''}
-                  onChange={(e) => setField('departamento_raiz', e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Subdepartamento</label>
-                <input
-                  type="text"
-                  placeholder="Ex: COATEN"
-                  value={form.sub_departamento ?? ''}
-                  onChange={(e) => setField('sub_departamento', e.target.value)}
-                  className={inputClass}
-                />
-              </div>
+            <div>
+              <label className={labelClass}>Departamento</label>
+              <input
+                type="text"
+                placeholder="Ex: SEGRAF"
+                value={form.departamento_raiz ?? ''}
+                onChange={(e) => setField('departamento_raiz', e.target.value)}
+                className={inputClass}
+              />
             </div>
           </section>
 

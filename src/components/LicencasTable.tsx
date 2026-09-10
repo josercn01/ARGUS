@@ -20,8 +20,22 @@ type SortKey = 'nome' | 'email' | 'login' | 'local' | 'software' | 'status';
 const PODE_EDITAR: SystemRole[] = ['super_admin', 'admin', 'editor'];
 const PODE_EXCLUIR: SystemRole[] = ['super_admin', 'admin'];
 
-// Só o que REALMENTE existe no seu banco hoje
-const COLUNAS_BANCO = ['email','nome','login','departamento_raiz','tipo_licenca','tipo_produto','produto','possui_licenca','status','local_id','atualizado_por','atualizado_em'] as const;
+const ADOBE_SINGLE_APPS = [
+  "Photoshop","Illustrator","InDesign","Premiere Pro","After Effects",
+  "Audition","Lightroom","XD","Animate","Dreamweaver","Acrobat Pro","InCopy"
+] as const;
+
+// FIXO - sem versão, nunca muda
+const COLUNAS_BANCO = ['email','nome','login','departamento_raiz','tipo_licenca','tipo_produto','produto','app_individual','possui_licenca','status','local_id','atualizado_por','atualizado_em'] as const;
+
+function normalizeTipoProduto(valor: string): string {
+  if (!valor) return 'ADOBE PRO DC';
+  const v = valor.toLowerCase().trim();
+  if (v.includes('acrobat') || v.includes('pro dc')) return 'ADOBE PRO DC';
+  if (v.includes('todos') || v.includes('suite') || v.includes('all apps') || v.includes('edição') || v.includes('edicao') || v.includes('cc')) return 'SUITE - TODOS APPS';
+  if (v.includes('individual') || v.includes('single') || ADOBE_SINGLE_APPS.some(a => v.includes(a.toLowerCase()))) return 'APLICATIVO INDIVIDUAL';
+  return valor.toUpperCase();
+}
 
 export function LicencasTable({ data, softwares, locais, role, loading, onRefresh }: LicencasTableProps) {
   const [modalItem, setModalItem] = useState<Partial<LicencaUsuario> | null>(null);
@@ -46,11 +60,21 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
   }, [locais]);
 
   function softwareLabel(u: LicencaUsuario) {
-    const sw = u.software_id? softwareById.get(u.software_id) : undefined;
+    const tipo = (u.tipo_produto || '').toUpperCase();
+    const app = (u as any).app_individual;
+
+    if (tipo === 'APLICATIVO INDIVIDUAL' && app) {
+      return `Aplicativo Individual / ${app}`;
+    }
+    if (tipo === 'SUITE - TODOS APPS') return 'Suite - Todos os Apps';
+    if (tipo === 'ADOBE PRO DC') return 'Acrobat Pro DC';
+
+    const sw = (u as any).software_id? softwareById.get((u as any).software_id) : undefined;
     return [sw?.fabricante?? u.tipo_licenca, sw?.produto?? u.produto].filter(Boolean).join(' / ') || '—';
   }
+
   function localLabel(u: LicencaUsuario) {
-    const l = u.local_id? localById.get(u.local_id) : undefined;
+    const l = (u as any).local_id? localById.get((u as any).local_id) : undefined;
     return l?.nome?? (u as any).departamento_raiz?? '—';
   }
 
@@ -86,16 +110,39 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
     const { data: sessionData } = await supabase.auth.getSession();
     const atualizadoPor = sessionData.session?.user?.email?? null;
 
-    const sw = (form as any).software_id? softwareById.get((form as any).software_id) : undefined;
+    const tipoNorm = normalizeTipoProduto((form as any).tipo_produto || (form as any).produto || '');
+
+    let produtoFinal = 'Acrobat Pro DC';
+    let appFinal: string | null = (form as any).app_individual || null;
+
+    if (tipoNorm === 'ADOBE PRO DC') {
+      produtoFinal = 'Acrobat Pro DC';
+      appFinal = null;
+    } else if (tipoNorm === 'SUITE - TODOS APPS') {
+      produtoFinal = 'Suite - Todos os Apps';
+      appFinal = null;
+    } else if (tipoNorm === 'APLICATIVO INDIVIDUAL') {
+      produtoFinal = 'Aplicativo Individual';
+      // Se no cadastro escolheu Photoshop, garante que salvou
+      if (!appFinal) {
+        const maybeApp = (form as any).produto || '';
+        if (ADOBE_SINGLE_APPS.some(a => maybeApp.toLowerCase().includes(a.toLowerCase()))) {
+          appFinal = maybeApp;
+        } else {
+          appFinal = 'Photoshop'; // default
+        }
+      }
+    }
 
     const rawPayload = {
       email: (form.email?? '').trim().toLowerCase(),
       nome: form.nome?.trim() || null,
-      login: form.login?.trim() || null,
-      departamento_raiz: (form as any).departamento_raiz?.trim() || null,
-      tipo_licenca: form.tipo_licenca || sw?.fabricante || null,
-      tipo_produto: form.tipo_produto || sw?.tipo_produto || null,
-      produto: form.produto || sw?.produto || null,
+      login: form.login?.trim() || (form.email?.split('@')[0].toLowerCase()) || null,
+      departamento_raiz: (form as any).departamento_raiz?.trim().toUpperCase() || null,
+      tipo_licenca: 'Adobe',
+      tipo_produto: tipoNorm,
+      produto: produtoFinal,
+      app_individual: appFinal,
       possui_licenca: Boolean(form.possui_licenca),
       status: form.status || 'Ativo',
       local_id: (form as any).local_id || null,
@@ -104,10 +151,14 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
     };
 
     if (!rawPayload.email) throw new Error('O e-mail é obrigatório.');
+    if (tipoNorm === 'APLICATIVO INDIVIDUAL' &&!rawPayload.app_individual) {
+      throw new Error('Selecione qual App Individual (Photoshop, Illustrator...)');
+    }
+
     const payload = cleanPayload(rawPayload);
 
-    if (form.id) {
-      const { error: err } = await supabase.from('licencas_usuarios').update(payload).eq('id', form.id);
+    if ((form as any).id) {
+      const { error: err } = await supabase.from('licencas_usuarios').update(payload).eq('id', (form as any).id);
       if (err) throw new Error(err.message);
     } else {
       const { error: err } = await supabase.from('licencas_usuarios').upsert(payload, { onConflict: 'email' });
@@ -119,7 +170,7 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
 
   async function handleDelete(item: LicencaUsuario) {
     if (!window.confirm(`Excluir ${item.nome?? item.email}?`)) return;
-    const { error: err } = await supabase.from('licencas_usuarios').delete().eq('id', item.id);
+    const { error: err } = await supabase.from('licencas_usuarios').delete().eq('id', (item as any).id);
     if (err) setError(err.message);
     else await onRefresh();
   }
@@ -134,14 +185,25 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
       const email = (raw as any).email?.trim().toLowerCase();
       if (!email) { errors.push(`Linha ${index + 2}: e-mail ausente.`); continue; }
 
+      const tipoNorm = normalizeTipoProduto((raw as any).tipo_produto || (raw as any).produto || '');
+      let produtoFinal = 'Acrobat Pro DC';
+      let appFinal = (raw as any).app_individual || null;
+
+      if (tipoNorm === 'SUITE - TODOS APPS') produtoFinal = 'Suite - Todos os Apps';
+      if (tipoNorm === 'APLICATIVO INDIVIDUAL') {
+        produtoFinal = 'Aplicativo Individual';
+        if (!appFinal) appFinal = (raw as any).produto || 'Photoshop';
+      }
+
       const rawPayload = {
         email,
         nome: (raw as any).nome || null,
         login: (raw as any).login || email.split('@')[0],
         departamento_raiz: (raw as any).departamento_raiz || null,
-        tipo_licenca: (raw as any).tipo_licenca || 'Adobe',
-        tipo_produto: (raw as any).tipo_produto || 'ADOBE PRO DC',
-        produto: (raw as any).produto || 'Acrobat Pro DC',
+        tipo_licenca: 'Adobe',
+        tipo_produto: tipoNorm,
+        produto: produtoFinal,
+        app_individual: appFinal,
         status: (raw as any).status || 'Ativo',
         possui_licenca: true,
         atualizado_por: atualizadoPor,
@@ -157,7 +219,6 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
     return { success, errors };
   }
 
-  // Handler para o modal antigo que manda File
   async function handleImportBatchFile(file: File) {
     const text = await file.text();
     const linhas = text.replace(/^\uFEFF/, '').split('\n').filter(l => l.trim());
@@ -173,9 +234,10 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
       email: r.email?.toLowerCase(),
       login: r.email?.split('@')[0].toLowerCase(),
       departamento_raiz: r.setor?.toUpperCase(),
-      tipo_licenca: r.tipo_licenca || 'Adobe',
-      tipo_produto: r.tipo_produto || 'ADOBE PRO DC',
-      produto: r.produto || 'Acrobat Pro DC',
+      tipo_licenca: 'Adobe',
+      tipo_produto: normalizeTipoProduto(r.tipo_produto || r.produto || ''),
+      produto: r.produto,
+      app_individual: r.app_individual || r.app || null,
       status: r.status || 'Ativo',
       possui_licenca: true,
     })).filter((r: any) => r.email);
@@ -185,9 +247,10 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
 
   function handleExport() {
     const sheet = rows.map((u) => ({
-      NOME: u.nome?? '', EMAIL: u.email?? '', LOGIN: u.login?? '',
+      NOME: u.nome?? '', EMAIL: u.email?? '', LOGIN: (u as any).login?? '',
       SETOR: localLabel(u), FABRICANTE: u.tipo_licenca?? '',
       TIPO_PRODUTO: u.tipo_produto?? '', PRODUTO: u.produto?? '',
+      APP_INDIVIDUAL: (u as any).app_individual?? '',
       POSSUI_LICENCA: u.possui_licenca? 'true' : 'false', STATUS: u.status?? '',
     }));
     const wb = XLSX.utils.book_new();
@@ -210,7 +273,7 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
         <div className="flex gap-2">
           <button onClick={handleExport} disabled={rows.length === 0} className="flex items-center gap-2 text-sm text-[#94a3b8] border border-[#1e293b] px-3 py-2 rounded-lg"><Download className="w-4 h-4" />Exportar</button>
           {podeEditar && <button onClick={() => setShowImport((v) =>!v)} className="flex items-center gap-2 text-sm text-[#94a3b8] border border-[#1e293b] px-3 py-2 rounded-lg"><Upload className="w-4 h-4" />Importar</button>}
-          {podeEditar && <button onClick={() => setModalItem({ status: 'Ativo', possui_licenca: true } as any)} className="flex items-center gap-2 text-sm bg-[#D4AF37] text-[#001726] font-bold px-4 py-2 rounded-lg"><Plus className="w-4 h-4" />Novo Registro</button>}
+          {podeEditar && <button onClick={() => setModalItem({ status: 'Ativo', possui_licenca: true, tipo_produto: 'ADOBE PRO DC' } as any)} className="flex items-center gap-2 text-sm bg-[#D4AF37] text-[#001726] font-bold px-4 py-2 rounded-lg"><Plus className="w-4 h-4" />Novo Registro</button>}
         </div>
       </div>
       {error && <div className="flex gap-2 text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-4 py-3 text-sm"><AlertCircle className="w-4 h-4" />{error}</div>}
@@ -221,9 +284,9 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
             <thead className="bg-[#001726] border-b border-[#1e293b]"><tr><SortableTh label="Colaborador" keyName="nome" /><SortableTh label="Login" keyName="login" /><SortableTh label="Setor" keyName="local" /><SortableTh label="Software" keyName="software" /><th className={thClass}>Licença</th><SortableTh label="Status" keyName="status" /><th className="w-20 px-4 py-3" /></tr></thead>
             <tbody className="divide-y divide-[#1e293b]">
               {rows.map((u) => (
-                <tr key={u.id} className="hover:bg-[#001726]/50">
+                <tr key={(u as any).id} className="hover:bg-[#001726]/50">
                   <td className="px-4 py-3"><p className="text-white text-sm">{u.nome?? '—'}</p><p className="text-[#64748b] text-xs">{u.email}</p></td>
-                  <td className="px-4 py-3 text-[#94a3b8] text-sm">{u.login?? '—'}</td>
+                  <td className="px-4 py-3 text-[#94a3b8] text-sm">{(u as any).login?? '—'}</td>
                   <td className="px-4 py-3 text-[#94a3b8] text-sm">{localLabel(u)}</td>
                   <td className="px-4 py-3 text-[#D4AF37] text-sm">{softwareLabel(u)}</td>
                   <td className="px-4 py-3">{u.possui_licenca? <span className="text-emerald-400 text-xs flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />Possui</span> : <span className="text-[#64748b] text-xs flex items-center gap-1"><XCircle className="w-3.5 h-3.5" />Não</span>}</td>

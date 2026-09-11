@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { StatusBadge } from '@/components/Badges';
 import { LicencaModal } from '@/components/LicencaModal';
 import { ImportCSV } from '@/components/ImportCSV';
-import { Users, Plus, Pencil, Trash2, Download, Upload, AlertCircle, CheckCircle2, XCircle, ArrowUpDown } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, Download, Upload, AlertCircle, CheckCircle2, XCircle, ArrowUpDown, Trash } from 'lucide-react';
 import type { LicencaUsuario, Software, LocalTrabalho, SystemRole } from '@/types';
 
 interface LicencasTableProps {
@@ -25,7 +25,6 @@ const ADOBE_SINGLE_APPS = [
   "Audition","Lightroom","XD","Animate","Dreamweaver","Acrobat Pro","InCopy"
 ] as const;
 
-// FIXO - sem versão, nunca muda
 const COLUNAS_BANCO = ['email','nome','login','departamento_raiz','tipo_licenca','tipo_produto','produto','app_individual','possui_licenca','status','local_id','atualizado_por','atualizado_em'] as const;
 
 function normalizeTipoProduto(valor: string): string {
@@ -43,6 +42,7 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('nome');
   const [sortAsc, setSortAsc] = useState(true);
+  const [excluindoTudo, setExcluindoTudo] = useState(false);
 
   const podeEditar = PODE_EDITAR.includes(role);
   const podeExcluir = PODE_EXCLUIR.includes(role);
@@ -62,13 +62,9 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
   function softwareLabel(u: LicencaUsuario) {
     const tipo = (u.tipo_produto || '').toUpperCase();
     const app = (u as any).app_individual;
-
-    if (tipo === 'APLICATIVO INDIVIDUAL' && app) {
-      return `Aplicativo Individual / ${app}`;
-    }
+    if (tipo === 'APLICATIVO INDIVIDUAL' && app) return `Aplicativo Individual / ${app}`;
     if (tipo === 'SUITE - TODOS APPS') return 'Suite - Todos os Apps';
     if (tipo === 'ADOBE PRO DC') return 'Acrobat Pro DC';
-
     const sw = (u as any).software_id? softwareById.get((u as any).software_id) : undefined;
     return [sw?.fabricante?? u.tipo_licenca, sw?.produto?? u.produto].filter(Boolean).join(' / ') || '—';
   }
@@ -109,31 +105,19 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
   async function handleSave(form: Partial<LicencaUsuario>) {
     const { data: sessionData } = await supabase.auth.getSession();
     const atualizadoPor = sessionData.session?.user?.email?? null;
-
     const tipoNorm = normalizeTipoProduto((form as any).tipo_produto || (form as any).produto || '');
-
     let produtoFinal = 'Acrobat Pro DC';
     let appFinal: string | null = (form as any).app_individual || null;
-
-    if (tipoNorm === 'ADOBE PRO DC') {
-      produtoFinal = 'Acrobat Pro DC';
-      appFinal = null;
-    } else if (tipoNorm === 'SUITE - TODOS APPS') {
-      produtoFinal = 'Suite - Todos os Apps';
-      appFinal = null;
-    } else if (tipoNorm === 'APLICATIVO INDIVIDUAL') {
+    if (tipoNorm === 'ADOBE PRO DC') { produtoFinal = 'Acrobat Pro DC'; appFinal = null; }
+    else if (tipoNorm === 'SUITE - TODOS APPS') { produtoFinal = 'Suite - Todos os Apps'; appFinal = null; }
+    else if (tipoNorm === 'APLICATIVO INDIVIDUAL') {
       produtoFinal = 'Aplicativo Individual';
-      // Se no cadastro escolheu Photoshop, garante que salvou
       if (!appFinal) {
         const maybeApp = (form as any).produto || '';
-        if (ADOBE_SINGLE_APPS.some(a => maybeApp.toLowerCase().includes(a.toLowerCase()))) {
-          appFinal = maybeApp;
-        } else {
-          appFinal = 'Photoshop'; // default
-        }
+        if (ADOBE_SINGLE_APPS.some(a => maybeApp.toLowerCase().includes(a.toLowerCase()))) appFinal = maybeApp;
+        else appFinal = 'Photoshop';
       }
     }
-
     const rawPayload = {
       email: (form.email?? '').trim().toLowerCase(),
       nome: form.nome?.trim() || null,
@@ -149,14 +133,9 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
       atualizado_por: atualizadoPor,
       atualizado_em: new Date().toISOString(),
     };
-
     if (!rawPayload.email) throw new Error('O e-mail é obrigatório.');
-    if (tipoNorm === 'APLICATIVO INDIVIDUAL' &&!rawPayload.app_individual) {
-      throw new Error('Selecione qual App Individual (Photoshop, Illustrator...)');
-    }
-
+    if (tipoNorm === 'APLICATIVO INDIVIDUAL' &&!rawPayload.app_individual) throw new Error('Selecione qual App Individual');
     const payload = cleanPayload(rawPayload);
-
     if ((form as any).id) {
       const { error: err } = await supabase.from('licencas_usuarios').update(payload).eq('id', (form as any).id);
       if (err) throw new Error(err.message);
@@ -175,45 +154,45 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
     else await onRefresh();
   }
 
+  // FUNÇÃO NOVA - EXCLUIR TODOS OS REGISTROS DE GESTÃO DE LICENÇAS
+  async function handleExcluirTodosRegistros() {
+    const total = data?.length || 0;
+    if (total === 0) return;
+    const c1 = window.confirm(`ATENÇÃO: Você vai apagar TODOS os ${total} registros de Gestão de Licenças?\n\nIsso vai zerar EM USO (${total} → 0) e voltar LIVRE para 720.\n\nContinuar?`);
+    if (!c1) return;
+    const c2 = window.confirm(`CONFIRMAÇÃO FINAL: Apagar ${total} registros DEFINITIVAMENTE? Essa ação não pode ser desfeita.`);
+    if (!c2) return;
+
+    setExcluindoTudo(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase.from('licencas_usuarios').delete().neq('email', '');
+      if (err) throw err;
+      await onRefresh();
+    } catch (err: any) {
+      setError(err.message + ' - Se for RLS, crie a policy DELETE no Supabase');
+    } finally {
+      setExcluindoTudo(false);
+    }
+  }
+
   async function handleImport(rowsToImport: Partial<LicencaUsuario>[]) {
     const errors: string[] = [];
     let success = 0;
     const { data: sessionData } = await supabase.auth.getSession();
     const atualizadoPor = sessionData.session?.user?.email?? null;
-
     for (const [index, raw] of rowsToImport.entries()) {
       const email = (raw as any).email?.trim().toLowerCase();
       if (!email) { errors.push(`Linha ${index + 2}: e-mail ausente.`); continue; }
-
       const tipoNorm = normalizeTipoProduto((raw as any).tipo_produto || (raw as any).produto || '');
       let produtoFinal = 'Acrobat Pro DC';
       let appFinal = (raw as any).app_individual || null;
-
       if (tipoNorm === 'SUITE - TODOS APPS') produtoFinal = 'Suite - Todos os Apps';
-      if (tipoNorm === 'APLICATIVO INDIVIDUAL') {
-        produtoFinal = 'Aplicativo Individual';
-        if (!appFinal) appFinal = (raw as any).produto || 'Photoshop';
-      }
-
-      const rawPayload = {
-        email,
-        nome: (raw as any).nome || null,
-        login: (raw as any).login || email.split('@')[0],
-        departamento_raiz: (raw as any).departamento_raiz || null,
-        tipo_licenca: 'Adobe',
-        tipo_produto: tipoNorm,
-        produto: produtoFinal,
-        app_individual: appFinal,
-        status: (raw as any).status || 'Ativo',
-        possui_licenca: true,
-        atualizado_por: atualizadoPor,
-        atualizado_em: new Date().toISOString(),
-      };
-
+      if (tipoNorm === 'APLICATIVO INDIVIDUAL') { produtoFinal = 'Aplicativo Individual'; if (!appFinal) appFinal = (raw as any).produto || 'Photoshop'; }
+      const rawPayload = { email, nome: (raw as any).nome || null, login: (raw as any).login || email.split('@')[0], departamento_raiz: (raw as any).departamento_raiz || null, tipo_licenca: 'Adobe', tipo_produto: tipoNorm, produto: produtoFinal, app_individual: appFinal, status: (raw as any).status || 'Ativo', possui_licenca: true, atualizado_por: atualizadoPor, atualizado_em: new Date().toISOString(), };
       const payload = cleanPayload(rawPayload);
       const { error: err } = await supabase.from('licencas_usuarios').upsert(payload, { onConflict: 'email' });
-      if (err) errors.push(`Linha ${index + 2} (${email}): ${err.message}`);
-      else success++;
+      if (err) errors.push(`Linha ${index + 2} (${email}): ${err.message}`); else success++;
     }
     await onRefresh();
     return { success, errors };
@@ -230,18 +209,11 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
       return obj;
     });
     const normalized = rawRows.map((r: any) => ({
-      nome: r.nome,
-      email: r.email?.toLowerCase(),
-      login: r.email?.split('@')[0].toLowerCase(),
-      departamento_raiz: r.setor?.toUpperCase(),
-      tipo_licenca: 'Adobe',
-      tipo_produto: normalizeTipoProduto(r.tipo_produto || r.produto || ''),
-      produto: r.produto,
-      app_individual: r.app_individual || r.app || null,
-      status: r.status || 'Ativo',
-      possui_licenca: true,
+      nome: r.nome, email: r.email?.toLowerCase(), login: r.email?.split('@')[0].toLowerCase(),
+      departamento_raiz: r.setor?.toUpperCase(), tipo_licenca: 'Adobe',
+      tipo_produto: normalizeTipoProduto(r.tipo_produto || r.produto || ''), produto: r.produto,
+      app_individual: r.app_individual || r.app || null, status: r.status || 'Ativo', possui_licenca: true,
     })).filter((r: any) => r.email);
-
     return handleImport(normalized);
   }
 
@@ -270,14 +242,29 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
           <h2 className="text-white font-bold text-lg flex items-center gap-2"><Users className="w-5 h-5 text-[#D4AF37]" />Gestão de Licenças</h2>
           <p className="text-[#94a3b8] text-sm">{loading? 'Carregando...' : `${rows.length} registro(s).`}</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleExport} disabled={rows.length === 0} className="flex items-center gap-2 text-sm text-[#94a3b8] border border-[#1e293b] px-3 py-2 rounded-lg"><Download className="w-4 h-4" />Exportar</button>
-          {podeEditar && <button onClick={() => setShowImport((v) =>!v)} className="flex items-center gap-2 text-sm text-[#94a3b8] border border-[#1e293b] px-3 py-2 rounded-lg"><Upload className="w-4 h-4" />Importar</button>}
-          {podeEditar && <button onClick={() => setModalItem({ status: 'Ativo', possui_licenca: true, tipo_produto: 'ADOBE PRO DC' } as any)} className="flex items-center gap-2 text-sm bg-[#D4AF37] text-[#001726] font-bold px-4 py-2 rounded-lg"><Plus className="w-4 h-4" />Novo Registro</button>}
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={handleExport} disabled={rows.length === 0} className="flex items-center gap-2 text-sm text-[#94a3b8] border border-[#1e293b] px-3 py-2 rounded-lg hover:text-white disabled:opacity-50"><Download className="w-4 h-4" />Exportar</button>
+          {podeEditar && <button onClick={() => setShowImport((v) =>!v)} className="flex items-center gap-2 text-sm text-[#94a3b8] border border-[#1e293b] px-3 py-2 rounded-lg hover:text-white"><Upload className="w-4 h-4" />Importar</button>}
+
+          {/* BOTÃO NOVO QUE VOCÊ PEDIU - EXCLUIR TODOS */}
+          {podeExcluir && data.length > 0 && (
+            <button
+              onClick={handleExcluirTodosRegistros}
+              disabled={excluindoTudo}
+              className="flex items-center gap-2 text-sm bg-red-950/60 border border-red-900/50 text-red-400 hover:bg-red-900/60 hover:text-red-300 px-3 py-2 rounded-lg font-bold transition-colors disabled:opacity-50"
+            >
+              <Trash className="w-4 h-4" />
+              {excluindoTudo? 'Excluindo...' : `Excluir todos (${data.length})`}
+            </button>
+          )}
+
+          {podeEditar && <button onClick={() => setModalItem({ status: 'Ativo', possui_licenca: true, tipo_produto: 'ADOBE PRO DC' } as any)} className="flex items-center gap-2 text-sm bg-[#D4AF37] text-[#001726] font-bold px-4 py-2 rounded-lg hover:bg-[#c19b2e]"><Plus className="w-4 h-4" />Novo Registro</button>}
         </div>
       </div>
+
       {error && <div className="flex gap-2 text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-4 py-3 text-sm"><AlertCircle className="w-4 h-4" />{error}</div>}
       {showImport && podeEditar && <ImportCSV onImport={handleImport} />}
+
       <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -302,3 +289,5 @@ export function LicencasTable({ data, softwares, locais, role, loading, onRefres
     </div>
   );
 }
+
+export default LicencasTable;

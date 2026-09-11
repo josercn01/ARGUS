@@ -1,198 +1,178 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { StatusBadge } from '@/components/Badges';
-import { Users, Plus, Pencil, Trash2, Download, Upload, Settings2, X, Save } from 'lucide-react';
-import { SoftwareManagement } from './SoftwareManagement';
-import type { UsuarioLicenca, Software, SystemRole } from '@/types';
+import { Upload, Download, Plus, Settings2, Loader2 } from 'lucide-react';
+import type { UsuarioLicenca, Software, LocalTrabalho, SystemRole } from '@/types';
 
 interface Props {
-  data: UsuarioLicenca[]; // cada usuario já vem com softwares[]
+  data: UsuarioLicenca[];
   softwares: Software[];
-  locais: any[];
+  locais: LocalTrabalho[];
   role: SystemRole;
   loading: boolean;
   onRefresh: () => void;
   onImportBatch: (file: File) => Promise<void>;
 }
 
-export function LicencasTable({ data, softwares, loading, onRefresh, onImportBatch }: Props) {
-  const [showForm, setShowForm] = useState(false);
-  const [showSwManager, setShowSwManager] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+export function LicencasTable({ data, softwares, locais, loading, onRefresh }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0, step: '', percent: 0, eta: '' });
+  const startTimeRef = useRef<number>(0);
 
-  const [colaborador, setColaborador] = useState('');
-  const [login, setLogin] = useState('');
-  const [setor, setSetor] = useState('');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [searchImport, setSearchImport] = useState(false);
-
-  const swById = useMemo(() => {
-    const m = new Map<string, Software>();
-    softwares.forEach(s => m.set(s.id, s));
-    return m;
-  }, [softwares]);
-
-  function resetForm() {
-    setColaborador(''); setLogin(''); setSetor(''); setSelectedIds([]); setEditingId(null);
+  function formatETA(current: number, total: number) {
+    if (current===0) return 'Calculando...';
+    const elapsed = (Date.now() - startTimeRef.current) / 1000;
+    const perItem = elapsed / current;
+    const remaining = (total - current) * perItem;
+    if (remaining < 60) return `${Math.ceil(remaining)}s restantes`;
+    return `${Math.floor(remaining/60)}m ${Math.ceil(remaining%60)}s restantes`;
   }
 
-  function openEdit(u: UsuarioLicenca) {
-    setEditingId(u.id);
-    setColaborador(u.colaborador);
-    setLogin(u.login || '');
-    setSetor(u.setor || '');
-    // Pega do campo novo softwares[] ou do antigo software_id para compatibilidade
-    const ids = u.softwares?.map(s=>s.id) || (u.software_id? [u.software_id] : []);
-    setSelectedIds(ids);
-    setShowForm(true);
-  }
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  function toggleSoftware(id: string) {
-    setSelectedIds(prev => prev.includes(id)? prev.filter(i=>i!==id) : [...prev, id]);
-  }
+    setImporting(true);
+    startTimeRef.current = Date.now();
 
-  async function handleSave() {
-    if (!colaborador || selectedIds.length===0) { alert('Preencha nome e selecione ao menos 1 software. Ex: LUCAS | ACROBAT + PHOTOSHOP'); return; }
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l=>l.trim()!=='');
+      const total = lines.length - 1;
+      const sep = lines[0].includes(';')? ';' : ',';
+      const headers = lines[0].split(sep).map(h=>h.trim().toUpperCase().replace(/"/g,''));
 
-    const payloadUser = {
-      colaborador: colaborador.trim(),
-      login: (login || colaborador.toLowerCase().replace(/\s+/g, '.')).trim().toLowerCase(),
-      setor: setor? setor.toUpperCase() : null
-    };
+      setProgress({ current: 0, total, step: 'Lendo planilha...', percent: 0, eta: '' });
 
-    let userId = editingId;
+      // Map de softwares existentes
+      const swMap = new Map<string, string>();
+      softwares.forEach(s=> swMap.set(s.nome.toLowerCase(), s.id));
 
-    if (editingId) {
-      await supabase.from('usuarios').update(payloadUser).eq('id', editingId);
-    } else {
-      const { data: novo, error } = await supabase.from('usuarios').insert(payloadUser).select('id').single();
-      if (error) { alert(error.message); return; }
-      userId = novo.id;
+      let ok = 0;
+      let erros = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(sep).map(v=>v.trim().replace(/^"|"$/g,''));
+        const row: any = {};
+        headers.forEach((h, idx) => row[h] = values[idx]);
+
+        const email = row['EMAIL'] || row['E-MAIL'] || row['LOGIN'];
+        const tipoRaw = (row['TIPO_PRODUTO'] || row['SOFTWARE'] || row['PRODUTO'] || 'Photoshop').trim() || 'Photoshop';
+        const setor = (row['DEPARTAMENTO'] || row['SETOR'] || '').toUpperCase();
+        const nome = row['NOME'] || row['COLABORADOR'] || email;
+
+        setProgress({
+          current: i,
+          total,
+          step: `Processando ${nome} - ${tipoRaw} (${i}/${total})`,
+          percent: Math.round(i/total*100),
+          eta: formatETA(i, total)
+        });
+
+        if (!email) { erros++; continue; }
+
+        try {
+          let swId = swMap.get(tipoRaw.toLowerCase());
+          if (!swId) {
+            // Cria software se não existir com qtd 0
+            const isAdobe =!tipoRaw.toLowerCase().includes('autocad');
+            const { data: novo } = await supabase.from('softwares').insert({ nome: tipoRaw, is_adobe: isAdobe, qtd_contratada: 0 }).select('id').single();
+            if (novo) { swId = novo.id; swMap.set(tipoRaw.toLowerCase(), novo.id); }
+          }
+
+          const login = email.split('@')[0].toLowerCase();
+          const { data: userRow } = await supabase.from('usuarios').upsert({
+            colaborador: nome,
+            login,
+            setor: setor || null,
+            status: 'ativo'
+          }, { onConflict: 'login' }).select('id').single();
+
+          if (userRow && swId) {
+            await supabase.from('usuario_softwares').upsert({ usuario_id: userRow.id, software_id: swId }, { onConflict: 'usuario_id,software_id' });
+            ok++;
+          }
+        } catch (err) {
+          console.error(err);
+          erros++;
+        }
+
+        // Dá respiro pro UI atualizar a cada 20 linhas
+        if (i % 20 === 0) await new Promise(r=>setTimeout(r, 10));
+      }
+
+      setProgress({ current: total, total, step: `Concluído! ${ok} importados, ${erros} erros`, percent: 100, eta: 'Finalizando...' });
+      await new Promise(r=>setTimeout(r, 1500));
+      await onRefresh();
+
+    } catch (err) {
+      alert('Erro ao importar: ' + err);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
     }
-
-    // MUITOS-PARA-MUITOS - Aqui consome 1 de cada software selecionado
-    if (userId) {
-      await supabase.from('usuario_softwares').delete().eq('usuario_id', userId);
-      const inserts = selectedIds.map(swId => ({ usuario_id: userId!, software_id: swId }));
-      await supabase.from('usuario_softwares').insert(inserts);
-    }
-
-    setShowForm(false);
-    resetForm();
-    onRefresh();
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('Excluir este usuario e todas suas licenças?')) return;
-    await supabase.from('usuarios').delete().eq('id', id);
-    onRefresh();
-  }
-
-  function handleExport() {
-    const header = 'Colaborador;Login;Setor;Softwares;Status';
-    const lines = data.map(u => {
-      const softs = u.softwares?.map(s=>s.nome).join(' | ') || u.software?.nome || '';
-      return `${u.colaborador};${u.login};${u.setor||''};${softs};${u.status}`;
-    });
-    const csv = [header,...lines].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download=`licencas-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row justify-between gap-3">
-        <div>
-          <h2 className="text-white font-bold flex items-center gap-2"><Users className="w-5 h-5 text-[#D4AF37]" />Pessoas / Licenças - {data.length} registros</h2>
-      
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={()=>setShowSwManager(true)} className="border border-[#D4AF37]/30 bg-[#D4AF37]/10 text-[#D4AF37] px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1"><Settings2 className="w-4 h-4" /> Gerenciar Softwares ({softwares.length})</button>
-          <button onClick={handleExport} className="border border-[#1e293b] px-3 py-2 rounded-lg text-sm text-[#94a3b8] flex items-center gap-1"><Download className="w-4 h-4" /> Exportar</button>
-          <button onClick={() => setSearchImport(!searchImport)} className="border border-[#1e293b] px-3 py-2 rounded-lg text-sm text-[#94a3b8] flex items-center gap-1"><Upload className="w-4 h-4" /> Importar</button>
-          <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-[#D4AF37] text-[#001726] font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Novo Registro</button>
+      {/* Barra de ações */}
+      <div className="flex justify-between items-center">
+        <h3 className="text-white font-bold text-sm flex items-center gap-2">Pessoas / Licenças - {data.length} registros</h3>
+        <div className="flex gap-2">
+          <button onClick={()=>fileRef.current?.click()} className="bg-[#001E33] border border-[#1e293b] text-[#94a3b8] rounded-lg px-3 py-2 text-xs flex items-center gap-2 hover:border-[#D4AF37]/40"><Upload className="w-4 h-4" /> Importar</button>
+          <button className="bg-[#D4AF37] text-black rounded-lg px-4 py-2 text-xs font-bold flex items-center gap-1"><Plus className="w-4 h-4" /> Novo Registro</button>
         </div>
       </div>
 
-      {searchImport && (
-        <div className="bg-[#001E33] p-4 rounded-xl border border-[#1e293b]">
-          <input type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if(f) onImportBatch(f); }} className="text-white text-sm" />
-        </div>
-      )}
+      <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
 
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-[#001726] border-b border-[#1e293b]">
-              <tr>
-                <th className="px-4 py-3 text-xs text-[#94a3b8]">COLABORADOR</th>
-                <th className="px-4 py-3 text-xs text-[#94a3b8]">SOFTWARE (PODE TER VARIOS)</th>
-                <th className="px-4 py-3 text-xs text-[#94a3b8]">SETOR</th>
-                <th className="px-4 py-3 text-xs text-[#94a3b8]">STATUS</th>
-                <th className="w-20"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1e293b]">
-              {loading? <tr><td colSpan={5} className="px-4 py-6 text-center text-[#94a3b8]">Carregando...</td></tr> :
-                data.map(u => (
-                  <tr key={u.id} className="hover:bg-[#001726]/50">
-                    <td className="px-4 py-3 text-white text-sm">{u.colaborador}<p className="text-xs text-[#64748b]">{u.login}</p></td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(u.softwares && u.softwares.length>0? u.softwares : u.software? [u.software] : []).map((s:any) => (
-                          <span key={s.id} className="bg-[#001726] border border-[#1e293b] text-[#D4AF37] text-[11px] px-2 py-1 rounded-full font-bold">{s.nome}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-[#94a3b8]">{u.setor || '—'}</td>
-                    <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
-                    <td className="px-4 py-3 flex gap-1 justify-end">
-                      <button onClick={() => openEdit(u)} className="p-1.5 text-[#94a3b8] hover:text-[#D4AF37]"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => handleDelete(u.id)} className="p-1.5 text-[#94a3b8] hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {showForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#001E33] p-6 rounded-xl w-full max-w-[460px] border border-[#1e293b] space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center"><h3 className="text-white font-bold">{editingId? 'Editar' : 'Cadastrar'} Pessoa - Consome licença</h3><button onClick={()=>setShowForm(false)}><X className="w-4 h-4 text-[#94a3b8]" /></button></div>
-
-            <input value={colaborador} onChange={e=>setColaborador(e.target.value)} placeholder="Nome ex: LUCAS" className="w-full bg-[#001726] border border-[#1e293b] rounded px-3 py-2 text-white text-sm" />
-            <input value={login} onChange={e=>setLogin(e.target.value)} placeholder="Login ou Email" className="w-full bg-[#001726] border border-[#1e293b] rounded px-3 py-2 text-white text-sm" />
-            <input value={setor} onChange={e=>setSetor(e.target.value)} placeholder="Setor" className="w-full bg-[#001726] border border-[#1e293b] rounded px-3 py-2 text-white text-sm" />
-
-            <div className="space-y-2">
-              <p className="text-xs text-[#D4AF37] font-bold uppercase">Selecione os Softwares - Pode marcar varios</p>
-              <p className="text-[11px] text-[#64748b]">Ex: LUCAS | ACROBAT PRO DC + PHOTOSHOP = vai descontar 1 de cada</p>
-              <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto bg-[#001726] p-3 rounded-lg border border-[#1e293b]">
-                {softwares.map(s => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm text-white cursor-pointer hover:bg-[#001E33] p-1.5 rounded">
-                    <input type="checkbox" checked={selectedIds.includes(s.id)} onChange={()=>toggleSoftware(s.id)} className="accent-[#D4AF37]" />
-                    <span className="flex-1">{s.nome} {s.qtd_contratada>0? `(${s.qtd_contratada})` : '(consome do pool)'}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${s.is_adobe? 'bg-[#D4AF37]/20 text-[#D4AF37]' : 'bg-sky-400/20 text-sky-400'}`}>{s.is_adobe? s.tipo_adobe : 'OUTRO'}</span>
-                  </label>
-                ))}
-              </div>
+      {/* MODAL DE PROGRESSO REAL */}
+      {importing && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center gap-3 mb-4">
+              <Loader2 className="w-6 h-6 text-[#D4AF37] animate-spin" />
+              <h4 className="text-white font-bold">Importando Planilha</h4>
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button onClick={()=>setShowForm(false)} className="flex-1 border border-[#1e293b] py-2 rounded text-white text-sm">Cancelar</button>
-              <button onClick={handleSave} className="flex-1 bg-[#D4AF37] py-2 rounded font-bold text-sm text-[#001726] flex items-center justify-center gap-1"><Save className="w-4 h-4" /> Salvar</button>
+            <p className="text-[#94a3b8] text-xs mb-1">{progress.step}</p>
+            <p className="text-sky-400 text-[11px] mb-3">{progress.eta} • {progress.current} de {progress.total}</p>
+
+            <div className="w-full bg-[#00121E] h-3 rounded-full overflow-hidden border border-[#1e293b]">
+              <div className="bg-[#D4AF37] h-3 rounded-full transition-all duration-300" style={{width: `${progress.percent}%`}}></div>
+            </div>
+
+            <div className="flex justify-between mt-2">
+              <span className="text-[11px] text-[#64748b]">{progress.percent}%</span>
+              <span className="text-[11px] text-[#64748b]">{progress.current}/{progress.total}</span>
             </div>
           </div>
         </div>
       )}
 
-      {showSwManager && (
-        <SoftwareManagement softwares={softwares} onClose={()=>setShowSwManager(false)} onRefresh={onRefresh} />
-      )}
+      {/* Input visível antigo - pode remover depois */}
+      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-3 flex items-center gap-3">
+        <input type="file" accept=".csv" onChange={handleFile} className="text-xs text-[#94a3b8] file:bg-[#001726] file:border file:border-[#1e293b] file:rounded file:px-3 file:py-1 file:text-white file:mr-3" />
+        {loading && <Loader2 className="w-4 h-4 animate-spin text-[#D4AF37]" />}
+      </div>
+
+      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-[#00121E] text-[#64748b] text-[11px]">
+            <tr><th className="p-3 text-left">COLABORADOR</th><th className="p-3 text-left">SOFTWARE (PODE TER VARIOS)</th><th className="p-3 text-left">SETOR</th><th className="p-3 text-left">STATUS</th></tr>
+          </thead>
+          <tbody>
+            {data.map(u=>(
+              <tr key={u.id} className="border-t border-[#1e293b] text-white">
+                <td className="p-3"><div>{u.colaborador}</div><div className="text-[11px] text-[#64748b]">{u.login}</div></td>
+                <td className="p-3 text-xs">{u.softwares?.map(s=>s.nome).join(', ') || '—'}</td>
+                <td className="p-3 text-xs text-[#94a3b8]">{u.setor || '—'}</td>
+                <td className="p-3"><span className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded">{u.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
-export default LicencasTable;

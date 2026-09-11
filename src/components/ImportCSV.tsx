@@ -7,148 +7,18 @@ interface ImportCSVProps {
   onImport: (rows: Partial<LicencaUsuario>[]) => Promise<{ success: number; errors: string[] }>;
 }
 
-const ADOBE_SINGLE_APPS = [
-  "Photoshop", "Illustrator", "InDesign", "Premiere Pro",
-  "After Effects", "Audition", "Lightroom", "Lightroom Classic",
-  "XD", "Animate", "Dreamweaver", "Acrobat Pro", "InCopy"
-] as const;
-
-const TEMPLATE_HEADERS = ['nome','email','setor','tipo_licenca','tipo_produto','produto','app_individual','status','possui_licenca'] as const;
+const TEMPLATE_HEADERS = ['Email', 'NomeCompleto', 'Departamento', 'Cargo', 'Produto', 'Tipo de produto'] as const;
 
 const TEMPLATE_EXAMPLES = [
   {
-    nome: 'Ellen Virginia Alves Torres',
-    email: 'ellenv@senado.leg.br',
-    setor: 'SF-GABSEN-GSIRAJA',
-    tipo_licenca: 'Adobe',
-    tipo_produto: 'ADOBE PRO DC',
-    produto: 'Acrobat Pro DC',
-    app_individual: '',
-    status: 'Ativo',
-    possui_licenca: 'true',
-  },
-  {
-    nome: 'João Silva',
-    email: 'joao@senado.leg.br',
-    setor: 'SEGP',
-    tipo_licenca: 'Adobe',
-    tipo_produto: 'SUITE - TODOS APPS',
-    produto: 'Suite - Todos os Apps',
-    app_individual: '',
-    status: 'Ativo',
-    possui_licenca: 'true',
-  },
-  {
-    nome: 'Maria Souza',
-    email: 'maria@senado.leg.br',
-    setor: 'SEGP',
-    tipo_licenca: 'Adobe',
-    tipo_produto: 'APLICATIVO INDIVIDUAL',
-    produto: 'Aplicativo Individual',
-    app_individual: 'Photoshop',
-    status: 'Ativo',
-    possui_licenca: 'true',
+    Email: 'aldreen.marques@senado.leg.br',
+    NomeCompleto: 'Aldreen Elohin Portela Marques',
+    Departamento: 'SF-OSE-DGER-SPATR-COAPAT-SESIN',
+    Cargo: 'Terceirizado - Técnico Designer Gráfico De Sinalização',
+    Produto: 'Aplicativo Individual',
+    'Tipo de produto': 'Illustrator | Photoshop',
   },
 ];
-
-const ALLOWED_KEYS = ['nome','email','login','departamento_raiz','tipo_licenca','tipo_produto','produto','app_individual','status','possui_licenca'] as const;
-
-function normalizeTipoProduto(valor: string): string {
-  if (!valor) return '';
-  const v = valor.toLowerCase().trim();
-  if (v.includes('acrobat') || v === 'adobe pro dc' || v.includes('pro dc')) return 'ADOBE PRO DC';
-  if (v.includes('todos') || v.includes('suite') || v.includes('all apps') || v.includes('edição') || v.includes('edicao')) return 'SUITE - TODOS APPS';
-  if (v.includes('individual') || v.includes('single') || ADOBE_SINGLE_APPS.some(a => v.includes(a.toLowerCase()))) return 'APLICATIVO INDIVIDUAL';
-  return valor.toUpperCase().trim();
-}
-
-function normalizeProduto(valor: string, tipoNormalizado: string, appIndividual?: string): string {
-  if (tipoNormalizado === 'ADOBE PRO DC') return 'Acrobat Pro DC';
-  if (tipoNormalizado === 'SUITE - TODOS APPS') return 'Suite - Todos os Apps';
-  if (tipoNormalizado === 'APLICATIVO INDIVIDUAL') return 'Aplicativo Individual';
-  return valor || 'Acrobat Pro DC';
-}
-
-function normalizeRow(rawRow: Record<string, unknown>): Partial<LicencaUsuario> {
-  const row: Record<string, unknown> = {};
-  let rawProduto = '';
-  let rawAppIndividual = '';
-
-  Object.keys(rawRow).forEach((key) => {
-    const k = key.toLowerCase().trim().replace(/\s+/g, '_');
-    const val = rawRow[key]!= null? String(rawRow[key]).trim() : '';
-    if (!val) return;
-
-    switch (k) {
-      case 'nome': row.nome = val; break;
-      case 'email':
-      case 'e-mail':
-        row.email = val.toLowerCase();
-        row.login = val.split('@')[0].toLowerCase();
-        break;
-      case 'login': row.login = val.toLowerCase(); break;
-      case 'setor':
-      case 'departamento':
-      case 'departamento_raiz':
-        row.departamento_raiz = val.toUpperCase();
-        break;
-      case 'tipo_licenca':
-      case 'fabricante':
-        row.tipo_licenca = 'Adobe';
-        break;
-      case 'tipo_produto':
-        row.tipo_produto = val;
-        break;
-      case 'produto':
-        rawProduto = val;
-        break;
-      case 'app_individual':
-      case 'app':
-      case 'aplicativo':
-        rawAppIndividual = val;
-        break;
-      case 'status':
-        row.status = val;
-        break;
-      case 'possui_licenca':
-        row.possui_licenca = true;
-        break;
-    }
-  });
-
-  // Normalização fixa sem versão
-  const tipoNorm = normalizeTipoProduto(String(row.tipo_produto || rawProduto || ''));
-  row.tipo_produto = tipoNorm;
-
-  // Se o produto for um app solto tipo "Photoshop", detecta como Individual
-  const isSingleAppName = ADOBE_SINGLE_APPS.some(a =>
-    rawProduto.toLowerCase() === a.toLowerCase() || rawAppIndividual.toLowerCase() === a.toLowerCase()
-  );
-
-  if (isSingleAppName) {
-    row.tipo_produto = 'APLICATIVO INDIVIDUAL';
-    row.app_individual = ADOBE_SINGLE_APPS.find(a =>
-      a.toLowerCase() === rawProduto.toLowerCase() || a.toLowerCase() === rawAppIndividual.toLowerCase()
-    ) || rawAppIndividual || rawProduto;
-  } else {
-    if (rawAppIndividual) row.app_individual = rawAppIndividual;
-  }
-
-  row.produto = normalizeProduto(rawProduto, row.tipo_produto as string, row.app_individual as string);
-
-  if (row.email && row.possui_licenca === undefined) row.possui_licenca = true;
-  if (row.email &&!row.status) row.status = 'Ativo';
-  if (row.email &&!row.tipo_licenca) row.tipo_licenca = 'Adobe';
-  if (row.email &&!row.tipo_produto) row.tipo_produto = 'ADOBE PRO DC';
-  if (row.email &&!row.produto) row.produto = 'Acrobat Pro DC';
-
-  const clean: Record<string, unknown> = {};
-  ALLOWED_KEYS.forEach(key => {
-    if (row[key]!== undefined && row[key]!== '') clean[key] = row[key];
-  });
-
-  return clean as Partial<LicencaUsuario>;
-}
 
 export function ImportCSV({ onImport }: ImportCSVProps) {
   const [dragging, setDragging] = useState(false);
@@ -160,24 +30,64 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   function downloadTemplate() {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(TEMPLATE_EXAMPLES, { header: [...TEMPLATE_HEADERS] });
-    XLSX.utils.book_append_sheet(wb, ws, 'Modelo');
-    XLSX.writeFile(wb, 'modelo_importacao_licencas.xlsx');
+    const csvContent = '\uFEFFEmail;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto\n' +
+      'aldreen.marques@senado.leg.br;Aldreen Elohin Portela Marques;SF-OSE-DGER-SPATR-COAPAT-SESIN;Terceirizado - Técnico Designer Gráfico De Sinalização;Aplicativo Individual;Illustrator | Photoshop\n';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'modelo_importacao_licencas.csv';
+    link.click();
   }
 
   async function readFile(file: File) {
-    setError(null); setResult(null); setFileName(file.name);
+    setError(null);
+    setResult(null);
+    setFileName(file.name);
     try {
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
-      const rows = raw.map(normalizeRow).filter((r) => Boolean(r.email));
-      if (rows.length === 0) setError('Nenhuma linha com e-mail válido.');
+      const text = await file.text();
+      const cleanText = text.replace(/^\uFEFF/, '').trim();
+      const lines = cleanText.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) throw new Error('Arquivo vazio ou sem linhas de dados.');
+
+      const separator = lines[0].includes(';') ? ';' : ',';
+      const headers = lines[0].split(separator).map(h => h.trim().toLowerCase());
+
+      const required = ['email', 'nomecompleto', 'departamento', 'cargo', 'produto', 'tipo de produto'];
+      const missing = required.filter(req => !headers.some(h => h.replace(/\s+/g, '') === req.replace(/\s+/g, '')));
+      if (missing.length > 0) {
+        throw new Error(`Colunas ausentes no cabeçalho: ${missing.join(', ')}`);
+      }
+
+      const rows: Partial<LicencaUsuario>[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(separator).map(v => v.trim().replace(/^"|"$/g, ''));
+        const rowObj: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+          rowObj[h.replace(/\s+/g, '')] = values[idx] || '';
+        });
+
+        const email = (rowObj['email'] || '').trim().toLowerCase();
+        if (!email) continue;
+
+        rows.push({
+          email,
+          nome: rowObj['nomecompleto'] || null,
+          login: email.split('@')[0],
+          departamento_raiz: (rowObj['departamento'] || '').toUpperCase() || null,
+          cargo: rowObj['cargo'] || null,
+          produto: rowObj['produto'] || 'Aplicativo Individual',
+          tipo_produto: rowObj['tipodeproduto'] || '',
+          app_individual: rowObj['tipodeproduto'] || '',
+          status: 'Ativo',
+          possui_licenca: true,
+        });
+      }
+
+      if (rows.length === 0) throw new Error('Nenhuma linha válida encontrada.');
       setPreview(rows);
     } catch (err) {
-      setError(err instanceof Error? err.message : 'Erro ao ler arquivo.');
+      setError(err instanceof Error ? err.message : 'Erro ao ler arquivo.');
       setPreview([]);
     }
   }
@@ -187,20 +97,21 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     setImporting(true);
     setError(null);
     try {
-      const payload = preview.map(r => {
-        const { local_nome, local_id, local,...rest } = r as any;
-        return rest;
-      });
-      const res = await onImport(payload);
+      const res = await onImport(preview);
       setResult(res);
-      if(res.success > 0) setPreview([]);
+      if (res.success > 0) setPreview([]);
     } catch (err) {
-      setError(err instanceof Error? err.message : 'Erro durante a importação.');
-    } finally { setImporting(false); }
+      setError(err instanceof Error ? err.message : 'Erro durante a importação.');
+    } finally {
+      setImporting(false);
+    }
   }
 
   function reset() {
-    setPreview([]); setResult(null); setFileName(null); setError(null);
+    setPreview([]);
+    setResult(null);
+    setFileName(null);
+    setError(null);
     if (inputRef.current) inputRef.current.value = '';
   }
 
@@ -208,16 +119,20 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
     <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-5 space-y-4 shadow-lg">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 className="text-white font-bold text-sm flex items-center gap-2"><Upload className="w-4 h-4 text-[#D4AF37]" />Importar Alocações</h3>
-          <p className="text-[#94a3b8] text-xs mt-0.5">Modelo fixo: ADOBE PRO DC (202) | SUITE - TODOS APPS (202) | APLICATIVO INDIVIDUAL (225)</p>
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <Upload className="w-4 h-4 text-[#D4AF37]" /> Importar Alocações (CSV)
+          </h3>
+          <p className="text-[#94a3b8] text-xs mt-0.5">Formato: Email;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto</p>
         </div>
-        <button onClick={downloadTemplate} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-[#D4AF37] border border-[#1e293b] hover:border-[#D4AF37]/40 px-3 py-2 rounded-lg transition-all cursor-pointer"><Download className="w-3.5 h-3.5" />Baixar modelo</button>
+        <button onClick={downloadTemplate} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-[#D4AF37] border border-[#1e293b] hover:border-[#D4AF37]/40 px-3 py-2 rounded-lg transition-all cursor-pointer">
+          <Download className="w-3.5 h-3.5" /> Baixar modelo
+        </button>
       </div>
-      <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); const file = e.dataTransfer.files?.[0]; if (file) readFile(file); }} onClick={() => inputRef.current?.click()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${dragging? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-[#1e293b] hover:border-[#D4AF37]/40'}`}>
+      <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); const file = e.dataTransfer.files?.[0]; if (file) readFile(file); }} onClick={() => inputRef.current?.click()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${dragging ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-[#1e293b] hover:border-[#D4AF37]/40'}`}>
         <FileText className="w-6 h-6 text-[#D4AF37] mx-auto mb-2" />
-        <p className="text-white text-sm font-medium">{fileName?? 'Arraste a planilha aqui ou clique para selecionar'}</p>
+        <p className="text-white text-sm font-medium">{fileName ?? 'Arraste a planilha CSV aqui ou clique para selecionar'}</p>
         <p className="text-[#64748b] text-xs mt-1">Colunas: {TEMPLATE_HEADERS.join('; ')}</p>
-        <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) readFile(file); }} />
+        <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) readFile(file); }} />
       </div>
       {error && <div className="flex items-center gap-2 text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-xs"><AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />{error}</div>}
       {preview.length > 0 && (
@@ -225,11 +140,11 @@ export function ImportCSV({ onImport }: ImportCSVProps) {
           <div className="flex items-center justify-between"><p className="text-[#94a3b8] text-xs"><span className="text-[#D4AF37] font-bold">{preview.length}</span> registro(s) prontos.</p><button onClick={reset} className="p-1 text-[#94a3b8] hover:text-rose-400 rounded-md"><X className="w-4 h-4" /></button></div>
           <div className="max-h-48 overflow-auto border border-[#1e293b] rounded-lg">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#001726] sticky top-0"><tr><th className="px-3 py-2 text-[#94a3b8]">Nome</th><th className="px-3 py-2 text-[#94a3b8]">E-mail</th><th className="px-3 py-2 text-[#94a3b8]">Tipo</th><th className="px-3 py-2 text-[#94a3b8]">Produto</th><th className="px-3 py-2 text-[#94a3b8]">App</th></tr></thead>
-              <tbody className="divide-y divide-[#1e293b]">{preview.slice(0, 50).map((r, i) => (<tr key={`${r.email}-${i}`}><td className="px-3 py-1.5 text-white">{r.nome?? '—'}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.email}</td><td className="px-3 py-1.5 text-[#D4AF37]">{r.tipo_produto}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.produto?? '—'}</td><td className="px-3 py-1.5 text-emerald-300">{(r as any).app_individual || '—'}</td></tr>))}</tbody>
+              <thead className="bg-[#001726] sticky top-0"><tr><th className="px-3 py-2 text-[#94a3b8]">Nome</th><th className="px-3 py-2 text-[#94a3b8]">E-mail</th><th className="px-3 py-2 text-[#94a3b8]">Cargo</th><th className="px-3 py-2 text-[#94a3b8]">Softwares</th></tr></thead>
+              <tbody className="divide-y divide-[#1e293b]">{preview.slice(0, 50).map((r, i) => (<tr key={`${r.email}-${i}`}><td className="px-3 py-1.5 text-white">{r.nome ?? '—'}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.email}</td><td className="px-3 py-1.5 text-[#94a3b8]">{r.cargo ?? '—'}</td><td className="px-3 py-1.5 text-emerald-300">{r.app_individual ?? '—'}</td></tr>))}</tbody>
             </table>
           </div>
-          <div className="flex justify-end"><button onClick={handleImport} disabled={importing} className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg disabled:opacity-50"><Upload className="w-4 h-4" />{importing? 'Importando...' : `Importar ${preview.length}`}</button></div>
+          <div className="flex justify-end"><button onClick={handleImport} disabled={importing} className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2 rounded-lg disabled:opacity-50"><Upload className="w-4 h-4" />{importing ? 'Importando...' : `Importar ${preview.length}`}</button></div>
         </div>
       )}
       {result && <div className="space-y-2"><div className="flex items-center gap-2 text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-xs"><CheckCircle className="w-4 h-4 text-emerald-400" />{result.success} importado(s).</div>{result.errors.length > 0 && <div className="text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-xs max-h-40 overflow-auto">{result.errors.map((e, i) => (<p key={i}>{e}</p>))}</div>}</div>}

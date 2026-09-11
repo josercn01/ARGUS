@@ -1,437 +1,207 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Package, Plus, Pencil, Trash2, X, Save, AlertCircle, Trash } from 'lucide-react';
-import type { Software } from '@/types';
+import { Search, Download, Upload, Plus, Trash2, Pencil, CheckCircle, ChevronDown } from 'lucide-react';
 
-export function SoftwareManagement() {
-  const [softwares, setSoftwares] = useState<Software[]>([]);
+type Licenca = {
+  id: string;
+  colaborador: string;
+  email: string;
+  login: string;
+  setor: string;
+  software: string;
+  licenca: string;
+  status: string;
+};
+
+type SoftwareResumo = {
+  nome: string;
+  tipo: string;
+  total: number;
+  emUso: number;
+  livre: number;
+  ocupacao: number;
+  detalhe?: { nome: string; qtd: number }[];
+};
+
+export function GestaoLicencas() {
+  const [licencas, setLicencas] = useState<Licenca[]>([]);
+  const [softwaresResumo, setSoftwaresResumo] = useState<SoftwareResumo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalItem, setModalItem] = useState<Partial<Software> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [deletingAll, setDeletingAll] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [filtroSoftware, setFiltroSoftware] = useState('Todos os Softwares');
+  const [excluindoTudo, setExcluindoTudo] = useState(false);
 
-  async function load() {
+  async function loadData() {
     setLoading(true);
-    setError(null);
-    const { data, error: err } = await supabase.from('softwares').select('*').order('nome');
-    if (err) {
-      setError(err.message);
-      setSoftwares([]);
-    } else if (data) {
-      setSoftwares(data as Software[]);
-    } else {
-      setSoftwares([]);
+    // Carrega licenças (usuários)
+    const { data: licData } = await supabase.from('licencas_usuarios').select('*').order('colaborador');
+    if (licData) setLicencas(licData as any);
+
+    // Carrega softwares para calcular total contratado
+    const { data: softData } = await supabase.from('softwares').select('*');
+    
+    // Calcula resumo igual do seu print
+    if (softData && licData) {
+      const resumo = softData.map((s: any) => {
+        const emUso = licData.filter((l: any) => 
+          l.software?.toLowerCase().includes(s.nome.toLowerCase()) || 
+          l.software?.toLowerCase().includes(s.produto?.toLowerCase() || '')
+        ).length;
+        const total = s.qtd_licencas || s.quantidade_total || 0;
+        return {
+          nome: s.nome,
+          tipo: s.tipo_produto,
+          total,
+          emUso,
+          livre: total - emUso,
+          ocupacao: total > 0 ? Math.round((emUso / total) * 100) : 0,
+        };
+      });
+      setSoftwaresResumo(resumo);
     }
     setLoading(false);
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  async function handleSave(data: Partial<Software>) {
-    const isAdobe = data.fabricante?.toLowerCase() === 'adobe';
-    const isAdobeIndividual = isAdobe && data.tipo_produto === 'Aplicativo Único / Individual';
+  const licencasFiltradas = useMemo(() => {
+    return licencas.filter(l => {
+      const matchBusca = !busca || 
+        l.colaborador.toLowerCase().includes(busca.toLowerCase()) ||
+        l.email.toLowerCase().includes(busca.toLowerCase()) ||
+        l.login.toLowerCase().includes(busca.toLowerCase());
+      const matchSoftware = filtroSoftware === 'Todos os Softwares' || l.software === filtroSoftware;
+      return matchBusca && matchSoftware;
+    });
+  }, [licencas, busca, filtroSoftware]);
 
-    const payload = {
-      nome: isAdobeIndividual? 'Adobe Aplicativo Único / Individual' : data.nome,
-      fabricante: data.fabricante?? null,
-      tipo_produto: data.tipo_produto?? null,
-      produto: data.produto?? null,
-      descricao: data.descricao?? null,
-      qtd_licencas: data.qtd_licencas?? 0,
-      quantidade_total: data.qtd_licencas?? 0,
-      updated_at: new Date().toISOString(),
-    };
+  // FUNÇÃO EXCLUIR TODOS OS REGISTROS - QUE VOCÊ PEDIU
+  async function handleExcluirTodosRegistros() {
+    const total = licencas.length;
+    if (total === 0) return;
 
-    if (data.id) {
-      const { error: err } = await supabase.from('softwares').update(payload).eq('id', data.id);
-      if (err) throw new Error(err.message);
-    } else {
-      const { error: err } = await supabase.from('softwares').insert(payload);
-      if (err) throw new Error(err.message);
-    }
+    const c1 = window.confirm(`ATENÇÃO: Apagar TODOS os ${total} registros de Gestão de Licenças?\n\nIsso vai zerar EM USO e voltar para LIVRE 720.\n\nContinuar?`);
+    if (!c1) return;
+    const c2 = window.confirm(`CONFIRMAÇÃO FINAL: Apagar ${total} registros DEFINITIVAMENTE? Não pode ser desfeito.`);
+    if (!c2) return;
 
-    setModalItem(null);
-    await load();
-  }
-
-  async function handleDelete(id: string) {
-    if (!window.confirm('Confirmar exclusão deste software?')) return;
-    const { error: err } = await supabase.from('softwares').delete().eq('id', id);
-    if (err) setError(err.message);
-    else await load();
-  }
-
-  // FUNÇÃO NOVA - APAGAR TODOS
-  async function handleDeleteAll() {
-    if (softwares.length === 0) return;
-
-    const firstConfirm = window.confirm(`ATENÇÃO: Você vai apagar TODOS os ${softwares.length} softwares cadastrados. Essa ação não pode ser desfeita. Deseja continuar?`);
-    if (!firstConfirm) return;
-
-    const secondConfirm = window.confirm(`CONFIRMAÇÃO FINAL: Digite OK para apagar tudo? Isso vai zerar seu estoque de ${softwares.length} softwares.`);
-    if (!secondConfirm) return;
-
-    setDeletingAll(true);
-    setError(null);
+    setExcluindoTudo(true);
     try {
-      // Supabase exige um filtro no delete, usamos neq em um UUID impossível
-      const { error: err } = await supabase
-       .from('softwares')
-       .delete()
-       .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (err) throw err;
-
-      setSoftwares([]);
-      await load();
+      const { error } = await supabase.from('licencas_usuarios').delete().neq('email', '');
+      if (error) throw error;
+      setLicencas([]);
+      await loadData();
+      alert(`${total} registros excluídos com sucesso.`);
     } catch (err: any) {
-      setError(err.message || 'Erro ao apagar todos os registros');
+      alert('Erro: ' + err.message + '\n\nRode no Supabase SQL:\nCREATE POLICY "allow delete" ON public.licencas_usuarios FOR DELETE USING (true);');
     } finally {
-      setDeletingAll(false);
+      setExcluindoTudo(false);
     }
   }
+
+  async function handleDeleteUm(id: string) {
+    if (!confirm('Excluir este registro?')) return;
+    await supabase.from('licencas_usuarios').delete().eq('id', id);
+    await loadData();
+  }
+
+  const totalContratado = softwaresResumo.reduce((a, b) => a + b.total, 0);
+  const totalEmUso = licencas.length;
+  const totalLivre = totalContratado - totalEmUso;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-white font-bold text-xl flex items-center gap-2">
-            <Package className="w-5 h-5 text-[#D4AF37]" />
-            Gerenciar Softwares
-          </h2>
-          <p className="text-[#94a3b8] text-sm mt-0.5">
-            Cadastre softwares, fabricantes, perfis e quantitativos contratados.
-          </p>
+    <div className="space-y-6 p-4 bg-[#000f1a] min-h-screen">
+      {/* CARDS RESUMO - IGUAL SEU PRINT */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {softwaresResumo.map((s) => (
+          <div key={s.nome} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4">
+            <h3 className="text-white font-bold text-sm">{s.nome}</h3>
+            <p className="text-[#64748b] text-xs">{s.tipo} • {s.total} licenças</p>
+            <div className="grid grid-cols-3 gap-2 mt-3 bg-[#001726] rounded-lg p-3">
+              <div className="text-center"><p className="text-[#64748b] text-[10px]">TOTAL</p><p className="text-white font-bold">{s.total}</p></div>
+              <div className="text-center"><p className="text-[#64748b] text-[10px]">EM USO</p><p className="text-emerald-400 font-bold">{s.emUso}</p></div>
+              <div className="text-center"><p className="text-[#64748b] text-[10px]">LIVRE</p><p className="text-blue-400 font-bold">{s.livre}</p></div>
+            </div>
+            <div className="mt-3">
+              <div className="flex justify-between text-[10px] text-[#94a3b8] mb-1"><span>Ocupação</span><span>{s.ocupacao}%</span></div>
+              <div className="h-1 bg-[#001726] rounded-full"><div className="h-1 bg-[#facc15] rounded-full" style={{width: `${s.ocupacao}%`}} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* BARRA DE FILTROS + BOTÕES - EXATAMENTE SEU PRINT */}
+      <div className="space-y-4">
+        <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748b]" />
+            <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, e-mail, login ou chapa/matrícula" className="w-full bg-[#001E33] border border-[#1e293b] rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#64748b]" />
+          </div>
+          <select value={filtroSoftware} onChange={e => setFiltroSoftware(e.target.value)} className="bg-[#001E33] border border-[#1e293b] rounded-lg px-4 py-2.5 text-sm text-white">
+            <option>Todos os Softwares</option>
+            {softwaresResumo.map(s => <option key={s.nome} value={s.nome}>{s.nome}</option>)}
+          </select>
+          <select className="bg-[#001E33] border border-[#1e293b] rounded-lg px-4 py-2.5 text-sm text-white"><option>Todos os Locais</option></select>
+          <select className="bg-[#001E33] border border-[#1e293b] rounded-lg px-4 py-2.5 text-sm text-white"><option>Todos os Status</option></select>
         </div>
-        <div className="flex items-center gap-2">
-          {/* BOTÃO APAGAR TUDO - SÓ APARECE SE TIVER REGISTROS */}
-          {softwares.length > 0 && (
-            <button
-              onClick={handleDeleteAll}
-              disabled={deletingAll}
-              className="flex items-center gap-2 text-sm bg-[#1a2332] border border-red-900/50 text-red-400 hover:bg-red-950/50 hover:text-red-300 font-bold px-4 py-2.5 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
-            >
-              <Trash className="w-4 h-4" />
-              {deletingAll? 'Apagando...' : `Apagar Tudo (${softwares.length})`}
-            </button>
-          )}
-          <button
-            onClick={() => setModalItem({})}
-            className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2.5 rounded-lg transition-all shadow-md cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Software
-          </button>
+
+        <div className="flex flex-col sm:flex-row justify-between gap-3">
+          <div>
+            <h2 className="text-white font-bold flex items-center gap-2">👥 Gestão de Licenças</h2>
+            <p className="text-[#94a3b8] text-sm">{licencasFiltradas.length} registro(s).</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#001E33] border border-[#1e293b] text-[#94a3b8] text-sm"><Download className="w-4 h-4" />Exportar</button>
+            <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#001E33] border border-[#1e293b] text-[#94a3b8] text-sm"><Upload className="w-4 h-4" />Importar</button>
+            
+            {/* BOTÃO QUE VOCÊ PEDIU AQUI */}
+            {licencas.length > 0 && (
+              <button
+                onClick={handleExcluirTodosRegistros}
+                disabled={excluindoTudo}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-950/60 border border-red-900/50 text-red-400 hover:bg-red-900/60 hover:text-red-300 text-sm font-bold transition-colors disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                {excluindoTudo ? 'Excluindo...' : `Excluir todos (${licencas.length})`}
+              </button>
+            )}
+
+            <button className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#facc15] text-black font-bold text-sm"><Plus className="w-4 h-4" />Novo Registro</button>
+          </div>
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-4 py-3 text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
-          {error}
-        </div>
-      )}
-
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden shadow-lg">
+      {/* TABELA */}
+      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead className="bg-[#001726] border-b border-[#1e293b]">
               <tr>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Fabricante</th>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Software</th>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Tipo de Produto</th>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Produto / Perfil</th>
-                <th className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wider px-4 py-3">Licenças</th>
-                <th className="w-20 px-4 py-3" />
+                <th className="px-4 py-3 text-xs text-[#94a3b8]">COLABORADOR</th>
+                <th className="px-4 py-3 text-xs text-[#94a3b8]">LOGIN</th>
+                <th className="px-4 py-3 text-xs text-[#94a3b8]">SETOR</th>
+                <th className="px-4 py-3 text-xs text-[#94a3b8]">SOFTWARE</th>
+                <th className="px-4 py-3 text-xs text-[#94a3b8]">LICENÇA</th>
+                <th className="px-4 py-3 text-xs text-[#94a3b8]">STATUS</th>
+                <th className="px-4 py-3 w-20"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e293b]">
-              {loading && (
-                <tr>
-                  <td colSpan={6} className="text-center text-[#94a3b8] py-8 text-sm">
-                    Carregando softwares...
-                  </td>
+              {loading && <tr><td colSpan={7} className="text-center py-8 text-[#94a3b8]">Carregando...</td></tr>}
+              {!loading && licencasFiltradas.map(l => (
+                <tr key={l.id} className="hover:bg-[#001726]/50">
+                  <td className="px-4 py-3"><p className="text-white text-sm font-medium">{l.colaborador}</p><p className="text-[#64748b] text-xs">{l.email}</p></td>
+                  <td className="px-4 py-3 text-[#94a3b8] text-sm">{l.login}</td>
+                  <td className="px-4 py-3 text-[#94a3b8] text-sm">{l.setor}</td>
+                  <td className="px-4 py-3 text-[#D4AF37] text-sm">{l.software}</td>
+                  <td className="px-4 py-3 text-emerald-400 text-sm flex items-center gap-1"><CheckCircle className="w-3 h-3" />Possui</td>
+                  <td className="px-4 py-3"><span className="px-2 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">● Ativo</span></td>
+                  <td className="px-4 py-3"><div className="flex gap-2"><Pencil className="w-4 h-4 text-[#64748b] cursor-pointer" /><Trash2 onClick={() => handleDeleteUm(l.id)} className="w-4 h-4 text-[#64748b] hover:text-red-400 cursor-pointer" /></div></td>
                 </tr>
-              )}
-              {!loading && (!softwares || softwares.length === 0) && (
-                <tr>
-                  <td colSpan={6} className="text-center text-[#94a3b8] py-8 text-sm">
-                    Nenhum software cadastrado.
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                (softwares || []).map((s) => (
-                  <tr key={s.id} className="hover:bg-[#001726]/50 transition-colors">
-                    <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.fabricante?? '—'}</td>
-                    <td className="px-4 py-3 text-white text-sm font-medium">{s.nome}</td>
-                    <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.tipo_produto?? '—'}</td>
-                    <td className="px-4 py-3 text-[#D4AF37] text-sm font-medium whitespace-nowrap">{s.produto?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37]">
-                        {s.qtd_licencas?? s.quantidade_total?? (s as any).quantidade?? 0}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button
-                          onClick={() => setModalItem(s)}
-                          className="p-1.5 text-[#94a3b8] hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 rounded-md transition-all"
-                          title="Editar"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(s.id)}
-                          className="p-1.5 text-[#94a3b8] hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-all"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+              ))}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {modalItem!== null && (
-        <SoftwareModal item={modalItem} onClose={() => setModalItem(null)} onSave={handleSave} />
-      )}
-    </div>
-  );
-}
-
-/* --- MODAL DE SOFTWARE --- */
-
-const FABRICANTES = ['Adobe', 'Outros Softwares'];
-const ADOBE_TIPOS = ['Adobe Acrobat Pro DC', 'Creative Cloud (Suite CC)', 'Aplicativo Único / Individual'];
-
-function SoftwareModal({
-  item,
-  onClose,
-  onSave,
-}: {
-  item: Partial<Software>;
-  onClose: () => void;
-  onSave: (data: Partial<Software>) => Promise<void>;
-}) {
-  const [form, setForm] = useState<Partial<Software>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setForm(item?? {});
-    setError(null);
-  }, [item]);
-
-  function setField(field: keyof Software, value: unknown) {
-    setForm((prev) => ({...prev, [field]: value }));
-  }
-
-  function handleFabricanteChange(v: string) {
-    setForm((prev) => ({
-     ...prev,
-      fabricante: v,
-      nome: v === 'Adobe'? 'Adobe' : '',
-      tipo_produto: '',
-      produto: '',
-    }));
-  }
-
-  function handleTipoChange(v: string) {
-    setForm((prev) => {
-      const isAdobe = prev.fabricante?.toLowerCase() === 'adobe';
-      return {
-       ...prev,
-        tipo_produto: v,
-        produto: '',
-        nome: isAdobe && v!== 'Aplicativo Único / Individual'? v : (isAdobe? 'Adobe' : prev.nome),
-      };
-    });
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const isAdobe = form.fabricante?.toLowerCase() === 'adobe';
-    const isOutros = form.fabricante === 'Outros Softwares';
-
-    if (!form.fabricante) {
-      setError('Selecione o Fabricante / Software Principal.');
-      return;
-    }
-
-    if (isAdobe &&!form.tipo_produto) {
-      setError('Selecione o Tipo de Produto.');
-      return;
-    }
-
-    if (isOutros &&!form.nome?.trim()) {
-      setError('Nome do software é obrigatório.');
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave(form);
-    } catch (err) {
-      setError(err instanceof Error? err.message : 'Erro ao salvar o software.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const isAdobe = form.fabricante?.toLowerCase() === 'adobe';
-  const isOutros = form.fabricante === 'Outros Softwares';
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e293b] sticky top-0 bg-[#001E33] z-10">
-          <h2 className="text-white font-bold text-lg">
-            {!item.id? 'Novo Software' : 'Editar Software'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-[#94a3b8] hover:text-white transition-colors p-1.5 hover:bg-[#001726] rounded-lg"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="text-[#94a3b8] text-xs font-semibold uppercase tracking-wider block mb-1">
-              Fabricante / Software Principal *
-            </label>
-            <select
-              value={form.fabricante?? ''}
-              onChange={(e) => handleFabricanteChange(e.target.value)}
-              className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
-            >
-              <option value="">Selecione...</option>
-              {(FABRICANTES || []).map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {isAdobe && (
-            <div className="space-y-4 bg-[#001726] border border-[#1e293b] rounded-lg p-4">
-              <p className="text-[#D4AF37] text-xs font-semibold uppercase tracking-wider">
-                Configuração Adobe
-              </p>
-              <div>
-                <label className="text-[#94a3b8] text-xs font-semibold block mb-1">
-                  Tipo de Produto *
-                </label>
-                <select
-                  value={form.tipo_produto?? ''}
-                  onChange={(e) => handleTipoChange(e.target.value)}
-                  className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
-                >
-                  <option value="">Selecione o tipo...</option>
-                  {(ADOBE_TIPOS || []).map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-
-          {isOutros && (
-            <div className="space-y-4 bg-[#001726] border border-[#1e293b] rounded-lg p-4">
-              <p className="text-[#D4AF37] text-xs font-semibold uppercase tracking-wider">
-                Detalhes do Software
-              </p>
-              <div>
-                <label className="text-[#94a3b8] text-xs font-semibold block mb-1">
-                  Nome do Software *
-                </label>
-                <input
-                  type="text"
-                  value={form.nome?? ''}
-                  onChange={(e) => {
-                    setField('nome', e.target.value);
-                    setField('produto', e.target.value);
-                  }}
-                  placeholder="Ex: Microsoft 365, Figma, AutoCAD..."
-                  className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[#94a3b8] text-xs font-semibold block mb-1">
-                  Tipo de Produto / Pacote
-                </label>
-                <input
-                  type="text"
-                  value={form.tipo_produto?? ''}
-                  onChange={(e) => setField('tipo_produto', e.target.value)}
-                  placeholder="Ex: Business Standard, Enterprise..."
-                  className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="text-[#94a3b8] text-xs font-semibold block mb-1">Descrição</label>
-            <input
-              type="text"
-              value={form.descricao?? ''}
-              onChange={(e) => setField('descricao', e.target.value)}
-              placeholder="Anotações técnicas ou contratuais"
-              className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
-            />
-          </div>
-
-          <div>
-            <label className="text-[#94a3b8] text-xs font-semibold block mb-1">
-              Quantidade de Licenças (Total Contratado)
-            </label>
-            <input
-              type="number"
-              min={0}
-              value={form.qtd_licencas?? 0}
-              onChange={(e) => setField('qtd_licencas', parseInt(e.target.value, 10) || 0)}
-              className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
-            />
-          </div>
-
-          {error && (
-            <p className="text-rose-300 text-xs bg-rose-500/10 border border-rose-500/20 rounded-lg p-2.5">
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg border border-[#1e293b] text-[#94a3b8] hover:text-white hover:bg-[#001726] transition-colors text-sm font-semibold"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold text-sm transition-colors disabled:opacity-60 cursor-pointer"
-            >
-              <Save className="w-4 h-4" />
-              {saving? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

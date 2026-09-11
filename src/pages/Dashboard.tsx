@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import type { LicencaUsuario, Software } from '@/types';
-import { Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Package, AlertTriangle, CheckCircle, ShieldCheck, Users, HardDrive } from 'lucide-react';
 
-interface DashboardLicencasProps {
+interface DashboardProps {
   softwares: Software[];
   usuarios: LicencaUsuario[];
 }
 
-export function DashboardLicencas({ softwares, usuarios }: DashboardLicencasProps) {
+export function DashboardLicencas({ softwares, usuarios }: DashboardProps) {
   const estatisticas = useMemo(() => {
     return softwares.map((sw) => {
       const consumidas = usuarios.filter((u) => {
@@ -45,7 +45,7 @@ export function DashboardLicencas({ softwares, usuarios }: DashboardLicencasProp
         {estatisticas.map((item) => {
           const alerta = item.disponivel < 0;
           return (
-            <div key={item.id} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 space-y-3 shadow-lg">
+            <div key={item.id || item.nome} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 space-y-3 shadow-lg">
               <div className="flex justify-between items-start">
                 <div>
                   <h4 className="text-white font-bold text-sm">{item.nome}</h4>
@@ -65,7 +65,7 @@ export function DashboardLicencas({ softwares, usuarios }: DashboardLicencasProp
               <div className="space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-[#94a3b8]">Alocadas: <strong className="text-white">{item.consumidas}</strong></span>
-                  <span className="text-[#94a3b8]">Total: <strong className="text-[#D4AF37]">{item.qtd_licencas}</strong></span>
+                  <span className="text-[#94a3b8]">Total: <strong className="text-[#D4AF37]">{item.qtd_licencas || item.quantidade_total || 0}</strong></span>
                 </div>
                 <div className="w-full bg-[#001726] rounded-full h-2 overflow-hidden border border-[#1e293b]">
                   <div 
@@ -88,4 +88,43 @@ export function DashboardLicencas({ softwares, usuarios }: DashboardLicencasProp
     </div>
   );
 }
-export default DashboardLicencas;
+
+export function Dashboard({ softwares, usuarios }: DashboardProps) {
+  const totalUsuarios = usuarios.length;
+  const totalAtivos = usuarios.filter(u => u.status === 'Ativo').length;
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#001E33] border border-[#1e293b] rounded-2xl p-6 shadow-xl">
+        <div>
+          <h1 className="text-2xl font-extrabold text-white flex items-center gap-3">
+            <ShieldCheck className="w-7 h-7 text-[#D4AF37]" /> Painel de Controle SERETI-WEB
+          </h1>
+          <p className="text-[#94a3b8] text-sm mt-1">
+            Gestão integrada de licenças de softwares, Active Directory e conformidade de ativos.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="bg-[#001726] border border-[#1e293b] px-4 py-2.5 rounded-xl flex items-center gap-3">
+            <Users className="w-5 h-5 text-[#D4AF37]" />
+            <div>
+              <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Usuários Mapeados</p>
+              <p className="text-white font-bold text-sm">{totalUsuarios} ({totalAtivos} ativos)</p>
+            </div>
+          </div>
+          <div className="bg-[#001726] border border-[#1e293b] px-4 py-2.5 rounded-xl flex items-center gap-3">
+            <HardDrive className="w-5 h-5 text-[#D4AF37]" />
+            <div>
+              <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Softwares Monitorados</p>
+              <p className="text-white font-bold text-sm">{softwares.length} pacotes</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <DashboardLicencas softwares={softwares} usuarios={usuarios} />
+    </div>
+  );
+}
+
+export default Dashboard;

@@ -1,99 +1,153 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Package, Plus, Pencil, Trash2, X, Save, Trash } from 'lucide-react';
+import { X, Save, Box, Layers } from 'lucide-react';
+import type { Software } from '@/types';
 
-type Software = {
-  id: string;
-  nome: string;
-  familia: 'ALL_APPS' | 'ACROBAT' | 'SINGLE_POOL';
-  qtd_contratada: number;
-};
+const ADOBE_SINGLES = [
+  "Photoshop",
+  "Illustrator",
+  "InDesign",
+  "Premiere Pro",
+  "After Effects",
+  "Acrobat Pro DC",
+  "Lightroom",
+  "XD",
+  "Audition",
+  "Animate"
+];
 
-export function SoftwareManagement() {
-  const [softwares, setSoftwares] = useState<Software[]>([]);
-  const [uso, setUso] = useState<Record<string, number>>({});
-  const [modalItem, setModalItem] = useState<Partial<Software> | null>(null);
+interface Props {
+  softwares: Software[];
+  onClose: () => void;
+  onRefresh: () => void;
+}
 
-  async function load() {
-    const { data: sw } = await supabase.from('softwares').select('*').order('nome');
-    setSoftwares(sw as any || []);
+export function SoftwareManagement({ softwares, onClose, onRefresh }: Props) {
+  // FORM - SEU FLUXO
+  const [isAdobe, setIsAdobe] = useState(true);
+  const [tipoAdobe, setTipoAdobe] = useState<'ALL_APPS' | 'ACROBAT' | 'SINGLE'>('SINGLE');
+  const [nomeCustom, setNomeCustom] = useState('');
+  const [nomeSingle, setNomeSingle] = useState('Photoshop');
+  const [qtd, setQtd] = useState<number>(202);
+  const [saving, setSaving] = useState(false);
 
-    // conta quantos usuários usam cada software
-    const { data: users } = await supabase.from('usuarios').select('software_id');
-    const count: Record<string, number> = {};
-    users?.forEach((u: any) => { count[u.software_id] = (count[u.software_id] || 0) + 1 });
-    setUso(count);
-  }
-  useEffect(() => { load(); }, []);
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
 
-  async function handleSave(data: Partial<Software>) {
-    const isFamilia = ['ALL_APPS','ACROBAT','SINGLE_POOL'].includes(data.nome?.toUpperCase() || '') || (data.qtd_contratada||0) > 0;
+    let nomeFinal = '';
+    let familiaLegacy = '';
+
+    if (isAdobe) {
+      if (tipoAdobe === 'ALL_APPS') {
+        nomeFinal = 'Todos os Apps - Edicao 4';
+        familiaLegacy = 'ALL_APPS';
+      } else if (tipoAdobe === 'ACROBAT') {
+        nomeFinal = 'Acrobat Pro DC';
+        familiaLegacy = 'ACROBAT';
+      } else {
+        nomeFinal = nomeSingle; // Photoshop, Illustrator...
+        familiaLegacy = 'SINGLE_POOL';
+      }
+    } else {
+      if (!nomeCustom.trim()) { alert('Digite o nome do software ex: AutoCAD'); setSaving(false); return; }
+      nomeFinal = nomeCustom.trim();
+      familiaLegacy = 'OUTROS';
+    }
 
     const payload = {
-      nome: data.nome,
-      familia: data.familia || 'SINGLE_POOL',
-      qtd_contratada: isFamilia || data.familia!== 'SINGLE_POOL'? (data.qtd_contratada || 0) : 0,
+      nome: nomeFinal,
+      is_adobe: isAdobe,
+      tipo_adobe: isAdobe? tipoAdobe : null,
+      qtd_contratada: tipoAdobe === 'SINGLE' && isAdobe? 0 : Number(qtd),
+      familia: familiaLegacy // para compatibilidade com seu codigo antigo
     };
 
-    if (data.id) {
-      await supabase.from('softwares').update(payload).eq('id', data.id);
-    } else {
-      // se for filho tipo Photoshop, ele entra no balde SINGLE_POOL com qtd 0
-      await supabase.from('softwares').insert(payload);
-    }
-    setModalItem(null);
-    await load();
+    const { error } = await supabase.from('softwares').insert(payload);
+    if (error) { alert(error.message); setSaving(false); return; }
+
+    setNomeCustom('');
+    setQtd(0);
+    onRefresh();
+    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Excluir? Se tiver usuários usando, vai dar erro de vínculo.')) return;
+    if (!confirm('Excluir este software?')) return;
     await supabase.from('softwares').delete().eq('id', id);
-    await load();
+    onRefresh();
   }
 
+  const totalContratado = softwares.reduce((a,s)=>a+(s.qtd_contratada||0),0);
+
   return (
-    <div className="space-y-5">
-      <div className="flex justify-between">
-        <h2 className="text-white font-bold text-xl flex items-center gap-2"><Package className="w-5 h-5 text-[#D4AF37]" />Catálogo - Cadastrar Softwares</h2>
-        <button onClick={() => setModalItem({ familia: 'SINGLE_POOL', qtd_contratada: 0 })} className="flex items-center gap-2 text-sm bg-[#D4AF37] text-[#001726] font-bold px-4 py-2.5 rounded-lg"><Plus className="w-4 h-4" />Novo Software</button>
-      </div>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4">
+      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-[560px] max-h-[90vh] overflow-hidden flex flex-col">
 
-      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-[#001726] border-b border-[#1e293b]"><tr><th className="px-4 py-3 text-xs text-[#94a3b8]">Software (Tipo que aparece no filtro)</th><th className="px-4 py-3 text-xs text-[#94a3b8]">Família / Balde</th><th className="px-4 py-3 text-xs text-[#94a3b8]">Contratado</th><th className="px-4 py-3 text-xs text-[#94a3b8]">Em Uso</th><th className="w-20"></th></tr></thead>
-          <tbody className="divide-y divide-[#1e293b]">
+        <div className="flex justify-between items-center p-5 border-b border-[#1e293b]">
+          <h3 className="text-white font-bold flex items-center gap-2"><Layers className="w-5 h-5 text-[#D4AF37]" /> Gerenciar Softwares - Cadastro</h3>
+          <button onClick={onClose}><X className="w-5 h-5 text-[#94a3b8]" /></button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {/* SEU FLUXO: Novo Software > É Adobe? */}
+          <div className="bg-[#001726] p-4 rounded-xl border border-[#1e293b] space-y-3">
+            <p className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider">Novo Software</p>
+
+            <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+              <input type="checkbox" checked={isAdobe} onChange={e=>setIsAdobe(e.target.checked)} className="accent-[#D4AF37]" />
+              É Adobe?
+            </label>
+
+            {isAdobe? (
+              <div className="space-y-3">
+                <select value={tipoAdobe} onChange={e=>setTipoAdobe(e.target.value as any)} className="w-full bg-[#001E33] border border-[#1e293b] rounded-lg px-3 py-2.5 text-white text-sm">
+                  <option value="ALL_APPS">Adobe - Todos os Apps</option>
+                  <option value="ACROBAT">Adobe - Acrobat PRO DC</option>
+                  <option value="SINGLE">Adobe - Aplicativo Individual</option>
+                </select>
+
+                {tipoAdobe === 'SINGLE'? (
+                  <>
+                    <select value={nomeSingle} onChange={e=>setNomeSingle(e.target.value)} className="w-full bg-[#001E33] border border-[#1e293b] rounded-lg px-3 py-2.5 text-white text-sm">
+                      {ADOBE_SINGLES.map(app => <option key={app} value={app}>{app}</option>)}
+                    </select>
+                    <p className="text-[11px] text-[#64748b]">App individual consome 1 licença do Pool Single Apps (225). Qtd fica 0.</p>
+                  </>
+                ) : (
+                  <input type="number" value={qtd} onChange={e=>setQtd(Number(e.target.value))} placeholder="Quantidade contratada ex: 202" className="w-full bg-[#001E33] border border-[#1e293b] rounded-lg px-3 py-2.5 text-white text-sm" />
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input value={nomeCustom} onChange={e=>setNomeCustom(e.target.value)} placeholder="Nome do software ex: AutoCAD, Revit" className="w-full bg-[#001E33] border border-[#1e293b] rounded-lg px-3 py-2.5 text-white text-sm" />
+                <input type="number" value={qtd} onChange={e=>setQtd(Number(e.target.value))} placeholder="Quantidade de licencas ex: 10" className="w-full bg-[#001E33] border border-[#1e293b] rounded-lg px-3 py-2.5 text-white text-sm" />
+              </div>
+            )}
+
+            <button onClick={handleSave} disabled={saving} className="w-full bg-[#D4AF37] text-[#001726] font-bold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+              <Save className="w-4 h-4" /> {saving? 'Salvando...' : 'Salvar Software'}
+            </button>
+          </div>
+
+          {/* LISTA */}
+          <div className="space-y-2">
+            <p className="text-xs text-[#94a3b8]">Cadastrados ({softwares.length}) - Total contratado: {totalContratado}</p>
             {softwares.map(s => (
-              <tr key={s.id} className="hover:bg-[#001726]/50">
-                <td className="px-4 py-3 text-white text-sm">{s.nome} {s.qtd_contratada===0 && <span className="text-[10px] bg-[#1a2332] px-1 rounded">filho do balde</span>}</td>
-                <td className="px-4 py-3 text-xs text-[#94a3b8]">{s.familia}</td>
-                <td className="px-4 py-3 text-sm text-[#D4AF37]">{s.qtd_contratada > 0? s.qtd_contratada : '-'}</td>
-                <td className="px-4 py-3 text-sm text-white">{uso[s.id] || 0}</td>
-                <td className="px-4 py-3 flex gap-1"><button onClick={() => setModalItem(s)}><Pencil className="w-4 h-4 text-white" /></button><button onClick={() => handleDelete(s.id)}><Trash2 className="w-4 h-4 text-red-400" /></button></td>
-              </tr>
+              <div key={s.id} className="flex justify-between items-center bg-[#001726] border border-[#1e293b] rounded-lg px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Box className={`w-4 h-4 ${s.is_adobe? 'text-[#D4AF37]' : 'text-sky-400'}`} />
+                  <div>
+                    <p className="text-white text-sm font-medium">{s.nome}</p>
+                    <p className="text-[11px] text-[#64748b]">{s.is_adobe? `Adobe - ${s.tipo_adobe}` : 'Não Adobe'} {s.qtd_contratada>0? ` - ${s.qtd_contratada} licenças` : ' - consome do pool'}</p>
+                  </div>
+                </div>
+                <button onClick={()=>handleDelete(s.id)} className="text-xs text-red-400 hover:text-red-300">Excluir</button>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
-
-      {modalItem!== null && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#001E33] p-6 rounded-xl w-[400px] border border-[#1e293b]">
-            <div className="flex justify-between mb-4"><h3 className="text-white font-bold">Cadastrar Software</h3><button onClick={() => setModalItem(null)}><X className="w-5 h-5 text-white" /></button></div>
-            <form onSubmit={(e) => { e.preventDefault(); handleSave(modalItem); }} className="space-y-3">
-              <input value={modalItem.nome || ''} onChange={e => setModalItem({...modalItem, nome: e.target.value})} className="w-full bg-[#001726] border border-[#1e293b] rounded-lg px-3 py-2 text-white" placeholder="Nome ex: Photoshop, Illustrator, AutoCAD" required />
-              <select value={modalItem.familia} onChange={e => setModalItem({...modalItem, familia: e.target.value as any})} className="w-full bg-[#001726] border border-[#1e293b] rounded-lg px-3 py-2 text-white">
-                <option value="SINGLE_POOL">POOL Single App (225) - consome do balde</option>
-                <option value="ALL_APPS">Todos os Apps - Edição 4 (202)</option>
-                <option value="ACROBAT">Acrobat Pro DC (202)</option>
-              </select>
-              <input type="number" value={modalItem.qtd_contratada || 0} onChange={e => setModalItem({...modalItem, qtd_contratada: parseInt(e.target.value)})} className="w-full bg-[#001726] border border-[#1e293b] rounded-lg px-3 py-2 text-white" placeholder="Qtd Contratada (0 para filho)" />
-              <p className="text-[11px] text-[#64748b]">Se for Photoshop, InDesign, etc, deixa Qtd = 0 e escolhe SINGLE_POOL. Ele vai consumir do balde 225.</p>
-              <button type="submit" className="w-full bg-[#D4AF37] px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2"><Save className="w-4 h-4" />Salvar</button>
-            </form>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
-export default SoftwareManagement;

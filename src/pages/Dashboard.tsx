@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import type { LicencaUsuario, Software } from '@/types';
-import { Package, AlertTriangle, CheckCircle, ShieldCheck, Users, HardDrive } from 'lucide-react';
+import { supabase } from '@/lib/supabase'; // Ajuste o caminho do client do supabase se necessário
+import { Package, AlertTriangle, CheckCircle, ShieldCheck, Users, HardDrive, Loader2 } from 'lucide-react';
 
 interface DashboardProps {
   user?: any;
@@ -41,6 +42,14 @@ export function DashboardLicencas({ softwares = [], usuarios = [] }: DashboardPr
     });
   }, [softwares, usuarios]);
 
+  if (estatisticas.length === 0) {
+    return (
+      <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-6 text-center text-[#94a3b8]">
+        Nenhum software cadastrado ou encontrado para exibição no dashboard.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <h3 className="text-white font-bold text-base flex items-center gap-2">
@@ -57,11 +66,11 @@ export function DashboardLicencas({ softwares = [], usuarios = [] }: DashboardPr
                   <p className="text-[#94a3b8] text-xs">{item.fabricante || 'Licenciamento'}</p>
                 </div>
                 {alerta ? (
-                  <span className="flex items-center gap-1 text-rose-400 text-xs bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                  <span className="flex items-center gap-1 text-rose-400 text-xs bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/25">
                     <AlertTriangle className="w-3 h-3" /> Estouro
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-emerald-400 text-xs bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  <span className="flex items-center gap-1 text-emerald-400 text-xs bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">
                     <CheckCircle className="w-3 h-3" /> Regular
                   </span>
                 )}
@@ -94,12 +103,34 @@ export function DashboardLicencas({ softwares = [], usuarios = [] }: DashboardPr
   );
 }
 
-export function Dashboard({ user, role, softwares = [], usuarios = [] }: DashboardProps) {
-  const listaUsuarios = Array.isArray(usuarios) ? usuarios : [];
-  const listaSoftwares = Array.isArray(softwares) ? softwares : [];
-  
-  const totalUsuarios = listaUsuarios.length;
-  const totalAtivos = listaUsuarios.filter(u => u.status === 'Ativo').length;
+export function Dashboard({ user, role, softwares: propSoftwares, usuarios: propUsuarios }: DashboardProps) {
+  const [softwares, setSoftwares] = useState<Software[]>(propSoftwares || []);
+  const [usuarios, setUsuarios] = useState<LicencaUsuario[]>(propUsuarios || []);
+  const [loadingData, setLoadingData] = useState(!propSoftwares || !propUsuarios);
+
+  useEffect(() => {
+    async function fetchData() {
+      if (propSoftwares?.length && propUsuarios?.length) return;
+      try {
+        setLoadingData(true);
+        const [resSw, resUs] = await Promise.all([
+          supabase.from('softwares').select('*'),
+          supabase.from('licencas_usuarios').select('*') // ou a tabela que você utiliza para usuários
+        ]);
+
+        if (resSw.data) setSoftwares(resSw.data);
+        if (resUs.data) setUsuarios(resUs.data);
+      } catch (e) {
+        console.error('Erro ao carregar dados do dashboard:', e);
+      } finally {
+        setLoadingData(false);
+      }
+    }
+    fetchData();
+  }, [propSoftwares, propUsuarios]);
+
+  const totalUsuarios = usuarios.length;
+  const totalAtivos = usuarios.filter(u => u.status === 'Ativo').length;
 
   return (
     <div className="space-y-6 p-6">
@@ -124,13 +155,19 @@ export function Dashboard({ user, role, softwares = [], usuarios = [] }: Dashboa
             <HardDrive className="w-5 h-5 text-[#D4AF37]" />
             <div>
               <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Softwares Monitorados</p>
-              <p className="text-white font-bold text-sm">{listaSoftwares.length} pacotes</p>
+              <p className="text-white font-bold text-sm">{softwares.length} pacotes</p>
             </div>
           </div>
         </div>
       </div>
 
-      <DashboardLicencas softwares={listaSoftwares} usuarios={listaUsuarios} />
+      {loadingData ? (
+        <div className="flex justify-center items-center py-12">
+          <Loader2 className="w-8 h-8 text-[#D4AF37] animate-spin" />
+        </div>
+      ) : (
+        <DashboardLicencas softwares={softwares} usuarios={usuarios} />
+      )}
     </div>
   );
 }

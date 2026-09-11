@@ -3,14 +3,19 @@ import type { LicencaUsuario, Software } from '@/types';
 import { Package, AlertTriangle, CheckCircle, ShieldCheck, Users, HardDrive } from 'lucide-react';
 
 interface DashboardProps {
-  softwares: Software[];
-  usuarios: LicencaUsuario[];
+  user?: any;
+  role?: string;
+  softwares?: Software[];
+  usuarios?: LicencaUsuario[];
 }
 
-export function DashboardLicencas({ softwares, usuarios }: DashboardProps) {
+export function DashboardLicencas({ softwares = [], usuarios = [] }: DashboardProps) {
   const estatisticas = useMemo(() => {
-    return softwares.map((sw) => {
-      const consumidas = usuarios.filter((u) => {
+    const listaSoftwares = Array.isArray(softwares) ? softwares : [];
+    
+    return listaSoftwares.map((sw) => {
+      const listaUsuarios = Array.isArray(usuarios) ? usuarios : [];
+      const consumidas = listaUsuarios.filter((u) => {
         const prodUsuario = (u.produto || '').trim().toLowerCase();
         const tipoUsuario = (u.tipo_produto || u.app_individual || '').trim().toLowerCase();
         const swNome = (sw.nome || '').trim().toLowerCase();
@@ -42,10 +47,10 @@ export function DashboardLicencas({ softwares, usuarios }: DashboardProps) {
         <Package className="w-5 h-5 text-[#D4AF37]" /> Consumo de Licenças por Categoria
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {estatisticas.map((item) => {
+        {estatisticas.map((item, idx) => {
           const alerta = item.disponivel < 0;
           return (
-            <div key={item.id || item.nome} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 space-y-3 shadow-lg">
+            <div key={item.id || idx} className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4 space-y-3 shadow-lg">
               <div className="flex justify-between items-start">
                 <div>
                   <h4 className="text-white font-bold text-sm">{item.nome}</h4>
@@ -89,9 +94,12 @@ export function DashboardLicencas({ softwares, usuarios }: DashboardProps) {
   );
 }
 
-export function Dashboard({ softwares, usuarios }: DashboardProps) {
-  const totalUsuarios = usuarios.length;
-  const totalAtivos = usuarios.filter(u => u.status === 'Ativo').length;
+export function Dashboard({ user, role, softwares = [], usuarios = [] }: DashboardProps) {
+  const listaUsuarios = Array.isArray(usuarios) ? usuarios : [];
+  const listaSoftwares = Array.isArray(softwares) ? softwares : [];
+  
+  const totalUsuarios = listaUsuarios.length;
+  const totalAtivos = listaUsuarios.filter(u => u.status === 'Ativo').length;
 
   return (
     <div className="space-y-6 p-6">
@@ -101,7 +109,7 @@ export function Dashboard({ softwares, usuarios }: DashboardProps) {
             <ShieldCheck className="w-7 h-7 text-[#D4AF37]" /> Painel de Controle SERETI-WEB
           </h1>
           <p className="text-[#94a3b8] text-sm mt-1">
-            Gestão integrada de licenças de softwares, Active Directory e conformidade de ativos.
+            Logado como <strong className="text-white">{user?.email || 'Administrador'}</strong> ({role || 'Admin'})
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -116,13 +124,13 @@ export function Dashboard({ softwares, usuarios }: DashboardProps) {
             <HardDrive className="w-5 h-5 text-[#D4AF37]" />
             <div>
               <p className="text-[10px] text-[#94a3b8] uppercase font-semibold">Softwares Monitorados</p>
-              <p className="text-white font-bold text-sm">{softwares.length} pacotes</p>
+              <p className="text-white font-bold text-sm">{listaSoftwares.length} pacotes</p>
             </div>
           </div>
         </div>
       </div>
 
-      <DashboardLicencas softwares={softwares} usuarios={usuarios} />
+      <DashboardLicencas softwares={listaSoftwares} usuarios={listaUsuarios} />
     </div>
   );
 }

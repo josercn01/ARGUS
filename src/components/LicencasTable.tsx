@@ -105,7 +105,7 @@ export function LicencasTable({ data, softwares, loading, onRefresh, onImportBat
       <div className="flex flex-col lg:flex-row justify-between gap-3">
         <div>
           <h2 className="text-white font-bold flex items-center gap-2"><Users className="w-5 h-5 text-[#D4AF37]" />Pessoas / Licenças - {data.length} registros</h2>
-          <p className="text-[#94a3b8] text-xs mt-1">Dashboard agora consome 1 de cada app. Ex: LUCAS | ACROBAT + PHOTOSHOP = -1 Acrobat e -1 Photoshop</p>
+      
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={()=>setShowSwManager(true)} className="border border-[#D4AF37]/30 bg-[#D4AF37]/10 text-[#D4AF37] px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1"><Settings2 className="w-4 h-4" /> Gerenciar Softwares ({softwares.length})</button>

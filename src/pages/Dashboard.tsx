@@ -24,7 +24,6 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedDepartamento, setSelectedDepartamento] = useState('');
 
-  // NOVOS ESTADOS QUE FALTAVAM
   const [showSoftwareManager, setShowSoftwareManager] = useState(false);
   const [editingSoftware, setEditingSoftware] = useState<Software | null>(null);
   const [showNewUser, setShowNewUser] = useState(false);
@@ -71,7 +70,6 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     const lines = text.split(/\r?\n/).filter(l => l.trim()!== '');
     const sep = lines[0].includes(';')? ';' : ',';
     const headers = lines[0].split(sep).map(h => h.trim().toUpperCase().replace(/"/g, ''));
-
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
       const row: any = {};
@@ -81,17 +79,15 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       const tipoRaw = (row['TIPO_PRODUTO'] || row['TIPO'] || row['PRODUTO'] || 'Photoshop').trim();
       const colaborador = row['NOME'] || row['NOMECOMPLETO'] || email;
       const login = email.split('@')[0].toLowerCase();
-
       let { data: sw } = await supabase.from('softwares').select('id').ilike('nome', tipoRaw).maybeSingle();
       if (!sw) {
         const isAdobe =!tipoRaw.toLowerCase().includes('autocad') &&!tipoRaw.toLowerCase().includes('revit');
-        const { data: novo } = await supabase.from('softwares').insert({ nome: tipoRaw, is_adobe: isAdobe, qtd_contratada: 0 }).select('id').single();
+        const { data: novo } = await supabase.from('softwares').insert({ nome: tipoRaw, is_adobe: isAdobe, qtd_contratada: 0, familia: isAdobe? 'SINGLE_POOL' : 'OUTROS' }).select('id').single();
         sw = novo;
       }
       const { data: userRow } = await supabase.from('usuarios').upsert({
         colaborador, login, email, setor: (row['DEPARTAMENTO'] || row['SETOR'] || null)?.toUpperCase(), status: 'ativo'
       }, { onConflict: 'login' }).select('id').single();
-
       if (userRow && sw) {
         await supabase.from('usuario_softwares').upsert({ usuario_id: userRow.id, software_id: sw.id }, { onConflict: 'usuario_id,software_id' });
       }
@@ -119,7 +115,6 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       <main className="max-w-7xl mx-auto p-4 space-y-6">
         {activeTab === 'dashboard' && (
           <>
-            {/* CARDS AGORA COM EDITAR/EXCLUIR */}
             <MetricsCards
               data={usuarios as any}
               softwares={softwares as any}
@@ -127,13 +122,12 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
               onRefresh={loadData}
             />
 
-            {/* BOTOES QUE FALTAVAM NA SUA PRINT */}
             <div className="flex gap-2">
               <button onClick={()=>{ setEditingSoftware(null); setShowSoftwareManager(true); }} className="bg-[#1e293b] border border-[#1e293b] hover:bg-[#2a3a52] text-white text-xs px-4 py-2.5 rounded-lg flex items-center gap-2">
                 <Plus className="w-4 h-4" /> Novo Software
               </button>
               <button onClick={()=>setShowNewUser(true)} className="bg-[#D4AF37] hover:bg-[#E6C45A] text-black text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Novo Cadastro - Usuário + Licença
+                <Plus className="w-4 h-4" /> Novo Cadastro
               </button>
             </div>
 
@@ -152,18 +146,16 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
               locais={locais as any}
               departamentos={departamentos}
             />
-            {/* TABELA COM SEU FILTRO DIGITÁVEL COATEN + EXPORT */}
             <LicencasTable data={filtered as any} softwares={softwares as any} locais={locais as any} role={role} loading={loading} onRefresh={loadData} onImportBatch={handleImportBatch} />
           </>
         )}
         {activeTab === 'admin-locais' && <AdminLocais role={role} />}
         {activeTab === 'permissoes' && <AccessManagement currentRole={role} />}
 
-        {/* MODAIS */}
         {showSoftwareManager && (
           <SoftwareManagement
             softwares={softwares as any}
-            initialData={editingSoftware}
+            initialData={editingSoftware as any}
             onClose={()=>{ setShowSoftwareManager(false); setEditingSoftware(null); }}
             onRefresh={loadData}
           />

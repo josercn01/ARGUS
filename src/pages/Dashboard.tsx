@@ -6,6 +6,9 @@ import { FiltersBar } from '@/components/FiltersBar';
 import { LicencasTable } from '@/components/LicencasTable';
 import { AdminLocais } from '@/components/AdminLocais';
 import { AccessManagement } from '@/components/AccessManagement';
+import { SoftwareManagement } from '@/components/SoftwareManagement';
+import { CreateUserModal } from '@/components/CreateUserModal';
+import { Plus } from 'lucide-react';
 import type { AuthUser, SystemRole, UsuarioLicenca, Software, LocalTrabalho } from '@/types';
 
 export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemRole }) {
@@ -20,6 +23,11 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
   const [selectedLocal, setSelectedLocal] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedDepartamento, setSelectedDepartamento] = useState('');
+
+  // NOVOS ESTADOS QUE FALTAVAM
+  const [showSoftwareManager, setShowSoftwareManager] = useState(false);
+  const [editingSoftware, setEditingSoftware] = useState<Software | null>(null);
+  const [showNewUser, setShowNewUser] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -40,9 +48,8 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         if (!map.has(l.usuario_id)) map.set(l.usuario_id, []);
         map.get(l.usuario_id)!.push(l.software);
       });
-
       const enriched = (us as any[]).map(u => ({
-       ...u,
+      ...u,
         softwares: map.get(u.id) || [],
         software: map.get(u.id)?.[0] || null,
       }));
@@ -71,7 +78,6 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       headers.forEach((h, idx) => row[h] = values[idx]);
       const email = row['EMAIL'] || row['E-MAIL'];
       if (!email) continue;
-
       const tipoRaw = (row['TIPO_PRODUTO'] || row['TIPO'] || row['PRODUTO'] || 'Photoshop').trim();
       const colaborador = row['NOME'] || row['NOMECOMPLETO'] || email;
       const login = email.split('@')[0].toLowerCase();
@@ -82,12 +88,8 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         const { data: novo } = await supabase.from('softwares').insert({ nome: tipoRaw, is_adobe: isAdobe, qtd_contratada: 0 }).select('id').single();
         sw = novo;
       }
-
       const { data: userRow } = await supabase.from('usuarios').upsert({
-        colaborador,
-        login,
-        setor: (row['DEPARTAMENTO'] || row['SETOR'] || null)?.toUpperCase(),
-        status: 'ativo'
+        colaborador, login, email, setor: (row['DEPARTAMENTO'] || row['SETOR'] || null)?.toUpperCase(), status: 'ativo'
       }, { onConflict: 'login' }).select('id').single();
 
       if (userRow && sw) {
@@ -102,7 +104,6 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       const softwaresNome = u.softwares?.map(s=>s.nome).join(' ') || '';
       const softwaresIds = u.softwares?.map(s=>s.id) || [];
       const busca = `${u.colaborador} ${u.login} ${softwaresNome} ${u.setor || ''}`.toLowerCase();
-
       if (search &&!busca.includes(search.toLowerCase())) return false;
       if (selectedSoftware &&!softwaresIds.includes(selectedSoftware)) return false;
       if (selectedLocal && (u as any).local_id!== selectedLocal) return false;
@@ -118,7 +119,24 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       <main className="max-w-7xl mx-auto p-4 space-y-6">
         {activeTab === 'dashboard' && (
           <>
-            <MetricsCards data={usuarios as any} softwares={softwares as any} />
+            {/* CARDS AGORA COM EDITAR/EXCLUIR */}
+            <MetricsCards
+              data={usuarios as any}
+              softwares={softwares as any}
+              onEditSoftware={(s:any)=>{ setEditingSoftware(s); setShowSoftwareManager(true); }}
+              onRefresh={loadData}
+            />
+
+            {/* BOTOES QUE FALTAVAM NA SUA PRINT */}
+            <div className="flex gap-2">
+              <button onClick={()=>{ setEditingSoftware(null); setShowSoftwareManager(true); }} className="bg-[#1e293b] border border-[#1e293b] hover:bg-[#2a3a52] text-white text-xs px-4 py-2.5 rounded-lg flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Novo Software
+              </button>
+              <button onClick={()=>setShowNewUser(true)} className="bg-[#D4AF37] hover:bg-[#E6C45A] text-black text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Novo Cadastro - Usuário + Licença
+              </button>
+            </div>
+
             <FiltersBar
               search={search}
               onSearchChange={setSearch}
@@ -134,11 +152,29 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
               locais={locais as any}
               departamentos={departamentos}
             />
+            {/* TABELA COM SEU FILTRO DIGITÁVEL COATEN + EXPORT */}
             <LicencasTable data={filtered as any} softwares={softwares as any} locais={locais as any} role={role} loading={loading} onRefresh={loadData} onImportBatch={handleImportBatch} />
           </>
         )}
         {activeTab === 'admin-locais' && <AdminLocais role={role} />}
         {activeTab === 'permissoes' && <AccessManagement currentRole={role} />}
+
+        {/* MODAIS */}
+        {showSoftwareManager && (
+          <SoftwareManagement
+            softwares={softwares as any}
+            initialData={editingSoftware}
+            onClose={()=>{ setShowSoftwareManager(false); setEditingSoftware(null); }}
+            onRefresh={loadData}
+          />
+        )}
+        {showNewUser && (
+          <CreateUserModal
+            softwares={softwares as any}
+            onClose={()=>setShowNewUser(false)}
+            onRefresh={loadData}
+          />
+        )}
       </main>
     </div>
   );

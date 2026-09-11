@@ -19,25 +19,46 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: sw }, { data: us }] = await Promise.all([
+    const [{ data: sw }, { data: us }, { data: links }] = await Promise.all([
       supabase.from('softwares').select('*').order('nome'),
-      supabase.from('usuarios').select('*, software:softwares(*)').order('colaborador'),
+      supabase.from('usuarios').select('*').order('colaborador'),
+      supabase.from('usuario_softwares').select('usuario_id, software:softwares(*)'),
     ]);
+
     if (sw) setSoftwares(sw as any);
-    if (us) setUsuarios(us as any);
+
+    if (us && links) {
+      // Agrupa softwares por usuario_id - ESSENCIAL PARA LUCAS | ACROBAT + PHOTOSHOP
+      const map = new Map<string, Software[]>();
+      (links as any[]).forEach((l: any) => {
+        if (!l.software) return;
+        if (!map.has(l.usuario_id)) map.set(l.usuario_id, []);
+        map.get(l.usuario_id)!.push(l.software);
+      });
+
+      const enriched = (us as any[]).map(u => ({
+       ...u,
+        softwares: map.get(u.id) || [],
+        // compatibilidade com codigo antigo
+        software: map.get(u.id)?.[0] || null,
+        software_id: map.get(u.id)?.[0]?.id || null,
+      }));
+      setUsuarios(enriched);
+    } else if (us) {
+      setUsuarios(us as any);
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // IMPORTAÇÃO SIMPLIFICADA - SUA PLANILHA 490 LINHAS
-  const handleImportBatch = async (file: File, onProgress?: any) => {
+  // IMPORTAÇÃO - AGORA CRIA usuario_softwares
+  const handleImportBatch = async (file: File) => {
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter(l => l.trim()!== '');
     const sep = lines[0].includes(';')? ';' : ',';
     const headers = lines[0].split(sep).map(h => h.trim().toUpperCase().replace(/"/g, ''));
 
-    const registros = [];
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
       const row: any = {};
@@ -45,45 +66,39 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       const email = row['EMAIL'] || row['E-MAIL'];
       if (!email) continue;
 
-      // MAPEAMENTO DIDÁTICO: Tipo de produto = Photoshop, Illustrator, etc
       const tipoRaw = (row['TIPO_PRODUTO'] || row['TIPO'] || row['PRODUTO'] || 'Photoshop').trim();
-      registros.push({
-        email,
-        colaborador: row['NOME'] || row['NOMECOMPLETO'] || email,
-        login: email.split('@')[0].toLowerCase(),
-        setor: row['DEPARTAMENTO'] || row['SETOR'] || null,
-        tipoRaw,
-        produtoRaw: row['PRODUTO'] || ''
-      });
-    }
+      const colaborador = row['NOME'] || row['NOMECOMPLETO'] || email;
+      const login = email.split('@')[0].toLowerCase();
 
-    for (let idx = 0; idx < registros.length; idx++) {
-      const reg = registros[idx];
-      if (onProgress) onProgress({ current: idx + 1, total: registros.length, percent: Math.round((idx + 1) / registros.length * 100), message: reg.email });
-
-      // 1. Acha ou cria software filho (Photoshop, InDesign...)
-      let { data: sw } = await supabase.from('softwares').select('id').ilike('nome', reg.tipoRaw).maybeSingle();
+      // 1. Acha ou cria software
+      let { data: sw } = await supabase.from('softwares').select('id').ilike('nome', tipoRaw).maybeSingle();
       if (!sw) {
-        const familia = reg.produtoRaw.toLowerCase().includes('todos')? 'ALL_APPS' : reg.produtoRaw.toLowerCase().includes('acrobat')? 'ACROBAT' : 'SINGLE_POOL';
-        const { data: novo } = await supabase.from('softwares').insert({ nome: reg.tipoRaw, familia, qtd_contratada: 0 }).select('id').single();
+        const isAdobe =!tipoRaw.toLowerCase().includes('autocad') &&!tipoRaw.toLowerCase().includes('revit');
+        const familia = tipoRaw.toLowerCase().includes('todos')? 'ALL_APPS' : tipoRaw.toLowerCase().includes('acrobat')? 'ACROBAT' : isAdobe? 'SINGLE_POOL' : 'OUTROS';
+        const { data: novo } = await supabase.from('softwares').insert({ nome: tipoRaw, familia, is_adobe: isAdobe, tipo_adobe: familia==='ALL_APPS'?'ALL_APPS': familia==='ACROBAT'?'ACROBAT':'SINGLE', qtd_contratada: 0 }).select('id').single();
         sw = novo;
       }
-      // 2. Cria pessoa consumindo do balde
-      await supabase.from('usuarios').upsert({
-        colaborador: reg.colaborador,
-        login: reg.login,
-        setor: reg.setor?.toUpperCase(),
-        software_id: sw!.id,
+
+      // 2. Cria/atualiza usuario
+      const { data: userRow } = await supabase.from('usuarios').upsert({
+        colaborador,
+        login,
+        setor: (row['DEPARTAMENTO'] || row['SETOR'] || null)?.toUpperCase(),
         status: 'ativo'
-      }, { onConflict: 'login' });
+      }, { onConflict: 'login' }).select('id').single();
+
+      // 3. Vincula - nao duplica se ja tiver ACROBAT + PHOTOSHOP
+      if (userRow && sw) {
+        await supabase.from('usuario_softwares').upsert({ usuario_id: userRow.id, software_id: sw.id }, { onConflict: 'usuario_id,software_id' });
+      }
     }
     await loadData();
   };
 
-  // FILTROS DINÂMICOS - AGORA POR NOME REAL DO APP
   const filtered = usuarios.filter(u => {
-    if (search &&!`${u.colaborador} ${u.login} ${u.software?.nome}`.toLowerCase().includes(search.toLowerCase())) return false;
-    if (selectedSoftware && u.software?.nome!== selectedSoftware) return false;
+    const softwaresNome = u.softwares?.map(s=>s.nome).join(' ') || u.software?.nome || '';
+    if (search &&!`${u.colaborador} ${u.login} ${softwaresNome}`.toLowerCase().includes(search.toLowerCase())) return false;
+    if (selectedSoftware &&!u.softwares?.some(s=>s.nome===selectedSoftware)) return false;
     if (selectedStatus && u.status!== selectedStatus) return false;
     return true;
   });

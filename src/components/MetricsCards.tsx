@@ -5,76 +5,49 @@ export function MetricsCards({ data, softwares }: any) {
     const contratados = softwares.filter((s:any)=>s.qtd_contratada>0);
     const total = contratados.reduce((a:any,b:any)=>a+b.qtd_contratada,0);
 
-    // conta uso real
-    const count = new Map<string, number>();
-    let emUsoTotal = 0;
+    let usadosAcrobat = 0;
+    let usadosTodos = 0;
+    let usadosSingle = 0;
+    let usadosAutocad = 0;
 
     data.forEach((u:any)=>{
-      (u.softwares||[]).forEach((s:any)=>{
-        emUsoTotal++;
-        const nome = s.nome.toLowerCase();
-        count.set(nome, (count.get(nome)||0)+1);
-        // conta também pelo nome exato
-        count.set(s.nome, (count.get(s.nome)||0)+1);
-      });
+      const softs = (u.softwares||[]).map((s:any)=>s.nome.toLowerCase());
+      const hasTodos = softs.some((n:string)=> n.includes('todos') || n.includes('all apps') || n.includes('creative cloud') && n.includes('todos') );
+      // Creative Cloud - Todos os Apps entra como Todos
+      const isTodosUser = hasTodos || softs.some((n:string)=> n.includes('todos os apps - edicao'));
+
+      if (isTodosUser) {
+        usadosTodos += 1; // 1 usuário de Todos = 1 licença Todos
+      } else {
+        // Só conta Single se NÃO tem Todos
+        softs.forEach((n:string)=>{
+          if (n.includes('acrobat')) usadosAcrobat++;
+          else if (n.includes('autocad')) usadosAutocad++;
+          else if (['photoshop','illustrator','indesign','premiere','after','lightroom','xd','audition','animate','dreamweaver'].some(x=>n.includes(x))) {
+            usadosSingle++;
+          }
+        });
+      }
     });
 
-    function calculaUsado(balde:any){
-      const nomeBalde = balde.nome.toLowerCase();
-      if (nomeBalde.includes('single') || nomeBalde.includes('225')) {
-        // Pool: Photoshop, Illustrator, InDesign, Lightroom, Premiere, After Effects, etc
-        let c = 0;
-        count.forEach((v,k)=>{
-          if (typeof k === 'string' && k.toLowerCase) {
-            const kl = k.toLowerCase();
-            if (['photoshop','illustrator','indesign','premiere','after effects','lightroom','xd','audition','dreamweaver','animate'].some(x=>kl.includes(x))) {
-              c+=v;
-            }
-          }
-        });
-        // Evita contar duplicado (usamos só chaves lowercase)
-        const usadosLower = new Set<string>();
-        let totalSingle = 0;
-        count.forEach((v,k)=>{
-          if(typeof k!=='string') return;
-          if(k!==k.toLowerCase()) return;
-          if(['photoshop','illustrator','indesign','premiere','after effects','lightroom'].some(x=>k.includes(x))){
-            if(!usadosLower.has(k)){ totalSingle+=v; usadosLower.add(k); }
-          }
-        });
-        return totalSingle;
-      }
-      if (nomeBalde.includes('todos os apps') || nomeBalde.includes('edicao 4')) {
-        let c = 0;
-        count.forEach((v,k)=>{
-          if(typeof k!=='string' || k!==k.toLowerCase()) return;
-          if(k.includes('todos') || k.includes('all apps') || k.includes('creative cloud')) c+=v;
-        });
-        return c;
-      }
-      if (nomeBalde.includes('acrobat')) {
-        let c = 0;
-        count.forEach((v,k)=>{
-          if(typeof k!=='string' || k!==k.toLowerCase()) return;
-          if(k.includes('acrobat')) c+=v;
-        });
-        return c;
-      }
-      if (nomeBalde.includes('autocad')) {
-        return count.get('autocad') || count.get('AutoCAD') || 0;
-      }
-      return count.get(balde.nome) || count.get(balde.nome.toLowerCase()) || 0;
+    function getUsado(nomeBalde: string){
+      const nb = nomeBalde.toLowerCase();
+      if (nb.includes('single') || nb.includes('225')) return usadosSingle;
+      if (nb.includes('todos') || nb.includes('edicao 4')) return usadosTodos;
+      if (nb.includes('acrobat')) return usadosAcrobat;
+      if (nb.includes('autocad')) return usadosAutocad;
+      return 0;
     }
 
     const detalhe = contratados.map((b:any)=>{
-      const usado = calculaUsado(b);
+      const usado = getUsado(b.nome);
       return { nome: b.nome, contratado: b.qtd_contratada, usado, livre: b.qtd_contratada - usado };
     });
 
-    const emUso = detalhe.reduce((a:any,c:any)=>a+c.usado,0);
+    const emUso = usadosAcrobat + usadosTodos + usadosSingle + usadosAutocad;
     const livres = total - emUso;
 
-    return { total, emUso: emUsoTotal>0? emUsoTotal : emUso, livres, taxa: total? Math.round((emUsoTotal>0?emUsoTotal:emUso)/total*100):0, detalhe };
+    return { total, emUso, livres, taxa: total? Math.round(emUso/total*100):0, detalhe };
   }, [data, softwares]);
 
   return (
@@ -89,8 +62,8 @@ export function MetricsCards({ data, softwares }: any) {
         {stats.detalhe.map((b:any)=>(
           <div key={b.nome} className="bg-[#001726] border border-[#1e293b] rounded-xl p-3">
             <p className="text-[11px] text-[#94a3b8] truncate">{b.nome}</p>
-            <div className="flex justify-between items-end mt-1"><p className="text-white font-bold">{b.usado} / {b.contratado}</p><p className="text-xs font-bold text-sky-400">{b.livre} livres</p></div>
-            <div className="w-full bg-[#00121E] h-1.5 rounded mt-2"><div className="bg-[#D4AF37] h-1.5 rounded" style={{width: `${Math.min(100, b.contratado? b.usado/b.contratado*100:0)}%`}}></div></div>
+            <div className="flex justify-between items-end mt-1"><p className={`text-white font-bold ${b.livre<0?'text-red-400':''}`}>{b.usado} / {b.contratado}</p><p className={`text-xs font-bold ${b.livre<0?'text-red-400':'text-sky-400'}`}>{b.livre} livres</p></div>
+            <div className="w-full bg-[#00121E] h-1.5 rounded mt-2"><div className={`${b.livre<0?'bg-red-500':'bg-[#D4AF37]'} h-1.5 rounded`} style={{width: `${Math.min(100, b.contratado? b.usado/b.contratado*100:0)}%`}}></div></div>
           </div>
         ))}
       </div>

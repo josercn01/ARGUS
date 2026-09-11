@@ -1,15 +1,14 @@
-import { 
-  Shield, 
-  LayoutDashboard, 
-  Package, 
-  Monitor, 
-  ShieldCheck, 
-  LogOut 
+import {
+  Shield,
+  LayoutDashboard,
+  Monitor,
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
 import type { AuthUser, SystemRole } from '@/types';
 import { supabase } from '@/lib/supabase';
 
-export type TabKey = 'dashboard' | 'softwares' | 'admin-locais' | 'permissoes';
+export type TabKey = 'dashboard' | 'admin-locais' | 'permissoes';
 
 interface HeaderProps {
   user: AuthUser | null;
@@ -25,7 +24,6 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
 
   const navItems: { id: TabKey; label: string; icon: React.ElementType }[] = [
     { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard },
-    { id: 'softwares', label: 'Softwares', icon: Package },
     { id: 'admin-locais', label: 'Admin Locais', icon: Monitor },
     { id: 'permissoes', label: 'Acessos', icon: ShieldCheck },
   ];
@@ -50,7 +48,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
             </div>
           </div>
 
-          {/* Botões do Menu Superior - Sempre Visíveis */}
+          {/* Botões do Menu Superior */}
           <nav className="flex items-center gap-1 bg-[#00121E] p-1 rounded-xl border border-[#1e293b]">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -61,11 +59,11 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
                   onClick={() => onTabChange(item.id)}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
+                     ? 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
                       : 'text-[#94a3b8] hover:text-white hover:bg-[#001E33]'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#001726]' : 'text-[#D4AF37]'}`} />
+                  <Icon className={`w-4 h-4 ${isActive? 'text-[#001726]' : 'text-[#D4AF37]'}`} />
                   <span>{item.label}</span>
                 </button>
               );

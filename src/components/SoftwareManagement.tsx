@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Package, Plus, Pencil, Trash2, X, Save, AlertCircle } from 'lucide-react';
+import { Package, Plus, Pencil, Trash2, X, Save, AlertCircle, Trash } from 'lucide-react';
 import type { Software } from '@/types';
 
 export function SoftwareManagement() {
@@ -8,6 +8,7 @@ export function SoftwareManagement() {
   const [loading, setLoading] = useState(true);
   const [modalItem, setModalItem] = useState<Partial<Software> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -33,13 +34,13 @@ export function SoftwareManagement() {
     const isAdobeIndividual = isAdobe && data.tipo_produto === 'Aplicativo Único / Individual';
 
     const payload = {
-      nome: isAdobeIndividual ? 'Adobe Aplicativo Único / Individual' : data.nome,
-      fabricante: data.fabricante ?? null,
-      tipo_produto: data.tipo_produto ?? null,
-      produto: data.produto ?? null,
-      descricao: data.descricao ?? null,
-      qtd_licencas: data.qtd_licencas ?? 0,
-      quantidade_total: data.qtd_licencas ?? 0,
+      nome: isAdobeIndividual? 'Adobe Aplicativo Único / Individual' : data.nome,
+      fabricante: data.fabricante?? null,
+      tipo_produto: data.tipo_produto?? null,
+      produto: data.produto?? null,
+      descricao: data.descricao?? null,
+      qtd_licencas: data.qtd_licencas?? 0,
+      quantidade_total: data.qtd_licencas?? 0,
       updated_at: new Date().toISOString(),
     };
 
@@ -62,6 +63,36 @@ export function SoftwareManagement() {
     else await load();
   }
 
+  // FUNÇÃO NOVA - APAGAR TODOS
+  async function handleDeleteAll() {
+    if (softwares.length === 0) return;
+
+    const firstConfirm = window.confirm(`ATENÇÃO: Você vai apagar TODOS os ${softwares.length} softwares cadastrados. Essa ação não pode ser desfeita. Deseja continuar?`);
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(`CONFIRMAÇÃO FINAL: Digite OK para apagar tudo? Isso vai zerar seu estoque de ${softwares.length} softwares.`);
+    if (!secondConfirm) return;
+
+    setDeletingAll(true);
+    setError(null);
+    try {
+      // Supabase exige um filtro no delete, usamos neq em um UUID impossível
+      const { error: err } = await supabase
+       .from('softwares')
+       .delete()
+       .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (err) throw err;
+
+      setSoftwares([]);
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao apagar todos os registros');
+    } finally {
+      setDeletingAll(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -74,13 +105,26 @@ export function SoftwareManagement() {
             Cadastre softwares, fabricantes, perfis e quantitativos contratados.
           </p>
         </div>
-        <button
-          onClick={() => setModalItem({})}
-          className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2.5 rounded-lg transition-all shadow-md cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Software
-        </button>
+        <div className="flex items-center gap-2">
+          {/* BOTÃO APAGAR TUDO - SÓ APARECE SE TIVER REGISTROS */}
+          {softwares.length > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              disabled={deletingAll}
+              className="flex items-center gap-2 text-sm bg-[#1a2332] border border-red-900/50 text-red-400 hover:bg-red-950/50 hover:text-red-300 font-bold px-4 py-2.5 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+            >
+              <Trash className="w-4 h-4" />
+              {deletingAll? 'Apagando...' : `Apagar Tudo (${softwares.length})`}
+            </button>
+          )}
+          <button
+            onClick={() => setModalItem({})}
+            className="flex items-center gap-2 text-sm bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold px-4 py-2.5 rounded-lg transition-all shadow-md cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Software
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -121,13 +165,13 @@ export function SoftwareManagement() {
               {!loading &&
                 (softwares || []).map((s) => (
                   <tr key={s.id} className="hover:bg-[#001726]/50 transition-colors">
-                    <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.fabricante ?? '—'}</td>
+                    <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.fabricante?? '—'}</td>
                     <td className="px-4 py-3 text-white text-sm font-medium">{s.nome}</td>
-                    <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.tipo_produto ?? '—'}</td>
-                    <td className="px-4 py-3 text-[#D4AF37] text-sm font-medium whitespace-nowrap">{s.produto ?? '—'}</td>
+                    <td className="px-4 py-3 text-[#94a3b8] text-sm whitespace-nowrap">{s.tipo_produto?? '—'}</td>
+                    <td className="px-4 py-3 text-[#D4AF37] text-sm font-medium whitespace-nowrap">{s.produto?? '—'}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37]">
-                        {s.qtd_licencas ?? s.quantidade_total ?? s.quantidade ?? 0}
+                        {s.qtd_licencas?? s.quantidade_total?? (s as any).quantidade?? 0}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -155,7 +199,7 @@ export function SoftwareManagement() {
         </div>
       </div>
 
-      {modalItem !== null && (
+      {modalItem!== null && (
         <SoftwareModal item={modalItem} onClose={() => setModalItem(null)} onSave={handleSave} />
       )}
     </div>
@@ -181,19 +225,19 @@ function SoftwareModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm(item ?? {});
+    setForm(item?? {});
     setError(null);
   }, [item]);
 
   function setField(field: keyof Software, value: unknown) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => ({...prev, [field]: value }));
   }
 
   function handleFabricanteChange(v: string) {
     setForm((prev) => ({
-      ...prev,
+     ...prev,
       fabricante: v,
-      nome: v === 'Adobe' ? 'Adobe' : '',
+      nome: v === 'Adobe'? 'Adobe' : '',
       tipo_produto: '',
       produto: '',
     }));
@@ -203,10 +247,10 @@ function SoftwareModal({
     setForm((prev) => {
       const isAdobe = prev.fabricante?.toLowerCase() === 'adobe';
       return {
-        ...prev,
+       ...prev,
         tipo_produto: v,
         produto: '',
-        nome: isAdobe && v !== 'Aplicativo Único / Individual' ? v : (isAdobe ? 'Adobe' : prev.nome),
+        nome: isAdobe && v!== 'Aplicativo Único / Individual'? v : (isAdobe? 'Adobe' : prev.nome),
       };
     });
   }
@@ -221,12 +265,12 @@ function SoftwareModal({
       return;
     }
 
-    if (isAdobe && !form.tipo_produto) {
+    if (isAdobe &&!form.tipo_produto) {
       setError('Selecione o Tipo de Produto.');
       return;
     }
 
-    if (isOutros && !form.nome?.trim()) {
+    if (isOutros &&!form.nome?.trim()) {
       setError('Nome do software é obrigatório.');
       return;
     }
@@ -236,7 +280,7 @@ function SoftwareModal({
     try {
       await onSave(form);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar o software.');
+      setError(err instanceof Error? err.message : 'Erro ao salvar o software.');
     } finally {
       setSaving(false);
     }
@@ -250,7 +294,7 @@ function SoftwareModal({
       <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e293b] sticky top-0 bg-[#001E33] z-10">
           <h2 className="text-white font-bold text-lg">
-            {!item.id ? 'Novo Software' : 'Editar Software'}
+            {!item.id? 'Novo Software' : 'Editar Software'}
           </h2>
           <button
             onClick={onClose}
@@ -266,7 +310,7 @@ function SoftwareModal({
               Fabricante / Software Principal *
             </label>
             <select
-              value={form.fabricante ?? ''}
+              value={form.fabricante?? ''}
               onChange={(e) => handleFabricanteChange(e.target.value)}
               className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
             >
@@ -289,7 +333,7 @@ function SoftwareModal({
                   Tipo de Produto *
                 </label>
                 <select
-                  value={form.tipo_produto ?? ''}
+                  value={form.tipo_produto?? ''}
                   onChange={(e) => handleTipoChange(e.target.value)}
                   className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
                 >
@@ -315,7 +359,7 @@ function SoftwareModal({
                 </label>
                 <input
                   type="text"
-                  value={form.nome ?? ''}
+                  value={form.nome?? ''}
                   onChange={(e) => {
                     setField('nome', e.target.value);
                     setField('produto', e.target.value);
@@ -331,7 +375,7 @@ function SoftwareModal({
                 </label>
                 <input
                   type="text"
-                  value={form.tipo_produto ?? ''}
+                  value={form.tipo_produto?? ''}
                   onChange={(e) => setField('tipo_produto', e.target.value)}
                   placeholder="Ex: Business Standard, Enterprise..."
                   className="w-full bg-[#001E33] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
@@ -344,7 +388,7 @@ function SoftwareModal({
             <label className="text-[#94a3b8] text-xs font-semibold block mb-1">Descrição</label>
             <input
               type="text"
-              value={form.descricao ?? ''}
+              value={form.descricao?? ''}
               onChange={(e) => setField('descricao', e.target.value)}
               placeholder="Anotações técnicas ou contratuais"
               className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]"
@@ -358,7 +402,7 @@ function SoftwareModal({
             <input
               type="number"
               min={0}
-              value={form.qtd_licencas ?? 0}
+              value={form.qtd_licencas?? 0}
               onChange={(e) => setField('qtd_licencas', parseInt(e.target.value, 10) || 0)}
               className="w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37]"
             />
@@ -384,7 +428,7 @@ function SoftwareModal({
               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#D4AF37] hover:bg-[#c19b2e] text-[#001726] font-bold text-sm transition-colors disabled:opacity-60 cursor-pointer"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Salvando...' : 'Salvar'}
+              {saving? 'Salvando...' : 'Salvar'}
             </button>
           </div>
         </form>

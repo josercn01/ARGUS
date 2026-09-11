@@ -11,7 +11,7 @@ interface LicencaModalProps {
 }
 
 const STATUS_OPTIONS = ['Ativo', 'Pendente', 'Inativo'];
-const PRODUTO_OPTIONS = ['Todos os Apps', 'Aplicativo Individual', 'Acrobat Pro DC'];
+const PRODUTO_OPTIONS = ['Todos os Apps', 'Aplicativo Individual', 'Acrobat Pro DC', 'AutoDesk'];
 
 const inputClass = 'w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] placeholder-[#64748b]';
 const selectClass = 'w-full bg-[#001726] border border-[#1e293b] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#D4AF37] disabled:opacity-50';
@@ -40,7 +40,7 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     if (!form.departamento_raiz?.trim()) { setError('O departamento é obrigatório.'); return; }
     if (!form.cargo?.trim()) { setError('O cargo é obrigatório.'); return; }
     if (!form.produto?.trim()) { setError('O produto é obrigatório.'); return; }
-    if (!form.app_individual?.trim()) { setError('Informe pelo menos um software (ex: Illustrator | Photoshop).'); return; }
+    if (!form.app_individual?.trim()) { setError('Informe pelo menos um software ou tipo de produto.'); return; }
 
     setSaving(true);
     setError(null);
@@ -82,14 +82,14 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
             <h4 className="text-xs font-bold text-[#D4AF37] uppercase">Licenciamento e Softwares</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>Produto *</label>
+                <label className={labelClass}>Produto Principal *</label>
                 <select value={form.produto ?? 'Aplicativo Individual'} onChange={(e) => setField('produto', e.target.value)} className={selectClass}>
                   {PRODUTO_OPTIONS.map((p) => (<option key={p} value={p}>{p}</option>))}
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Softwares (Tipo de produto) *</label>
-                <input type="text" required value={form.app_individual ?? ''} onChange={(e) => setField('app_individual', e.target.value)} className={inputClass} placeholder="Ex: Illustrator | Photoshop" />
+                <label className={labelClass}>Softwares / Apps (Tipo de produto) *</label>
+                <input type="text" required value={form.app_individual ?? ''} onChange={(e) => setField('app_individual', e.target.value)} className={inputClass} placeholder="Ex: Illustrator | Photoshop | InDesign" />
                 <span className="text-[10px] text-[#94a3b8] mt-1 block">Separe múltiplos softwares com barra vertical (|)</span>
               </div>
             </div>
@@ -109,3 +109,4 @@ export function LicencaModal({ item, onClose, onSave }: LicencaModalProps) {
     </div>
   );
 }
+export default LicencaModal;

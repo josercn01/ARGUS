@@ -23,7 +23,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
       softs.forEach((n:string)=>{
         if (n.includes('acrobat')) temAcrobat = true;
         else if (n.includes('autocad')) temAutocad = true;
-        else if (['photoshop','illustrator','indesign','premiere','after','lightroom','xd','audition'].some(x=>n.includes(x))) temSingle = true;
+        else if (['photoshop','illustrator','indesign','premiere','after','lightroom','xd','audition','animate','dreamweaver','single'].some(x=>n.includes(x))) temSingle = true;
       });
       if(temAcrobat) usadosAcrobat++;
       if(temAutocad) usadosAutocad++;
@@ -50,14 +50,14 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   }
 
   async function handleDeleteAll(){
-    if(data.length === 0) return alert('Nenhum usuário');
-    if(!confirm(`Apagar TODOS os ${data.length} usuários?`)) return;
-    if(prompt('Digite EXCLUIR')!== 'EXCLUIR') return;
+    if(data.length === 0) return alert('Nenhum usuário para apagar');
+    if(!confirm(`Apagar TODOS os ${data.length} usuários? Essa ação não pode ser desfeita.`)) return;
+    if(prompt('Digite EXCLUIR para confirmar:')!== 'EXCLUIR') return;
     setShowImport(true); setStatus('deleting'); setProgress(10); setLogs([`Apagando ${data.length} usuários...`]);
     try{
       await supabase.from('usuario_softwares').delete().neq('usuario_id','00000000-0000-0000-0000-000000000000');
       await supabase.from('usuarios').delete().neq('id','00000000-0000-0000-0000-000000000000');
-      setProgress(100); setStatus('success'); setLogs(prev=>[...prev,'✓ Apagados']); onRefresh?.();
+      setProgress(100); setStatus('success'); setLogs(prev=>[...prev,'✓ Todos apagados']); onRefresh?.();
       setTimeout(()=>setShowImport(false),1000);
     }catch(e:any){ setStatus('error'); setLogs(prev=>[...prev,`ERRO: ${e.message}`]); }
   }
@@ -65,21 +65,27 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   function handleDownloadModelo(){
     const modelo = `Email;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto
 abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-COEDIT-SEMID;Efetivo - Chefe De Serviço;Todos os Apps;Todos os Apps
+ADRIANAF@senado.leg.br;Adriana França Braga;SF-OAS-SECOM-SAGEN;Terceirizado - Operador De Multimídia (1 Substituição);Aplicativo Individual;Photoshop
+adyleane@senado.leg.br;Maria Adyleane dos Santos Medeiros;SF-GABSEN-GSTCRIST;Comissionado - Chefe De Gabinete Comissionado;Acrobat Pro DC;Acrobat Pro DC
 `;
-    const blob = new Blob([modelo], {type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='modelo_argus_importacao.csv'; a.click(); URL.revokeObjectURL(url);
+    const blob = new Blob([modelo], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'modelo_argus_importacao.csv'; a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
     const file = e.target.files?.[0]; if(!file) return;
-    setShowImport(true); setStatus('parsing'); setProgress(5); setLogs([`Arquivo: ${file.name} (${(file.size/1024).toFixed(1)} KB)`]); setAdicionados([]); setIgnorados(0);
+    setShowImport(true); setStatus('parsing'); setProgress(5);
+    setLogs([`Arquivo: ${file.name} (${(file.size/1024).toFixed(1)} KB)`]);
+    setAdicionados([]); setIgnorados(0);
 
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter(l=>l.trim());
     const header = lines[0].split(';').map(h=>h.trim());
     const required = ['Email','NomeCompleto','Departamento','Cargo','Produto','Tipo de produto'];
     const missing = required.filter(c=>!header.includes(c));
-    if(missing.length>0){ setStatus('error'); setLogs(prev=>[...prev,`ERRO colunas: ${missing.join(', ')}`]); return; }
+    if(missing.length>0){ setStatus('error'); setLogs(prev=>[...prev,`ERRO colunas faltando: ${missing.join(', ')}`]); return; }
 
     const idxEmail = header.indexOf('Email'), idxNome = header.indexOf('NomeCompleto'), idxDepto = header.indexOf('Departamento'), idxCargo = header.indexOf('Cargo'), idxTipo = header.indexOf('Tipo de produto');
     const emailsExistentes = new Set((data||[]).map((u:any)=>(u.email||'').toLowerCase().trim()));
@@ -87,40 +93,48 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
 
     for(let i=1;i<lines.length;i++){
       const cols = lines[i].split(';'); if(cols.length<6) continue;
-      const emailLow = cols[idxEmail]?.trim().toLowerCase(); if(!emailLow || emailsExistentes.has(emailLow) || novosMap.has(emailLow)) continue;
-      novosMap.set(emailLow, { email_original: cols[idxEmail].trim(), nome: cols[idxNome].trim(), depto: cols[idxDepto].trim(), cargo: cols[idxCargo].trim(), tipo: cols[idxTipo].trim() });
+      const emailLow = cols[idxEmail]?.trim().toLowerCase();
+      if(!emailLow || emailsExistentes.has(emailLow) || novosMap.has(emailLow)) continue;
+      novosMap.set(emailLow, {
+        email_original: cols[idxEmail].trim(),
+        nome: cols[idxNome].trim(),
+        depto: cols[idxDepto].trim(),
+        cargo: cols[idxCargo].trim(),
+        tipo: cols[idxTipo].trim()
+      });
     }
 
     const listaNovos = Array.from(novosMap.values());
     const jaExistiam = (lines.length-1) - listaNovos.length;
-    setProgress(30); setLogs(prev=>[...prev, `${lines.length-1} linhas na planilha`, `${emailsExistentes.size} já cadastrados`, `${jaExistiam} já existiam (ignorados)`, `${listaNovos.length} NOVOS para adicionar`]);
+    setProgress(30);
+    setLogs(prev=>[...prev, `${lines.length-1} linhas na planilha`, `${emailsExistentes.size} já cadastrados`, `${jaExistiam} já existiam (ignorados)`, `${listaNovos.length} NOVOS para adicionar`]);
 
-    if(listaNovos.length===0){ setProgress(100); setStatus('success'); setIgnorados(jaExistiam); return; }
+    if(listaNovos.length===0){ setProgress(100); setStatus('success'); setIgnorados(jaExistiam); setLogs(prev=>[...prev,'Nenhum usuário novo']); return; }
 
     setStatus('importing');
     try{
-      // 1. Mapa de softwares UMA VEZ SÓ (era isso que travava)
-      setLogs(prev=>[...prev, 'Buscando catálogo de softwares...']);
+      setLogs(prev=>[...prev,'Buscando catálogo de softwares...']);
       const { data: todosSofts } = await supabase.from('softwares').select('id,nome');
       const softMap = new Map<string, string>();
       (todosSofts||[]).forEach((s:any)=> softMap.set(s.nome.toLowerCase(), s.id));
-
       function findSoftId(tipo: string){
         const t = tipo.toLowerCase();
         for(const [nome,id] of softMap.entries()){
           if(t.includes(nome) || nome.includes(t)) return id;
-          // match parcial para photoshop, illustrator etc
-          if(['photoshop','illustrator','indesign','premiere','acrobat','autocad','lightroom','xd','audition','after'].some(k=> t.includes(k) && nome.includes(k))) return id;
         }
         return null;
       }
 
-      // 2. Inserção em LOTE (não 1 por 1)
-      setProgress(50); setLogs(prev=>[...prev, `Inserindo ${listaNovos.length} usuários em lote...`]);
-      const usuariosParaInserir = listaNovos.map(r=>({ email: r.email_original, nome: r.nome, departamento: r.depto, cargo: r.cargo }));
+      setProgress(50); setLogs(prev=>[...prev,`Inserindo ${listaNovos.length} usuários em lote...`]);
 
-      // divide em chunks de 100 para não estourar limite
-      const insertedIds: any[] = [];
+      const usuariosParaInserir = listaNovos.map(r=>({
+        email: r.email_original,
+        nome: r.nome,
+        departamento: r.depto,
+        cargo: r.cargo
+      }));
+
+      let insertedIds: any[] = [];
       for(let i=0;i<usuariosParaInserir.length;i+=100){
         const chunk = usuariosParaInserir.slice(i,i+100);
         const { data: inserted, error } = await supabase.from('usuarios').upsert(chunk, { onConflict: 'email' }).select('id,email');
@@ -130,10 +144,8 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
         setLogs(prev=>[...prev.slice(-10), `Lote ${Math.ceil((i+chunk.length)/100)} inserido`]);
       }
 
-      // 3. Vincular softwares em LOTE
-      setProgress(85); setLogs(prev=>[...prev, 'Vinculando licenças...']);
+      setProgress(85); setLogs(prev=>[...prev,'Vinculando licenças...']);
       const emailToId = new Map(insertedIds.map((u:any)=>[u.email.toLowerCase(), u.id]));
-      // se usuário já existia mas não veio no inserted, busca ids
       if(emailToId.size < listaNovos.length){
         const { data: buscados } = await supabase.from('usuarios').select('id,email').in('email', listaNovos.map(r=>r.email_original));
         buscados?.forEach((u:any)=> emailToId.set(u.email.toLowerCase(), u.id));
@@ -141,13 +153,9 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
 
       const vinculos: any[] = [];
       listaNovos.forEach(r=>{
-        const uid = emailToId.get(r.email_original.toLowerCase());
-        if(!uid) return;
+        const uid = emailToId.get(r.email_original.toLowerCase()); if(!uid) return;
         const tipos = r.tipo.split('|').map((t:string)=>t.trim()).filter(Boolean);
-        tipos.forEach((t:string)=>{
-          const sid = findSoftId(t);
-          if(sid) vinculos.push({ usuario_id: uid, software_id: sid });
-        });
+        tipos.forEach((t:string)=>{ const sid = findSoftId(t); if(sid) vinculos.push({ usuario_id: uid, software_id: sid }); });
       });
 
       for(let i=0;i<vinculos.length;i+=200){
@@ -160,7 +168,7 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
       onRefresh?.();
 
     }catch(err:any){
-      setStatus('error'); setLogs(prev=>[...prev, `ERRO: ${err.message}`, JSON.stringify(err)]);
+      setStatus('error'); setLogs(prev=>[...prev,`ERRO: ${err.message}`, JSON.stringify(err)]);
     }
   }
 

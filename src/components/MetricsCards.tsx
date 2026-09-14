@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef } from 'react';
-import { Pencil, Trash2, Upload, Download, X, CheckCircle, AlertCircle, Trash } from 'lucide-react';
+import { Pencil, Trash2, Upload, Download, X, Trash } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any) {
@@ -10,59 +10,60 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   const [adicionados, setAdicionados] = useState<any[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // --- CALCULO CORRIGIDO POR LICENÇA CONSUMIDA ---
   const stats = useMemo(() => {
     const contratados = softwares.filter((s:any)=>s.qtd_contratada>0);
     const total = contratados.reduce((a:any,b:any)=>a+b.qtd_contratada,0);
 
-    let usadosAcrobat = 0;
-    let usadosTodos = 0;
-    let usadosSingle = 0;
-    let usadosAutocad = 0;
+    let usadosAcrobat = 0, usadosTodos = 0, usadosSingle = 0, usadosAutocad = 0;
+
+    const SINGLE_KEYWORDS = ['photoshop','illustrator','indesign','premiere','after effects','after','lightroom','xd','audition','animate','dreamweaver','incopy'];
 
     data.forEach((u:any)=>{
-      // PEGA TUDO: softwares vinculados + tipo_produto + produto + cargo/departamento (fallback)
-      const fromSoftwares: string[] = (u.softwares||[]).map((s:any)=>(s.nome||'').toLowerCase());
-      const fromTipo: string[] = (u.tipo_produto||'').toLowerCase().split('|').map((s:string)=>s.trim()).filter(Boolean);
-      const fromProduto: string[] = (u.produto||'').toLowerCase().split('|').map((s:string)=>s.trim()).filter(Boolean);
-      // alguns CSVs antigos salvaram em produto o nome do app
-      const all = [...fromSoftwares,...fromTipo,...fromProduto].join(' | ');
+      const rawTipo = (u.tipo_produto||'').split('|').map((s:string)=>s.trim().toLowerCase()).filter(Boolean);
+      const rawProd = (u.produto||'').split('|').map((s:string)=>s.trim().toLowerCase()).filter(Boolean);
+      const fromSofts = (u.softwares||[]).map((s:any)=>s.nome.toLowerCase());
 
-      const isTodos = all.includes('todos') || all.includes('all apps') || all.includes('edicao 4') || all.includes('edição 4') || all.includes('creative cloud - todos');
+      let entries = [...rawTipo,...rawProd,...fromSofts].map(e=>e.trim()).filter(Boolean);
+      entries = Array.from(new Set(entries)); // remove duplicata exata
 
-      if (isTodos) {
-        usadosTodos += 1;
-        return; // Todos não consome Single nem Acrobat
+      const hasTodos = entries.some(e=> e.includes('todos') || e.includes('all apps') || e.includes('edicao 4') || e.includes('edição 4'));
+      if(hasTodos){ usadosTodos += 1; return; }
+
+      // Se tem app específico, ignora o genérico "aplicativo individual"
+      const hasSpecificSingle = entries.some(e=> SINGLE_KEYWORDS.some(k=>e.includes(k)));
+      if(hasSpecificSingle){
+        entries = entries.filter(e=> e!== 'aplicativo individual' && e!== 'single');
       }
 
-      const temAcrobat = all.includes('acrobat');
-      const temAutocad = all.includes('autocad');
-      // Single = qualquer app individual da Adobe, exceto Acrobat e Todos
-      const singleKeywords = ['photoshop','illustrator','indesign','premiere','after effects','after','lightroom','xd','audition','animate','dreamweaver','inCopy','incopy','single','aplicativo individual'];
-      const temSingle = singleKeywords.some(k => all.includes(k));
+      let acrobatCount = 0, autocadCount = 0, singleCount = 0;
 
-      if(temAcrobat) usadosAcrobat++;
-      if(temAutocad) usadosAutocad++;
-      if(temSingle) usadosSingle++;
+      entries.forEach(e=>{
+        if(e.includes('acrobat')) acrobatCount += 1;
+        else if(e.includes('autocad')) autocadCount += 1;
+        else if(e.includes('aplicativo individual') || SINGLE_KEYWORDS.some(k=>e.includes(k))){
+          singleCount += 1; // Cada app single conta 1
+        }
+      });
+
+      usadosAcrobat += Math.min(acrobatCount, 1); // Acrobat max 1 por pessoa
+      usadosAutocad += Math.min(autocadCount, 1);
+      usadosSingle += singleCount; // Single soma: Photoshop + InDesign = 2
     });
 
-    function getUsado(nomeBalde: string){
-      const nb = nomeBalde.toLowerCase();
-      if (nb.includes('single') || nb.includes('225') || nb.includes('pool')) return usadosSingle;
-      if (nb.includes('todos') || nb.includes('edicao 4') || nb.includes('edição 4') || nb.includes('all apps')) return usadosTodos;
-      if (nb.includes('acrobat') || nb.includes('202')) return usadosAcrobat;
-      if (nb.includes('autocad')) return usadosAutocad;
+    function getUsado(nome: string){
+      const n = nome.toLowerCase();
+      if(n.includes('single')||n.includes('225')||n.includes('pool')) return usadosSingle;
+      if(n.includes('todos')||n.includes('edicao')||n.includes('edição')) return usadosTodos;
+      if(n.includes('acrobat')||n.includes('202')) return usadosAcrobat;
+      if(n.includes('autocad')) return usadosAutocad;
       return 0;
     }
 
-    const detalhe = contratados.map((b:any)=>{
-      const usado = getUsado(b.nome);
-      return {...b, usado, livre: b.qtd_contratada - usado };
-    });
-
+    const detalhe = contratados.map((b:any)=>({...b, usado:getUsado(b.nome), livre:b.qtd_contratada-getUsado(b.nome)}));
     const emUso = usadosAcrobat + usadosTodos + usadosSingle + usadosAutocad;
-    const livres = total - emUso;
 
-    return { total, emUso, livres, taxa: total? Math.round(emUso/total*100):0, detalhe, debug:{usadosAcrobat, usadosTodos, usadosSingle, usadosAutocad} };
+    return { total, emUso, livres: total-emUso, taxa: total? Math.round(emUso/total*100):0, detalhe };
   }, [data, softwares]);
 
   async function handleDelete(id: string){
@@ -83,7 +84,9 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
 
   function handleDownloadModelo(){
     const modelo = `Email;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto
-abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-COEDIT-SEMID;Efetivo - Chefe De Serviço;Todos os Apps;Todos os Apps
+abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-COEDIT-SEMID;Efetivo;Todos os Apps;Todos os Apps
+marcelo@senado.leg.br;Marcelo Teste;SECOM;Analista;Acrobat Pro DC;Acrobat Pro DC|Photoshop
+marcelo2@senado.leg.br;Marcelo Teste 2;SECOM;Analista;Aplicativo Individual;Photoshop|InDesign|Illustrator
 `;
     const blob = new Blob([modelo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='modelo_argus_importacao.csv'; a.click();
@@ -91,10 +94,8 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
     const file = e.target.files?.[0]; if(!file) return;
-    setShowImport(true); setStatus('parsing'); setProgress(5);
-    setLogs([`Arquivo: ${file.name}`]); setAdicionados([]);
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter(l=>l.trim());
+    setShowImport(true); setStatus('parsing'); setProgress(5); setLogs([`Arquivo: ${file.name} (${(file.size/1024).toFixed(1)} KB)`]);
+    const text = await file.text(); const lines = text.split(/\r?\n/).filter(l=>l.trim());
     const header = lines[0].split(';').map(h=>h.trim());
     const idxEmail = header.indexOf('Email'), idxNome = header.indexOf('NomeCompleto'), idxDepto = header.indexOf('Departamento'), idxCargo = header.indexOf('Cargo'), idxProd = header.indexOf('Produto'), idxTipo = header.indexOf('Tipo de produto');
     const emailsExistentes = new Set((data||[]).map((u:any)=>(u.email||'').toLowerCase().trim()));
@@ -105,13 +106,14 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
       novosMap.set(emailLow, { email_original: cols[idxEmail].trim(), nome: cols[idxNome].trim(), depto: cols[idxDepto].trim(), cargo: cols[idxCargo].trim(), produto: cols[idxProd].trim(), tipo: cols[idxTipo].trim() });
     }
     const listaNovos = Array.from(novosMap.values());
-    setProgress(30); setLogs(prev=>[...prev, `${listaNovos.length} NOVOS`]);
+    setProgress(30); setLogs(prev=>[...prev, `${lines.length-1} linhas`, `${listaNovos.length} NOVOS para adicionar`]);
     if(listaNovos.length===0){ setProgress(100); setStatus('success'); return; }
     setStatus('importing');
     try{
       const { data: todosSofts } = await supabase.from('softwares').select('id,nome');
       const softMap = new Map<string, string>(); (todosSofts||[]).forEach((s:any)=> softMap.set(s.nome.toLowerCase(), s.id));
       const findSoftId = (t:string)=>{ const tl=t.toLowerCase(); for(const [n,id] of softMap.entries()) if(tl.includes(n) || n.includes(tl)) return id; return null; };
+
       const payload = listaNovos.map(r=>({
         email: r.email_original,
         login: r.email_original.split('@')[0].toLowerCase(),
@@ -125,29 +127,30 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
         tipo_produto: r.tipo,
         status: 'ativo'
       }));
+
       let insertedIds: any[] = [];
       for(let i=0;i<payload.length;i+=100){
         const { data: inserted, error } = await supabase.from('usuarios').upsert(payload.slice(i,i+100), { onConflict: 'email' }).select('id,email');
-        if(error) throw error;
-        if(inserted) insertedIds.push(...inserted);
+        if(error) throw error; if(inserted) insertedIds.push(...inserted);
         setProgress(50 + Math.round(((i+100)/payload.length)*30));
       }
+
       const emailToId = new Map(insertedIds.map((u:any)=>[u.email.toLowerCase(), u.id]));
       if(emailToId.size < listaNovos.length){
         const { data: buscados } = await supabase.from('usuarios').select('id,email').in('email', listaNovos.map(r=>r.email_original));
         buscados?.forEach((u:any)=> emailToId.set(u.email.toLowerCase(), u.id));
       }
+
       const vinculos: any[] = [];
       listaNovos.forEach(r=>{
         const uid = emailToId.get(r.email_original.toLowerCase()); if(!uid) return;
         r.tipo.split('|').map((t:string)=>t.trim()).filter(Boolean).forEach((t:string)=>{ const sid=findSoftId(t); if(sid) vinculos.push({ usuario_id: uid, software_id: sid }); });
         const sidProd = findSoftId(r.produto); if(sidProd) vinculos.push({ usuario_id: uid, software_id: sidProd });
       });
-      for(let i=0;i<vinculos.length;i+=200){
-        await supabase.from('usuario_softwares').upsert(vinculos.slice(i,i+200), { onConflict: 'usuario_id,software_id' });
-      }
+      for(let i=0;i<vinculos.length;i+=200){ await supabase.from('usuario_softwares').upsert(vinculos.slice(i,i+200), { onConflict: 'usuario_id,software_id' }); }
+
       setAdicionados(listaNovos); setProgress(100); setStatus('success');
-      setLogs(prev=>[...prev, `✓ ${listaNovos.length} adicionados`]);
+      setLogs(prev=>[...prev, `✓ ${listaNovos.length} adicionados`, `+ ${vinculos.length} vínculos`]);
       onRefresh?.();
     }catch(err:any){ setStatus('error'); setLogs(prev=>[...prev,`ERRO: ${err.message}`]); }
   }
@@ -156,36 +159,40 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
-          <button onClick={()=>fileRef.current?.click()} className="flex items-center gap-2 bg-[#D4AF37] text-black text-xs font-bold px-4 py-2 rounded-lg"><Upload className="w-4 h-4"/> Importar</button>
-          <button onClick={handleDownloadModelo} className="flex items-center gap-2 bg-[#0f172a] border border-[#1e293b] text-white text-xs font-bold px-4 py-2 rounded-lg"><Download className="w-4 h-4"/> Modelo</button>
+          <button onClick={()=>fileRef.current?.click()} className="flex items-center gap-2 bg-[#D4AF37] hover:bg-[#b8962e] text-black text-xs font-bold px-4 py-2 rounded-lg"><Upload className="w-4 h-4"/> Importar</button>
+          <button onClick={handleDownloadModelo} className="flex items-center gap-2 bg-[#0f172a] border border-[#1e293b] hover:bg-[#1e293b] text-white text-xs font-bold px-4 py-2 rounded-lg"><Download className="w-4 h-4"/> Modelo</button>
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange}/>
         </div>
-        <div className="flex gap-2 items-center">
-          <span className="text-[10px] text-[#64748b]">{data.length} usuários</span>
-          <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold px-3 py-2 rounded-lg"><Trash className="w-4 h-4"/> Apagar todos</button>
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] text-[#64748b]">{data.length} usuários | {stats.emUso} licenças alocadas</p>
+          <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs font-bold px-3 py-2 rounded-lg"><Trash className="w-4 h-4"/> Apagar todos</button>
         </div>
       </div>
+
       {showImport && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-[550px] p-5">
-            <div className="flex justify-between mb-4"><h3 className="text-white font-bold">{status==='success'?`Concluído +${adicionados.length}`:'Importando...'}</h3><button onClick={()=>setShowImport(false)}><X className="w-5 h-5 text-white"/></button></div>
-            <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3"><div className={`h-2 rounded-full ${status==='error'?'bg-red-500':'bg-[#D4AF37]'}`} style={{width:`${progress}%`}}></div></div>
+            <div className="flex justify-between mb-4"><h3 className="text-white font-bold">{status==='success'?`Concluído +${adicionados.length}`: status==='deleting'?'Apagando...':'Importando...'}</h3><button onClick={()=>setShowImport(false)}><X className="w-5 h-5 text-white"/></button></div>
+            <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3"><div className="h-2 rounded-full bg-[#D4AF37]" style={{width:`${progress}%`}}></div></div>
             <div className="bg-[#00121E] border border-[#1e293b] rounded p-3 max-h-32 overflow-auto text-[11px] font-mono text-[#cbd5e1] space-y-1">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>
+            {adicionados.length>0 && status==='success' && (<div className="mt-3 bg-emerald-500/5 border border-emerald-500/20 rounded p-2 max-h-32 overflow-auto text-[11px] text-white">{adicionados.slice(0,20).map((a,idx)=><div key={idx}>{a.email_original}</div>)}</div>)}
           </div>
         </div>
       )}
+
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">TOTAL CONTRATADO</p><p className="text-2xl font-bold text-white mt-2">{stats.total}</p></div>
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">EM USO</p><p className="text-2xl font-bold text-emerald-400 mt-2">{stats.emUso}</p></div>
+        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">EM USO (LICENÇAS)</p><p className="text-2xl font-bold text-emerald-400 mt-2">{stats.emUso}</p></div>
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">DISPONIVEIS</p><p className="text-2xl font-bold text-sky-400 mt-2">{stats.livres}</p></div>
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">TAXA</p><p className="text-2xl font-bold text-[#D4AF37] mt-2">{stats.taxa}%</p></div>
       </div>
+
       <div className="grid grid-cols-3 gap-4">
         {stats.detalhe.map((b:any)=>(
           <div key={b.id} className="bg-[#001726] border border-[#1e293b] rounded-xl p-3 relative">
             <div className="absolute top-2 right-2 flex gap-1">
-              <button onClick={()=>onEditSoftware?.(b)} className="p-1.5 bg-[#0f172a] border border-[#1e293b] rounded"><Pencil className="w-3.5 h-3.5 text-[#D4AF37]"/></button>
-              <button onClick={()=>handleDelete(b.id)} className="p-1.5 bg-[#0f172a] border border-[#1e293b] rounded"><Trash2 className="w-3.5 h-3.5 text-red-400"/></button>
+              <button onClick={()=>onEditSoftware?.(b)} className="p-1.5 bg-[#0f172a] border border-[#1e293b] rounded hover:bg-[#D4AF37]/20"><Pencil className="w-3.5 h-3.5 text-[#D4AF37]"/></button>
+              <button onClick={()=>handleDelete(b.id)} className="p-1.5 bg-[#0f172a] border border-[#1e293b] rounded hover:bg-red-500/20"><Trash2 className="w-3.5 h-3.5 text-red-400"/></button>
             </div>
             <p className="text-[11px] text-[#94a3b8] truncate pr-12">{b.nome}</p>
             <div className="flex justify-between items-end mt-1"><p className="text-white font-bold">{b.usado} / {b.qtd_contratada}</p><p className={`text-xs font-bold ${b.livre<0?'text-red-400':'text-sky-400'}`}>{b.livre} livres</p></div>

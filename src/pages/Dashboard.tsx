@@ -33,32 +33,33 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     setError(null);
 
     try {
-      console.log('🔍 [Argus] Disparando requisição com abort controller...');
+      console.log('🔍 [Argus] Usando fetch nativo direto na API do Supabase...');
 
-      // Cria um mecanismo para abortar a requisição se passar de 4 segundos
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      const queryPromise = supabase
-        .from('softwares')
-        .select('*')
-        .order('nome');
-
-      // Executa a query
-      const { data: swData, error: swError } = await queryPromise;
-      clearTimeout(timeoutId);
-
-      if (swError) {
-        console.error('❌ Erro retornado pelo Supabase:', swError);
-        setError(`Erro Supabase: ${swError.message}`);
-        setLoading(false);
-        return;
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error('Variáveis de ambiente do Supabase ausentes no cliente.');
       }
 
-      console.log('✅ Softwares obtidos com sucesso:', swData?.length || 0);
-      if (swData) setSoftwares(swData as any);
+      // Requisição HTTP pura para testar a tabela softwares
+      const res = await fetch(`${supabaseUrl}/rest/v1/softwares?select=*`, {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        }
+      });
 
-      // Carrega o restante
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Erro HTTP ${res.status}: ${errText}`);
+      }
+
+      const softwaresData = await res.json();
+      console.log('✅ Softwares obtidos via fetch nativo:', softwaresData?.length || 0);
+      setSoftwares(softwaresData || []);
+
+      // Busca as demais tabelas em paralelo usando o client normal agora que sabemos que a rede responde
       const [usRes, linksRes, locaisRes] = await Promise.all([
         supabase.from('usuarios').select('*').limit(600),
         supabase.from('usuario_softwares').select('usuario_id, software_id'),
@@ -69,7 +70,7 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
 
       const linksList = linksRes.data || [];
       const usuariosList = usRes.data || [];
-      const softwaresList = swData || [];
+      const softwaresList = softwaresData || [];
 
       if (usuariosList.length > 0) {
         const map = new Map<string, Software[]>();
@@ -92,12 +93,8 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         setUsuarios([]);
       }
     } catch (err: any) {
-      console.error('❌ Erro capturado no catch geral:', err);
-      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-        setError('A requisição para o Supabase expirou (Timeout). Verifique se a URL do Supabase está correta nas variáveis de ambiente.');
-      } else {
-        setError(err.message || 'Erro desconhecido ao carregar.');
-      }
+      console.error('❌ Erro no fetch nativo:', err);
+      setError(err.message || 'Erro de comunicação com o servidor.');
     } finally {
       setLoading(false);
     }

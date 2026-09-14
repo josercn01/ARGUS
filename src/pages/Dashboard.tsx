@@ -33,20 +33,37 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     setError(null);
 
     try {
-      console.log('🔍 [Argus] Buscando dados no Supabase...');
+      console.log('🔍 [Argus] Iniciando carregamento isolado de dados...');
 
-      // Consultas utilizando estritamente as tabelas reais existentes no banco
-      const [swRes, usRes, linksRes, locaisRes] = await Promise.all([
-        supabase.from('softwares').select('*').order('nome'),
-        supabase.from('usuarios').select('*').limit(600),
-        supabase.from('usuario_softwares').select('usuario_id, software_id'),
-        supabase.from('administradores_locais').select('*')
-      ]);
+      // Função auxiliar com timeout individual para cada tabela não travar a aplicação
+      const fetchWithTimeout = async (promise: Promise<any>, timeoutMs = 3000) => {
+        let timeoutHandle: any;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutHandle = setTimeout(() => reject(new Error('Timeout de requisição')), timeoutMs);
+        });
+        try {
+          const res = await Promise.race([promise, timeoutPromise]);
+          clearTimeout(timeoutHandle);
+          return res;
+        } catch (err) {
+          clearTimeout(timeoutHandle);
+          console.warn('⚠️ Falha ou timeout em tabela específica:', err);
+          return { data: [], error: err };
+        }
+      };
 
-      console.log('📊 Softwares encontrados:', swRes.data?.length || 0, swRes.error);
-      console.log('👥 Usuários encontrados:', usRes.data?.length || 0, usRes.error);
-      console.log('🔗 Vínculos encontrados:', linksRes.data?.length || 0, linksRes.error);
-      console.log('🏢 Locais encontrados:', locaisRes.data?.length || 0, locaisRes.error);
+      // Executa as buscas de forma isolada e segura
+      const swRes = await fetchWithTimeout(supabase.from('softwares').select('*').order('nome'));
+      console.log('📊 Softwares encontrados:', swRes.data?.length || 0);
+
+      const usRes = await fetchWithTimeout(supabase.from('usuarios').select('*').limit(600));
+      console.log('👥 Usuários encontrados:', usRes.data?.length || 0);
+
+      const linksRes = await fetchWithTimeout(supabase.from('usuario_softwares').select('usuario_id, software_id'));
+      console.log('🔗 Vínculos encontrados:', linksRes.data?.length || 0);
+
+      const locaisRes = await fetchWithTimeout(supabase.from('administradores_locais').select('*'));
+      console.log('🏢 Locais encontrados:', locaisRes.data?.length || 0);
 
       if (swRes.data) setSoftwares(swRes.data as any);
       if (locaisRes.data) setLocais(locaisRes.data as any);
@@ -59,7 +76,6 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         const map = new Map<string, Software[]>();
 
         linksList.forEach((l: any) => {
-          // Busca o software correspondente pelo ID da tabela real usuario_softwares
           const swObj = softwaresList.find((s: any) => s.id === l.software_id);
           if (!swObj) return;
           if (!map.has(l.usuario_id)) map.set(l.usuario_id, []);
@@ -77,9 +93,10 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         setUsuarios([]);
       }
     } catch (err: any) {
-      console.error('❌ Erro crítico ao carregar dados:', err);
+      console.error('❌ Erro crítico no loadData:', err);
       setError(err.message || 'Erro ao carregar dados do painel.');
     } finally {
+      console.log('🏁 [Argus] Ciclo de carregamento finalizado. setLoading(false)');
       setLoading(false);
     }
   }, []);
@@ -112,8 +129,8 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       <main className="max-w-7xl mx-auto p-4 space-y-4">
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
-            <span><strong>Erro:</strong> {error}</span>
-            <button onClick={loadData} className="underline text-xs uppercase font-bold">Tentar Novamente</button>
+            <span><strong>Aviso:</strong> {error}</span>
+            <button onClick={loadData} className="underline text-xs uppercase font-bold tracking-wider">Tentar Novamente</button>
           </div>
         )}
 
@@ -126,10 +143,10 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
               onRefresh={loadData}
             />
             <div className="flex gap-2">
-              <button onClick={() => { setEditingSoftware(null); setShowSoftwareManager(true); }} className="bg-[#0a1930] border border-white/10 text-white text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 hover:border-cyan-400/30">
+              <button onClick={() => { setEditingSoftware(null); setShowSoftwareManager(true); }} className="bg-[#0a1930] border border-white/10 text-white text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 hover:border-cyan-400/30 hover:shadow-[0_0_10px_rgba(0,229,255,0.15)] transition-all">
                 <Plus className="w-4 h-4"/> Cadastrar Software
               </button>
-              <button onClick={() => setShowNewUser(true)} className="bg-gradient-to-r from-[#D4AF37] to-[#FFD76E] hover:brightness-110 text-black text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-2">
+              <button onClick={() => setShowNewUser(true)} className="bg-gradient-to-r from-[#D4AF37] to-[#FFD76E] hover:brightness-110 text-black text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-[0_0_15px_rgba(212,175,55,0.3)] transition-all">
                 <Plus className="w-4 h-4"/> Cadastrar Usuário
               </button>
             </div>

@@ -48,15 +48,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
     const emUso = usadosAcrobat + usadosTodos + usadosSingle + usadosAutocad;
     const emUsoAdobe = usadosAcrobat + usadosTodos + usadosSingle;
 
-    // DIVERGENCIA COM ADOBE CONSOLE - valores que você informou
-    const consoleAdobe = { acrobat: 200, single: 185, todos: 192, total: 577 };
-    const diff = {
-      acrobat: consoleAdobe.acrobat - usadosAcrobat,
-      single: consoleAdobe.single - usadosSingle,
-      todos: consoleAdobe.todos - usadosTodos,
-      total: consoleAdobe.total - emUsoAdobe
-    };
-
+ 
     return { totalGeral, totalAdobe, emUso, emUsoAdobe, livres: totalGeral-emUso, livresAdobe: totalAdobe-emUsoAdobe, taxa: totalAdobe? Math.round(emUsoAdobe/totalAdobe*100):0, detalhe, diff, consoleAdobe, raw:{usadosAcrobat,usadosTodos,usadosSingle} };
   }, [data, softwares]);
 

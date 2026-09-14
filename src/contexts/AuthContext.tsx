@@ -26,7 +26,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Função disparada pelo botão "Entrar com Conta Corporativa" com os escopos corrigidos para o Azure
   const signIn = async () => {
     try {
       setAuthError(null);
@@ -63,7 +62,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const email = sessionUser.email.toLowerCase();
 
-    // 1. Validação estrita do domínio do Senado
     if (!email.endsWith('@senado.leg.br')) {
       setAuthError('Acesso restrito a contas com o domínio @senado.leg.br.');
       await supabase.auth.signOut();
@@ -73,16 +71,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 2. Validação se o usuário está cadastrado na tabela correta permissoes_usuarios
     try {
+      // CORRIGIDO: tabela certa é permissoes_usuarios
       const { data, error } = await supabase
-        .from('perfis_usuarios')
+        .from('permissoes_usuarios')
         .select('role')
-        .eq('email', email)
+        .ilike('email', email)
         .maybeSingle();
 
-      if (error || !data) {
-        setAuthError('Seu e-mail corporativo não está cadastrado como autorizado neste sistema.');
+      if (error) {
+        console.error('Erro Supabase permissoes_usuarios:', error);
+        setAuthError(`Erro interno: ${error.message}`);
+        await supabase.auth.signOut();
+        setUser(null);
+        setRole('consulta');
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
+        setAuthError(`Seu e-mail ${email} não está cadastrado em permissoes_usuarios.`);
         await supabase.auth.signOut();
         setUser(null);
         setRole('consulta');

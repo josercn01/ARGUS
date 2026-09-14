@@ -2,8 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 type Role = 'super_admin' | 'admin' | 'consulta'
-
-export const AuthContext = createContext<any>(null)
+const AuthContext = createContext<any>(null)
 
 export function AuthProvider({ children }: any) {
   const [user, setUser] = useState<any>(null)
@@ -11,60 +10,72 @@ export function AuthProvider({ children }: any) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Pega sessão atual
-    supabase.auth.getSession().then(async ({ data }) => {
-      const sessionUser = data.session?.user
-      if (sessionUser?.email) {
-        await resolveRole(sessionUser)
+    let mounted = true
+
+    async function init() {
+      try {
+        const { data } = await supabase.auth.getSession()
+        if (mounted && data.session?.user) {
+          setUser(data.session.user)
+          // busca role SEM travar
+          const { data: perm } = await supabase
+            .from('permissoes_usuarios')
+            .select('role')
+            .ilike('email', data.session.user.email!)
+            .maybeSingle()
+          
+          if (perm?.role) setRole(perm.role as Role)
+          else if (data.session.user.email?.toLowerCase() === 'josercr@senado.leg.br') setRole('super_admin')
+        }
+      } catch (e) {
+        console.error('Auth init error', e)
+      } finally {
+        if (mounted) setLoading(false) // <--- ISSO DESTRAVA O BOTÃO
+      }
+    }
+
+    // Safety: destrava em 3s de qualquer jeito
+    const timeout = setTimeout(() => setLoading(false), 3000)
+    
+    init()
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setUser(session.user)
+        const { data: perm } = await supabase
+          .from('permissoes_usuarios')
+          .select('role')
+          .ilike('email', session.user.email!)
+          .maybeSingle()
+        if (perm?.role) setRole(perm.role as Role)
+      } else {
+        setUser(null)
       }
       setLoading(false)
     })
 
-    // Escuta login/logout
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user?.email) {
-        await resolveRole(session.user)
-      } else {
-        setUser(null)
-        setRole('consulta')
-      }
-    })
-
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      mounted = false
+      clearTimeout(timeout)
+      sub.subscription.unsubscribe()
+    }
   }, [])
 
-  async function resolveRole(authUser: any) {
-    const email = authUser.email.toLowerCase().trim()
-    setUser(authUser)
+  const signInWithMicrosoft = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: { scopes: 'email openid profile' }
+    })
+  }
 
-    // 1. Busca sem dar throw - maybeSingle nunca estoura erro
-    const { data, error } = await supabase
-      .from('permissoes_usuarios')
-      .select('role')
-      .ilike('email', email)
-      .maybeSingle()
-
-    if (data?.role) {
-      setRole(data.role as Role)
-      return
-    }
-
-    // 2. Se não achou, CRIA AUTOMATICAMENTE como consulta (nunca bloqueia)
-    // Se for o josercr, já cria como super_admin
-    const newRole = email === 'josercr@senado.leg.br' ? 'super_admin' : 'consulta'
-    
-    const { data: inserted } = await supabase
-      .from('permissoes_usuarios')
-      .upsert({ email: email, role: newRole }, { onConflict: 'email' })
-      .select('role')
-      .single()
-
-    setRole((inserted?.role as Role) || newRole)
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, role, loading }}>
-      {!loading && children}
+    <AuthContext.Provider value={{ user, role, loading, signInWithMicrosoft, signOut, isAuthenticated: !!user }}>
+      {children}
     </AuthContext.Provider>
   )
 }

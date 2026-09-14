@@ -13,30 +13,56 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   const stats = useMemo(() => {
     const contratados = softwares.filter((s:any)=>s.qtd_contratada>0);
     const total = contratados.reduce((a:any,b:any)=>a+b.qtd_contratada,0);
-    let usadosAcrobat = 0, usadosTodos = 0, usadosSingle = 0, usadosAutocad = 0;
+
+    let usadosAcrobat = 0;
+    let usadosTodos = 0;
+    let usadosSingle = 0;
+    let usadosAutocad = 0;
+
     data.forEach((u:any)=>{
-      const softs = (u.softwares||[]).map((s:any)=>s.nome.toLowerCase());
-      const isTodos = softs.some((n:string)=> n.includes('todos') || n.includes('all apps') || n.includes('edicao 4'));
-      if (isTodos) { usadosTodos += 1; return; }
-      let temAcrobat = false, temAutocad = false, temSingle = false;
-      softs.forEach((n:string)=>{
-        if (n.includes('acrobat')) temAcrobat = true;
-        else if (n.includes('autocad')) temAutocad = true;
-        else if (['photoshop','illustrator','indesign','premiere','after','lightroom','xd','audition','animate','dreamweaver','single'].some(x=>n.includes(x))) temSingle = true;
-      });
-      if(temAcrobat) usadosAcrobat++; if(temAutocad) usadosAutocad++; if(temSingle) usadosSingle++;
+      // PEGA TUDO: softwares vinculados + tipo_produto + produto + cargo/departamento (fallback)
+      const fromSoftwares: string[] = (u.softwares||[]).map((s:any)=>(s.nome||'').toLowerCase());
+      const fromTipo: string[] = (u.tipo_produto||'').toLowerCase().split('|').map((s:string)=>s.trim()).filter(Boolean);
+      const fromProduto: string[] = (u.produto||'').toLowerCase().split('|').map((s:string)=>s.trim()).filter(Boolean);
+      // alguns CSVs antigos salvaram em produto o nome do app
+      const all = [...fromSoftwares,...fromTipo,...fromProduto].join(' | ');
+
+      const isTodos = all.includes('todos') || all.includes('all apps') || all.includes('edicao 4') || all.includes('edição 4') || all.includes('creative cloud - todos');
+
+      if (isTodos) {
+        usadosTodos += 1;
+        return; // Todos não consome Single nem Acrobat
+      }
+
+      const temAcrobat = all.includes('acrobat');
+      const temAutocad = all.includes('autocad');
+      // Single = qualquer app individual da Adobe, exceto Acrobat e Todos
+      const singleKeywords = ['photoshop','illustrator','indesign','premiere','after effects','after','lightroom','xd','audition','animate','dreamweaver','inCopy','incopy','single','aplicativo individual'];
+      const temSingle = singleKeywords.some(k => all.includes(k));
+
+      if(temAcrobat) usadosAcrobat++;
+      if(temAutocad) usadosAutocad++;
+      if(temSingle) usadosSingle++;
     });
-    function getUsado(nb: string){
-      const n = nb.toLowerCase();
-      if (n.includes('single') || n.includes('225')) return usadosSingle;
-      if (n.includes('todos') || n.includes('edicao 4')) return usadosTodos;
-      if (n.includes('acrobat')) return usadosAcrobat;
-      if (n.includes('autocad')) return usadosAutocad;
+
+    function getUsado(nomeBalde: string){
+      const nb = nomeBalde.toLowerCase();
+      if (nb.includes('single') || nb.includes('225') || nb.includes('pool')) return usadosSingle;
+      if (nb.includes('todos') || nb.includes('edicao 4') || nb.includes('edição 4') || nb.includes('all apps')) return usadosTodos;
+      if (nb.includes('acrobat') || nb.includes('202')) return usadosAcrobat;
+      if (nb.includes('autocad')) return usadosAutocad;
       return 0;
     }
-    const detalhe = contratados.map((b:any)=>({...b, usado: getUsado(b.nome), livre: b.qtd_contratada - getUsado(b.nome)}));
+
+    const detalhe = contratados.map((b:any)=>{
+      const usado = getUsado(b.nome);
+      return {...b, usado, livre: b.qtd_contratada - usado };
+    });
+
     const emUso = usadosAcrobat + usadosTodos + usadosSingle + usadosAutocad;
-    return { total, emUso, livres: total-emUso, taxa: total? Math.round(emUso/total*100):0, detalhe };
+    const livres = total - emUso;
+
+    return { total, emUso, livres, taxa: total? Math.round(emUso/total*100):0, detalhe, debug:{usadosAcrobat, usadosTodos, usadosSingle, usadosAutocad} };
   }, [data, softwares]);
 
   async function handleDelete(id: string){
@@ -66,7 +92,7 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
     const file = e.target.files?.[0]; if(!file) return;
     setShowImport(true); setStatus('parsing'); setProgress(5);
-    setLogs([`Arquivo: ${file.name} (${(file.size/1024).toFixed(1)} KB)`]); setAdicionados([]);
+    setLogs([`Arquivo: ${file.name}`]); setAdicionados([]);
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter(l=>l.trim());
     const header = lines[0].split(';').map(h=>h.trim());
@@ -79,61 +105,49 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
       novosMap.set(emailLow, { email_original: cols[idxEmail].trim(), nome: cols[idxNome].trim(), depto: cols[idxDepto].trim(), cargo: cols[idxCargo].trim(), produto: cols[idxProd].trim(), tipo: cols[idxTipo].trim() });
     }
     const listaNovos = Array.from(novosMap.values());
-    setProgress(30); setLogs(prev=>[...prev, `${lines.length-1} linhas`, `${listaNovos.length} NOVOS`]);
+    setProgress(30); setLogs(prev=>[...prev, `${listaNovos.length} NOVOS`]);
     if(listaNovos.length===0){ setProgress(100); setStatus('success'); return; }
     setStatus('importing');
     try{
       const { data: todosSofts } = await supabase.from('softwares').select('id,nome');
       const softMap = new Map<string, string>(); (todosSofts||[]).forEach((s:any)=> softMap.set(s.nome.toLowerCase(), s.id));
       const findSoftId = (t:string)=>{ const tl=t.toLowerCase(); for(const [n,id] of softMap.entries()) if(tl.includes(n) || n.includes(tl)) return id; return null; };
-
-      // PAYLOAD EXATO PARA SUA TABELA (colaborador + login são NOT NULL)
-      const payload = listaNovos.map(r=>{
-        const login = r.email_original.split('@')[0].toLowerCase(); // ex: abelardo.mendes
-        return {
-          email: r.email_original,
-          login: login,
-          colaborador: r.nome, // NOT NULL
-          nome: r.nome,
-          nome_completo: r.nome,
-          departamento: r.depto,
-          setor: r.depto,
-          cargo: r.cargo,
-          produto: r.produto,
-          tipo_produto: r.tipo,
-          status: 'ativo'
-        };
-      });
-
+      const payload = listaNovos.map(r=>({
+        email: r.email_original,
+        login: r.email_original.split('@')[0].toLowerCase(),
+        colaborador: r.nome,
+        nome: r.nome,
+        nome_completo: r.nome,
+        departamento: r.depto,
+        setor: r.depto,
+        cargo: r.cargo,
+        produto: r.produto,
+        tipo_produto: r.tipo,
+        status: 'ativo'
+      }));
       let insertedIds: any[] = [];
-      setLogs(prev=>[...prev,`Inserindo ${payload.length} com login + colaborador...`]);
       for(let i=0;i<payload.length;i+=100){
-        const chunk = payload.slice(i,i+100);
-        const { data: inserted, error } = await supabase.from('usuarios').upsert(chunk, { onConflict: 'email' }).select('id,email');
+        const { data: inserted, error } = await supabase.from('usuarios').upsert(payload.slice(i,i+100), { onConflict: 'email' }).select('id,email');
         if(error) throw error;
         if(inserted) insertedIds.push(...inserted);
-        setProgress(50 + Math.round(((i+chunk.length)/payload.length)*30));
+        setProgress(50 + Math.round(((i+100)/payload.length)*30));
       }
-
-      setProgress(85); setLogs(prev=>[...prev,'Vinculando licenças...']);
       const emailToId = new Map(insertedIds.map((u:any)=>[u.email.toLowerCase(), u.id]));
-      // busca faltantes se upsert não retornou tudo
       if(emailToId.size < listaNovos.length){
         const { data: buscados } = await supabase.from('usuarios').select('id,email').in('email', listaNovos.map(r=>r.email_original));
         buscados?.forEach((u:any)=> emailToId.set(u.email.toLowerCase(), u.id));
       }
-
       const vinculos: any[] = [];
       listaNovos.forEach(r=>{
         const uid = emailToId.get(r.email_original.toLowerCase()); if(!uid) return;
         r.tipo.split('|').map((t:string)=>t.trim()).filter(Boolean).forEach((t:string)=>{ const sid=findSoftId(t); if(sid) vinculos.push({ usuario_id: uid, software_id: sid }); });
+        const sidProd = findSoftId(r.produto); if(sidProd) vinculos.push({ usuario_id: uid, software_id: sidProd });
       });
       for(let i=0;i<vinculos.length;i+=200){
         await supabase.from('usuario_softwares').upsert(vinculos.slice(i,i+200), { onConflict: 'usuario_id,software_id' });
       }
-
       setAdicionados(listaNovos); setProgress(100); setStatus('success');
-      setLogs(prev=>[...prev, `✓ ${listaNovos.length} adicionados`, `+ ${vinculos.length} vínculos`]);
+      setLogs(prev=>[...prev, `✓ ${listaNovos.length} adicionados`]);
       onRefresh?.();
     }catch(err:any){ setStatus('error'); setLogs(prev=>[...prev,`ERRO: ${err.message}`]); }
   }
@@ -154,7 +168,7 @@ abelardo.mendes@senado.leg.br;Abelardo Antonio Mendes Junior;SF-OSE-DGER-SEGRAF-
       {showImport && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-[550px] p-5">
-            <div className="flex justify-between mb-4"><h3 className="text-white font-bold">{status==='success'?`Concluído +${adicionados.length}`:status==='deleting'?'Apagando...':'Importando...'}</h3><button onClick={()=>setShowImport(false)}><X className="w-5 h-5 text-white"/></button></div>
+            <div className="flex justify-between mb-4"><h3 className="text-white font-bold">{status==='success'?`Concluído +${adicionados.length}`:'Importando...'}</h3><button onClick={()=>setShowImport(false)}><X className="w-5 h-5 text-white"/></button></div>
             <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3"><div className={`h-2 rounded-full ${status==='error'?'bg-red-500':'bg-[#D4AF37]'}`} style={{width:`${progress}%`}}></div></div>
             <div className="bg-[#00121E] border border-[#1e293b] rounded p-3 max-h-32 overflow-auto text-[11px] font-mono text-[#cbd5e1] space-y-1">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>
           </div>

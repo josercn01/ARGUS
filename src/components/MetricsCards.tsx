@@ -12,33 +12,44 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
 
   const stats = useMemo(() => {
     const contratados = (softwares || []).filter((s:any)=> Number(s.qtd_contratada) > 0);
-    const totalGeral = contratados.reduce((a:any,b:any)=> a + (Number(b.qtd_contratada)||0), 0);
+    const totalGeral = contratados.reduce((a:any,b:any)=> a + (Number(b.qtd_contratada)||0), 0); // 720
 
-    // Contagem genérica por vínculo - independe do nome
+    // IDs dos Single Avulsos que contam pro Pool - SÓ OS 7 QUE SOMAM 189
+    const poolId = (softwares || []).find((s:any)=> s.nome.toLowerCase().includes('pool single'))?.id;
+    const nomesPool = ['photoshop','indesign','premiere','illustrator','lightroom','audition',' xd','adobe xd'];
+    const idsPoolAvulso = new Set(
+      (softwares || [])
+       .filter((s:any)=>!Number(s.qtd_contratada) && nomesPool.some(n=> s.nome.toLowerCase().includes(n)))
+       .map((s:any)=> s.id)
+    );
+
     const usoPorSoftware = new Map<string, number>();
-    let totalVinculos = 0;
     (data || []).forEach((u:any)=>{
-      const softs = u.softwares || [];
-      softs.forEach((s:any)=>{
+      (u.softwares || []).forEach((s:any)=>{
         if(!s?.id) return;
         usoPorSoftware.set(s.id, (usoPorSoftware.get(s.id)||0) + 1);
-        totalVinculos += 1;
       });
     });
 
+    // POOL VIRTUAL = 189 (74+31+27+26+19+9+3) - AUTOMATIZADO PELOS USUÁRIOS
+    const poolVirtual = Array.from(usoPorSoftware.entries())
+     .filter(([id])=> idsPoolAvulso.has(id))
+     .reduce((acc,[,c])=> acc + c, 0);
+
     const detalhe = contratados.map((b:any)=>{
-      const usado = usoPorSoftware.get(b.id) || 0;
+      let usado = usoPorSoftware.get(b.id) || 0;
+      if(b.id === poolId) usado = poolVirtual; // 189/225 sem linha no banco
       const total = Number(b.qtd_contratada)||0;
       const livre = total - usado;
       const perc = total? (usado/total)*100 : 0;
       return {...b, usado, livre, perc };
     }).sort((a:any,b:any)=> b.perc - a.perc);
 
-    const emUso = totalVinculos; // total de licenças alocadas
-    const livres = totalGeral - emUso;
-    const taxa = totalGeral? Math.round((emUso/totalGeral)*100) : 0;
+    const emUso = detalhe.reduce((a:any,c:any)=> a + c.usado, 0); // 199+192+189+0 = 580
+    const livres = totalGeral - emUso; // 140
+    const taxa = totalGeral? Math.round((emUso/totalGeral)*100) : 0; // 80%
 
-    return { totalGeral, emUso, livres, taxa, detalhe, usoPorSoftware };
+    return { totalGeral, emUso, livres, taxa, detalhe, usoPorSoftware, poolVirtual };
   }, [data, softwares]);
 
   async function handleDelete(id: string){
@@ -121,7 +132,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange}/>
         </div>
         <div className="flex items-center gap-3">
-          <p className="text-[11px] text-[#7a9bb8] font-mono tracking-wide">{data.length} usuários • {stats.emUso} licenças em uso</p>
+          <p className="text-[11px] text-[#7a9bb8] font-mono tracking-wide">{data.length} usuários • {stats.emUso} licenças em uso • Pool {stats.poolVirtual}/225</p>
           <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold px-3 py-2 rounded-lg hover:bg-red-500/20"><Trash className="w-4 h-4"/> Apagar todos</button>
         </div>
       </div>
@@ -136,42 +147,32 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
         </div>
       )}
 
-      {/* CARDS SUPERIORES - NOVO LAYOUT SENADO + NEON */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#0d1f3a] to-[#021024] border border-amber-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(212,175,55,0.15)] group hover:shadow-[0_0_30px_rgba(212,175,55,0.25)] transition">
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-400/10 blur-2xl rounded-full" />
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#0d1f3a] to-[#021024] border border-amber-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(212,175,55,0.15)]">
           <p className="text-[11px] tracking-widest text-amber-200/70 font-bold flex items-center gap-2"><Layers className="w-4 h-4 text-amber-300"/> TOTAL LICENÇAS</p>
           <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFD76E] to-[#D4AF37] mt-3">{stats.totalGeral}</p>
           <p className="text-[11px] text-[#7a9bb8] mt-1">Contratadas no sistema</p>
         </div>
-
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#0a1f3a] to-[#021a2e] border border-cyan-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(0,229,255,0.15)] group hover:shadow-[0_0_30px_rgba(0,229,255,0.25)] transition">
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-cyan-400/10 blur-2xl rounded-full" />
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#0a1f3a] to-[#021a2e] border border-cyan-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(0,229,255,0.15)]">
           <p className="text-[11px] tracking-widest text-cyan-200/70 font-bold flex items-center gap-2"><Users className="w-4 h-4 text-cyan-300"/> EM USO</p>
           <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-400 mt-3">{stats.emUso}</p>
           <p className="text-[11px] text-[#7a9bb8] mt-1">{data.length} usuários ativos</p>
         </div>
-
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#0a2a1f] to-[#021a14] border border-emerald-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(52,211,153,0.15)] group hover:shadow-[0_0_30px_rgba(52,211,153,0.25)] transition">
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-400/10 blur-2xl rounded-full" />
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#0a2a1f] to-[#021a14] border border-emerald-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(52,211,153,0.15)]">
           <p className="text-[11px] tracking-widest text-emerald-200/70 font-bold flex items-center gap-2"><PackageCheck className="w-4 h-4 text-emerald-300"/> DISPONÍVEIS</p>
           <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-teal-300 mt-3">{stats.livres}</p>
           <p className="text-[11px] text-[#7a9bb8] mt-1">Prontas para alocar</p>
         </div>
-
-        <div className="relative overflow-hidden bg-gradient-to-br from-[#1f0a2e] to-[#160a24] border border-fuchsia-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(232,121,249,0.15)] group hover:shadow-[0_0_30px_rgba(232,121,249,0.25)] transition">
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-fuchsia-400/10 blur-2xl rounded-full" />
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#1f0a2e] to-[#160a24] border border-fuchsia-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(232,121,249,0.15)]">
           <p className="text-[11px] tracking-widest text-fuchsia-200/70 font-bold flex items-center gap-2"><Percent className="w-4 h-4 text-fuchsia-300"/> TAXA DE USO</p>
           <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-300 to-purple-400 mt-3">{stats.taxa}%</p>
           <p className="text-[11px] text-[#7a9bb8] mt-1">Utilização geral</p>
         </div>
       </div>
 
-      {/* GRID DE SOFTWARES - TOTALMENTE GENÉRICO */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {stats.detalhe.map((b:any)=>(
           <div key={b.id} className="group relative bg-gradient-to-br from-[#0b1e36]/90 to-[#050e1c] border border-white/10 rounded-xl p-4 hover:border-cyan-400/30 hover:shadow-[0_0_20px_rgba(0,229,255,0.12)] transition">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent rounded-xl pointer-events-none" />
             <div className="flex justify-between items-start">
               <div className="pr-12">
                 <p className="text-[13px] font-bold text-white tracking-wide truncate">{b.nome}</p>

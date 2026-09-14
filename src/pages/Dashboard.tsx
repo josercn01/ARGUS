@@ -33,44 +33,36 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     setError(null);
 
     try {
-      console.log('🔍 [Argus] Iniciando carregamento isolado de dados...');
+      console.log('🔍 [Argus] Testando conexão direta com Supabase...');
 
-      // Função auxiliar com timeout individual para cada tabela não travar a aplicação
-      const fetchWithTimeout = async (promise: Promise<any>, timeoutMs = 3000) => {
-        let timeoutHandle: any;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutHandle = setTimeout(() => reject(new Error('Timeout de requisição')), timeoutMs);
-        });
-        try {
-          const res = await Promise.race([promise, timeoutPromise]);
-          clearTimeout(timeoutHandle);
-          return res;
-        } catch (err) {
-          clearTimeout(timeoutHandle);
-          console.warn('⚠️ Falha ou timeout em tabela específica:', err);
-          return { data: [], error: err };
-        }
-      };
+      // Teste simples e direto na tabela softwares para ver o erro exato
+      const { data: swData, error: swError } = await supabase
+        .from('softwares')
+        .select('*')
+        .order('nome');
 
-      // Executa as buscas de forma isolada e segura
-      const swRes = await fetchWithTimeout(supabase.from('softwares').select('*').order('nome'));
-      console.log('📊 Softwares encontrados:', swRes.data?.length || 0);
+      if (swError) {
+        console.error('❌ Erro retornado pelo Supabase na tabela softwares:', swError);
+        setError(`Erro do Supabase: ${swError.message} (Código: ${swError.code})`);
+        setLoading(false);
+        return;
+      }
 
-      const usRes = await fetchWithTimeout(supabase.from('usuarios').select('*').limit(600));
-      console.log('👥 Usuários encontrados:', usRes.data?.length || 0);
+      console.log('✅ Softwares carregados com sucesso:', swData?.length || 0);
+      if (swData) setSoftwares(swData as any);
 
-      const linksRes = await fetchWithTimeout(supabase.from('usuario_softwares').select('usuario_id, software_id'));
-      console.log('🔗 Vínculos encontrados:', linksRes.data?.length || 0);
+      // Busca as demais tabelas em paralelo com segurança
+      const [usRes, linksRes, locaisRes] = await Promise.all([
+        supabase.from('usuarios').select('*').limit(600),
+        supabase.from('usuario_softwares').select('usuario_id, software_id'),
+        supabase.from('administradores_locais').select('*')
+      ]);
 
-      const locaisRes = await fetchWithTimeout(supabase.from('administradores_locais').select('*'));
-      console.log('🏢 Locais encontrados:', locaisRes.data?.length || 0);
-
-      if (swRes.data) setSoftwares(swRes.data as any);
       if (locaisRes.data) setLocais(locaisRes.data as any);
 
-      const softwaresList = swRes.data || [];
       const linksList = linksRes.data || [];
       const usuariosList = usRes.data || [];
+      const softwaresList = swData || [];
 
       if (usuariosList.length > 0) {
         const map = new Map<string, Software[]>();
@@ -93,10 +85,9 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         setUsuarios([]);
       }
     } catch (err: any) {
-      console.error('❌ Erro crítico no loadData:', err);
-      setError(err.message || 'Erro ao carregar dados do painel.');
+      console.error('❌ Exceção capturada no loadData:', err);
+      setError(err.message || 'Erro de conexão inesperado.');
     } finally {
-      console.log('🏁 [Argus] Ciclo de carregamento finalizado. setLoading(false)');
       setLoading(false);
     }
   }, []);
@@ -129,7 +120,7 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       <main className="max-w-7xl mx-auto p-4 space-y-4">
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
-            <span><strong>Aviso:</strong> {error}</span>
+            <span><strong>Aviso de Diagnóstico:</strong> {error}</span>
             <button onClick={loadData} className="underline text-xs uppercase font-bold tracking-wider">Tentar Novamente</button>
           </div>
         )}

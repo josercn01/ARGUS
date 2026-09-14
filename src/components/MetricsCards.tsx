@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef } from 'react';
-import { Pencil, Trash2, Upload, Download, X, Trash } from 'lucide-react';
+import { Pencil, Trash2, Upload, Download, X, Trash, Layers, Users, PackageCheck, Percent } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any) {
@@ -11,57 +11,38 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   const fileRef = useRef<HTMLInputElement>(null);
 
   const stats = useMemo(() => {
-    const contratados = softwares.filter((s:any)=>s.qtd_contratada>0);
-    const totalGeral = contratados.reduce((a:any,b:any)=>a+b.qtd_contratada,0);
-    const totalAdobe = contratados.filter((s:any)=>!s.nome.toLowerCase().includes('autocad')).reduce((a:any,b:any)=>a+b.qtd_contratada,0);
+    const contratados = (softwares || []).filter((s:any)=> Number(s.qtd_contratada) > 0);
+    const totalGeral = contratados.reduce((a:any,b:any)=> a + (Number(b.qtd_contratada)||0), 0);
 
-    let usadosAcrobat = 0, usadosTodos = 0, usadosSingle = 0, usadosAutocad = 0;
-    const SINGLE_KEYWORDS = ['photoshop','illustrator','indesign','premiere','after effects','after','lightroom','xd','audition','animate','dreamweaver','incopy'];
-
-    data.forEach((u:any)=>{
-      let entries = [...(u.tipo_produto||'').toLowerCase().split('|'),...(u.produto||'').toLowerCase().split('|'),...(u.softwares||[]).map((s:any)=>s.nome.toLowerCase())].map(e=>e.trim()).filter(Boolean);
-      entries = Array.from(new Set(entries));
-      const hasTodos = entries.some(e=> e.includes('todos') || e.includes('all apps') || e.includes('edicao 4') || e.includes('edição 4'));
-      if(hasTodos){ usadosTodos += 1; return; }
-      const hasSpecific = entries.some(e=> SINGLE_KEYWORDS.some(k=>e.includes(k)));
-      if(hasSpecific) entries = entries.filter(e=> e!== 'aplicativo individual' && e!== 'single');
-      let ac=0, au=0, si=0;
-      entries.forEach(e=>{
-        if(e.includes('acrobat')) ac+=1;
-        else if(e.includes('autocad')) au+=1;
-        else if(e.includes('aplicativo individual') || SINGLE_KEYWORDS.some(k=>e.includes(k))) si+=1;
+    // Contagem genérica por vínculo - independe do nome
+    const usoPorSoftware = new Map<string, number>();
+    let totalVinculos = 0;
+    (data || []).forEach((u:any)=>{
+      const softs = u.softwares || [];
+      softs.forEach((s:any)=>{
+        if(!s?.id) return;
+        usoPorSoftware.set(s.id, (usoPorSoftware.get(s.id)||0) + 1);
+        totalVinculos += 1;
       });
-      usadosAcrobat += Math.min(ac,1);
-      usadosAutocad += Math.min(au,1);
-      usadosSingle += si;
     });
 
-    function getUsado(nome: string){
-      const n = nome.toLowerCase();
-      if(n.includes('single')||n.includes('225')) return usadosSingle;
-      if(n.includes('todos')||n.includes('edicao')) return usadosTodos;
-      if(n.includes('acrobat')) return usadosAcrobat;
-      if(n.includes('autocad')) return usadosAutocad;
-      return 0;
-    }
-    const detalhe = contratados.map((b:any)=>({...b, usado:getUsado(b.nome), livre:b.qtd_contratada-getUsado(b.nome)}));
-    const emUso = usadosAcrobat + usadosTodos + usadosSingle + usadosAutocad;
-    const emUsoAdobe = usadosAcrobat + usadosTodos + usadosSingle;
+    const detalhe = contratados.map((b:any)=>{
+      const usado = usoPorSoftware.get(b.id) || 0;
+      const total = Number(b.qtd_contratada)||0;
+      const livre = total - usado;
+      const perc = total? (usado/total)*100 : 0;
+      return {...b, usado, livre, perc };
+    }).sort((a:any,b:any)=> b.perc - a.perc);
 
-    // Mantido para compatibilidade, mas alerta removido
-    const consoleAdobe = { acrobat: 200, single: 185, todos: 192, total: 577 };
-    const diff = {
-      acrobat: consoleAdobe.acrobat - usadosAcrobat,
-      single: consoleAdobe.single - usadosSingle,
-      todos: consoleAdobe.todos - usadosTodos,
-      total: consoleAdobe.total - emUsoAdobe
-    };
+    const emUso = totalVinculos; // total de licenças alocadas
+    const livres = totalGeral - emUso;
+    const taxa = totalGeral? Math.round((emUso/totalGeral)*100) : 0;
 
-    return { totalGeral, totalAdobe, emUso, emUsoAdobe, livres: totalGeral-emUso, livresAdobe: totalAdobe-emUsoAdobe, taxa: totalAdobe? Math.round(emUsoAdobe/totalAdobe*100):0, detalhe, diff, consoleAdobe, raw:{usadosAcrobat,usadosTodos,usadosSingle} };
+    return { totalGeral, emUso, livres, taxa, detalhe, usoPorSoftware };
   }, [data, softwares]);
 
   async function handleDelete(id: string){
-    if(!confirm('Excluir este balde?')) return;
+    if(!confirm('Excluir este software?')) return;
     await supabase.from('usuario_softwares').delete().eq('software_id', id);
     await supabase.from('softwares').delete().eq('id', id);
     onRefresh?.();
@@ -77,9 +58,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   }
 
   function handleDownloadModelo(){
-    const modelo = `Email;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto
-exemplo.acrobat@senado.leg.br;Usuario Faltante Acrobat;SECOM;Analista;Acrobat Pro DC;Acrobat Pro DC
-`;
+    const modelo = `Email;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto\nusuario@senado.leg.br;Nome Completo;SECOM;Analista;Acrobat Pro DC;Acrobat Pro DC\n`;
     const blob = new Blob([modelo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='modelo_import.csv'; a.click();
   }
@@ -126,49 +105,90 @@ exemplo.acrobat@senado.leg.br;Usuario Faltante Acrobat;SECOM;Analista;Acrobat Pr
     }catch(err:any){ setStatus('error'); setLogs(prev=>[...prev,`ERRO: ${err.message}`]); }
   }
 
+  const getBarGradient = (perc: number) => {
+    if(perc >= 100) return 'from-red-500 to-orange-400 shadow-[0_0_8px_rgba(239,68,68,0.6)]';
+    if(perc >= 90) return 'from-amber-400 to-yellow-300 shadow-[0_0_8px_rgba(251,191,36,0.6)]';
+    if(perc >= 70) return 'from-cyan-400 to-blue-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]';
+    return 'from-emerald-400 to-teal-300 shadow-[0_0_6px_rgba(52,211,153,0.5)]';
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
-          <button onClick={()=>fileRef.current?.click()} className="flex items-center gap-2 bg-[#D4AF37] text-black text-xs font-bold px-4 py-2 rounded-lg"><Upload className="w-4 h-4"/> Importar</button>
-          <button onClick={handleDownloadModelo} className="flex items-center gap-2 bg-[#0f172a] border border-[#1e293b] text-white text-xs font-bold px-4 py-2 rounded-lg"><Download className="w-4 h-4"/> Modelo</button>
+          <button onClick={()=>fileRef.current?.click()} className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#F5D76E] text-black text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_12px_rgba(212,175,55,0.4)] hover:brightness-110"><Upload className="w-4 h-4"/> Importar</button>
+          <button onClick={handleDownloadModelo} className="flex items-center gap-2 bg-[#0a1930] border border-cyan-500/30 text-cyan-300 text-xs font-bold px-4 py-2 rounded-lg hover:border-cyan-400/60 hover:shadow-[0_0_10px_rgba(0,229,255,0.3)]"><Download className="w-4 h-4"/> Modelo</button>
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange}/>
         </div>
-        <div className="flex items-center gap-2">
-          <p className="text-[10px] text-[#64748b]">{data.length} usuários | {stats.emUso} licenças ( {stats.emUsoAdobe} Adobe )</p>
-          <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold px-3 py-2 rounded-lg"><Trash className="w-4 h-4"/> Apagar todos</button>
+        <div className="flex items-center gap-3">
+          <p className="text-[11px] text-[#7a9bb8] font-mono tracking-wide">{data.length} usuários • {stats.emUso} licenças em uso</p>
+          <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold px-3 py-2 rounded-lg hover:bg-red-500/20"><Trash className="w-4 h-4"/> Apagar todos</button>
         </div>
       </div>
 
-      {/* ALERTA DE DIVERGÊNCIA REMOVIDO A PEDIDO */}
-
       {showImport && (
-        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#001E33] border border-[#1e293b] rounded-xl w-full max-w-[550px] p-5">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#001E33] border border-cyan-500/20 rounded-xl w-full max-w-[550px] p-5 shadow-[0_0_30px_rgba(0,229,255,0.15)]">
             <div className="flex justify-between mb-4"><h3 className="text-white font-bold">{status==='success'?`Concluído +${adicionados.length}`:'Importando...'}</h3><button onClick={()=>setShowImport(false)}><X className="w-5 h-5 text-white"/></button></div>
-            <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3"><div className="h-2 rounded bg-[#D4AF37]" style={{width:`${progress}%`}}></div></div>
-            <div className="bg-[#00121E] border rounded p-3 max-h-32 overflow-auto text-[11px] font-mono text-[#cbd5e1] space-y-1">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>
+            <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3"><div className="h-2 rounded bg-gradient-to-r from-[#D4AF37] to-cyan-400 transition-all" style={{width:`${progress}%`}}></div></div>
+            <div className="bg-[#00121E] border border-white/5 rounded p-3 max-h-32 overflow-auto text-[11px] font-mono text-[#cbd5e1] space-y-1">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">TOTAL ADOBE (s/ AutoCAD)</p><p className="text-2xl font-bold text-white mt-2">{stats.totalAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.totalGeral} c/ AutoCAD</p></div>
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">EM USO ADOBE</p><p className="text-2xl font-bold text-emerald-400 mt-2">{stats.emUsoAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.emUso} c/ AutoCAD</p></div>
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">DISPONIVEIS ADOBE</p><p className="text-2xl font-bold text-sky-400 mt-2">{stats.livresAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.livres} geral</p></div>
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">TAXA ADOBE</p><p className="text-2xl font-bold text-[#D4AF37] mt-2">{stats.taxa}%</p></div>
+      {/* CARDS SUPERIORES - NOVO LAYOUT SENADO + NEON */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#0d1f3a] to-[#021024] border border-amber-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(212,175,55,0.15)] group hover:shadow-[0_0_30px_rgba(212,175,55,0.25)] transition">
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-400/10 blur-2xl rounded-full" />
+          <p className="text-[11px] tracking-widest text-amber-200/70 font-bold flex items-center gap-2"><Layers className="w-4 h-4 text-amber-300"/> TOTAL LICENÇAS</p>
+          <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFD76E] to-[#D4AF37] mt-3">{stats.totalGeral}</p>
+          <p className="text-[11px] text-[#7a9bb8] mt-1">Contratadas no sistema</p>
+        </div>
+
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#0a1f3a] to-[#021a2e] border border-cyan-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(0,229,255,0.15)] group hover:shadow-[0_0_30px_rgba(0,229,255,0.25)] transition">
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-cyan-400/10 blur-2xl rounded-full" />
+          <p className="text-[11px] tracking-widest text-cyan-200/70 font-bold flex items-center gap-2"><Users className="w-4 h-4 text-cyan-300"/> EM USO</p>
+          <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-400 mt-3">{stats.emUso}</p>
+          <p className="text-[11px] text-[#7a9bb8] mt-1">{data.length} usuários ativos</p>
+        </div>
+
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#0a2a1f] to-[#021a14] border border-emerald-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(52,211,153,0.15)] group hover:shadow-[0_0_30px_rgba(52,211,153,0.25)] transition">
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-400/10 blur-2xl rounded-full" />
+          <p className="text-[11px] tracking-widest text-emerald-200/70 font-bold flex items-center gap-2"><PackageCheck className="w-4 h-4 text-emerald-300"/> DISPONÍVEIS</p>
+          <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-teal-300 mt-3">{stats.livres}</p>
+          <p className="text-[11px] text-[#7a9bb8] mt-1">Prontas para alocar</p>
+        </div>
+
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#1f0a2e] to-[#160a24] border border-fuchsia-400/30 rounded-2xl p-5 shadow-[0_0_20px_rgba(232,121,249,0.15)] group hover:shadow-[0_0_30px_rgba(232,121,249,0.25)] transition">
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-fuchsia-400/10 blur-2xl rounded-full" />
+          <p className="text-[11px] tracking-widest text-fuchsia-200/70 font-bold flex items-center gap-2"><Percent className="w-4 h-4 text-fuchsia-300"/> TAXA DE USO</p>
+          <p className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-300 to-purple-400 mt-3">{stats.taxa}%</p>
+          <p className="text-[11px] text-[#7a9bb8] mt-1">Utilização geral</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      {/* GRID DE SOFTWARES - TOTALMENTE GENÉRICO */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {stats.detalhe.map((b:any)=>(
-          <div key={b.id} className="bg-[#001726] border border-[#1e293b] rounded-xl p-3 relative">
-            <div className="absolute top-2 right-2 flex gap-1">
-              <button onClick={()=>onEditSoftware?.(b)} className="p-1.5 bg-[#0f172a] border rounded"><Pencil className="w-3.5 h-3.5 text-[#D4AF37]"/></button>
-              <button onClick={()=>handleDelete(b.id)} className="p-1.5 bg-[#0f172a] border rounded"><Trash2 className="w-3.5 h-3.5 text-red-400"/></button>
+          <div key={b.id} className="group relative bg-gradient-to-br from-[#0b1e36]/90 to-[#050e1c] border border-white/10 rounded-xl p-4 hover:border-cyan-400/30 hover:shadow-[0_0_20px_rgba(0,229,255,0.12)] transition">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent rounded-xl pointer-events-none" />
+            <div className="flex justify-between items-start">
+              <div className="pr-12">
+                <p className="text-[13px] font-bold text-white tracking-wide truncate">{b.nome}</p>
+                <p className="text-[11px] text-[#6b8aa8] mt-0.5">{b.qtd_contratada} contratadas</p>
+              </div>
+              <div className="absolute top-3 right-3 flex gap-1">
+                <button onClick={()=>onEditSoftware?.(b)} className="p-1.5 bg-[#0f243e] border border-white/10 rounded-md hover:border-amber-400/50"><Pencil className="w-3.5 h-3.5 text-amber-300"/></button>
+                <button onClick={()=>handleDelete(b.id)} className="p-1.5 bg-[#0f243e] border border-white/10 rounded-md hover:border-red-400/50"><Trash2 className="w-3.5 h-3.5 text-red-300"/></button>
+              </div>
             </div>
-            <p className="text-[11px] text-[#94a3b8] truncate pr-12">{b.nome}</p>
-            <div className="flex justify-between items-end mt-1"><p className="text-white font-bold">{b.usado} / {b.qtd_contratada}</p><p className={`text-xs font-bold ${b.livre<0?'text-red-400':'text-sky-400'}`}>{b.livre} livres</p></div>
-            <div className="w-full bg-[#00121E] h-1.5 rounded mt-2"><div className={`${b.livre<0?'bg-red-500':'bg-[#D4AF37]'} h-1.5 rounded`} style={{width:`${Math.min(100, b.qtd_contratada? b.usado/b.qtd_contratada*100:0)}%`}}></div></div>
+            <div className="flex justify-between items-end mt-4">
+              <p className="text-white font-black text-[15px]">{b.usado} / {b.qtd_contratada}</p>
+              <p className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${b.livre<0?'bg-red-500/20 text-red-300 border border-red-500/30': b.livre===0?'bg-amber-500/20 text-amber-300 border border-amber-500/30':'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'}`}>{b.livre<0?`${Math.abs(b.livre)} em excesso`: b.livre===0?'Esgotado':`${b.livre} livres`}</p>
+            </div>
+            <div className="w-full bg-[#021121] h-1.5 rounded-full mt-3 overflow-hidden border border-white/5">
+              <div className={`h-1.5 rounded-full bg-gradient-to-r ${getBarGradient(b.perc)} transition-all duration-700`} style={{width:`${Math.min(100, b.perc)}%`}}></div>
+            </div>
           </div>
         ))}
       </div>

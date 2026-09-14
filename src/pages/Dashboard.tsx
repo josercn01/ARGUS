@@ -17,6 +17,8 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
   const [softwares, setSoftwares] = useState<Software[]>([]);
   const [locais, setLocais] = useState<LocalTrabalho[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [search, setSearch] = useState('');
   const [selectedSoftware, setSelectedSoftware] = useState('');
   const [selectedLocal, setSelectedLocal] = useState('');
@@ -28,48 +30,63 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setError(null);
 
-    // Busca segura - se tabela locais não existir, não quebra o dashboard
-    const swPromise = supabase.from('softwares').select('*').order('nome');
-    const usPromise = supabase.from('usuarios').select('*').order('colaborador');
-    const linksPromise = supabase.from('usuario_softwares').select('usuario_id, software:softwares(*)');
-    const locaisPromise = supabase.from('locais').select('*').order('nome');
+    try {
+      console.log('🔍 [Argus] Buscando dados no Supabase...');
 
-    const [swRes, usRes, linksRes, locaisRes] = await Promise.all([
-      swPromise, usPromise, linksPromise, locaisPromise
-    ]);
+      // Consultas utilizando estritamente as tabelas reais existentes no banco
+      const [swRes, usRes, linksRes, locaisRes] = await Promise.all([
+        supabase.from('softwares').select('*').order('nome'),
+        supabase.from('usuarios').select('*').limit(600),
+        supabase.from('usuario_softwares').select('usuario_id, software_id'),
+        supabase.from('administradores_locais').select('*')
+      ]);
 
-    // Se tabela locais não existe, tenta locais_trabalho
-    if (locaisRes.error && locaisRes.error.code === '42P01') {
-      const { data: altLocais } = await supabase.from('locais_trabalho').select('*').order('nome');
-      if (altLocais) setLocais(altLocais as any);
-      else setLocais([]);
-    } else {
+      console.log('📊 Softwares encontrados:', swRes.data?.length || 0, swRes.error);
+      console.log('👥 Usuários encontrados:', usRes.data?.length || 0, usRes.error);
+      console.log('🔗 Vínculos encontrados:', linksRes.data?.length || 0, linksRes.error);
+      console.log('🏢 Locais encontrados:', locaisRes.data?.length || 0, locaisRes.error);
+
+      if (swRes.data) setSoftwares(swRes.data as any);
       if (locaisRes.data) setLocais(locaisRes.data as any);
-      else setLocais([]);
+
+      const softwaresList = swRes.data || [];
+      const linksList = linksRes.data || [];
+      const usuariosList = usRes.data || [];
+
+      if (usuariosList.length > 0) {
+        const map = new Map<string, Software[]>();
+
+        linksList.forEach((l: any) => {
+          // Busca o software correspondente pelo ID da tabela real usuario_softwares
+          const swObj = softwaresList.find((s: any) => s.id === l.software_id);
+          if (!swObj) return;
+          if (!map.has(l.usuario_id)) map.set(l.usuario_id, []);
+          map.get(l.usuario_id)!.push(swObj);
+        });
+
+        const enriched = usuariosList.map(u => ({
+          ...u,
+          softwares: map.get(u.id) || [],
+          software: map.get(u.id)?.[0] || null
+        }));
+
+        setUsuarios(enriched as any);
+      } else {
+        setUsuarios([]);
+      }
+    } catch (err: any) {
+      console.error('❌ Erro crítico ao carregar dados:', err);
+      setError(err.message || 'Erro ao carregar dados do painel.');
+    } finally {
+      setLoading(false);
     }
-
-    if (swRes.data) setSoftwares(swRes.data as any);
-
-    if (usRes.data) {
-      const map = new Map<string, Software[]>();
-      (linksRes.data as any[] || []).forEach((l: any) => {
-        if (!l.software) return;
-        if (!map.has(l.usuario_id)) map.set(l.usuario_id, []);
-        map.get(l.usuario_id)!.push(l.software);
-      });
-      const enriched = (usRes.data as any[]).map(u => ({
-       ...u,
-        softwares: map.get(u.id) || [],
-        software: map.get(u.id)?.[0] || null
-      }));
-      setUsuarios(enriched as any);
-    }
-
-    setLoading(false);
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    loadData(); 
+  }, [loadData]);
 
   const departamentos = useMemo(() => {
     const set = new Set<string>();
@@ -80,12 +97,12 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
   const filtered = useMemo(() => usuarios.filter(u => {
     const nomes = u.softwares?.map(s => s.nome).join(' ') || '';
     const ids = u.softwares?.map(s => s.id) || [];
-    const busca = `${u.colaborador} ${u.login} ${nomes} ${u.setor || ''}`.toLowerCase();
-    if (search &&!busca.includes(search.toLowerCase())) return false;
-    if (selectedSoftware &&!ids.includes(selectedSoftware)) return false;
-    if (selectedLocal && (u as any).local_id!== selectedLocal) return false;
-    if (selectedDepartamento && u.setor!== selectedDepartamento) return false;
-    if (selectedStatus && u.status.toLowerCase()!== selectedStatus.toLowerCase()) return false;
+    const busca = `${u.colaborador || ''} ${u.login || ''} ${nomes} ${u.setor || ''}`.toLowerCase();
+    if (search && !busca.includes(search.toLowerCase())) return false;
+    if (selectedSoftware && !ids.includes(selectedSoftware)) return false;
+    if (selectedLocal && (u as any).local_id !== selectedLocal) return false;
+    if (selectedDepartamento && u.setor !== selectedDepartamento) return false;
+    if (selectedStatus && u.status && u.status.toLowerCase() !== selectedStatus.toLowerCase()) return false;
     return true;
   }), [usuarios, search, selectedSoftware, selectedLocal, selectedDepartamento, selectedStatus]);
 
@@ -93,6 +110,13 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     <div className="min-h-screen bg-[#020C1A] bg-gradient-to-br from-[#020C1A] via-[#061a32] to-[#020C1A]">
       <Header user={user} role={role} activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="max-w-7xl mx-auto p-4 space-y-4">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
+            <span><strong>Erro:</strong> {error}</span>
+            <button onClick={loadData} className="underline text-xs uppercase font-bold">Tentar Novamente</button>
+          </div>
+        )}
+
         {activeTab === 'dashboard' && (
           <>
             <MetricsCards
@@ -102,10 +126,10 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
               onRefresh={loadData}
             />
             <div className="flex gap-2">
-              <button onClick={() => { setEditingSoftware(null); setShowSoftwareManager(true); }} className="bg-[#0a1930] border border-white/10 text-white text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 hover:border-cyan-400/30 hover:shadow-[0_0_10px_rgba(0,229,255,0.15)]">
+              <button onClick={() => { setEditingSoftware(null); setShowSoftwareManager(true); }} className="bg-[#0a1930] border border-white/10 text-white text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 hover:border-cyan-400/30">
                 <Plus className="w-4 h-4"/> Cadastrar Software
               </button>
-              <button onClick={() => setShowNewUser(true)} className="bg-gradient-to-r from-[#D4AF37] to-[#FFD76E] hover:brightness-110 text-black text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-[0_0_15px_rgba(212,175,55,0.3)]">
+              <button onClick={() => setShowNewUser(true)} className="bg-gradient-to-r from-[#D4AF37] to-[#FFD76E] hover:brightness-110 text-black text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-2">
                 <Plus className="w-4 h-4"/> Cadastrar Usuário
               </button>
             </div>
@@ -124,7 +148,7 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         {activeTab === 'permissoes' && (
           <AccessManagement
             currentRole={role}
-            currentUserEmail={user?.email || ''} // ESSENCIAL PRA LIBERAR O CADASTRO
+            currentUserEmail={user?.email || ''}
           />
         )}
         {showSoftwareManager && <SoftwareManagement initialData={editingSoftware as any} onClose={() => { setShowSoftwareManager(false); setEditingSoftware(null); }} onRefresh={loadData} />}

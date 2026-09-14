@@ -1,17 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL ||
-  'https://uwryfadjkscmxlsbpqas.supabase.co';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnlmYWRqa3NjbXhsc2JwcWFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1OTM5NzEsImV4cCI6MjEwMzE2OTk3MX0.1g6-eFtk-QAWG-q34NZiCmmvDo76hm4YSZGOaSM96RY';
+// Validação visual para o console do navegador
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ ERRO CRÍTICO: As variáveis de ambiente do Supabase (VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY) não foram injetadas no build do Render!');
+} else {
+  console.log('✅ Supabase Client inicializado com URL:', supabaseUrl);
+}
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+  },
+  global: {
+    headers: {
+      'x-client-info': 'argus-sereti-web',
+    },
   },
 });

@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef } from 'react';
-import { Pencil, Trash2, Upload, Download, X, Trash, AlertTriangle } from 'lucide-react';
+import { Pencil, Trash2, Upload, Download, X, Trash } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any) {
@@ -48,7 +48,15 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
     const emUso = usadosAcrobat + usadosTodos + usadosSingle + usadosAutocad;
     const emUsoAdobe = usadosAcrobat + usadosTodos + usadosSingle;
 
- 
+    // Mantido para compatibilidade, mas alerta removido
+    const consoleAdobe = { acrobat: 200, single: 185, todos: 192, total: 577 };
+    const diff = {
+      acrobat: consoleAdobe.acrobat - usadosAcrobat,
+      single: consoleAdobe.single - usadosSingle,
+      todos: consoleAdobe.todos - usadosTodos,
+      total: consoleAdobe.total - emUsoAdobe
+    };
+
     return { totalGeral, totalAdobe, emUso, emUsoAdobe, livres: totalGeral-emUso, livresAdobe: totalAdobe-emUsoAdobe, taxa: totalAdobe? Math.round(emUsoAdobe/totalAdobe*100):0, detalhe, diff, consoleAdobe, raw:{usadosAcrobat,usadosTodos,usadosSingle} };
   }, [data, softwares]);
 
@@ -68,26 +76,12 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
     setProgress(100); setStatus('success'); onRefresh?.(); setTimeout(()=>setShowImport(false),800);
   }
 
-  function handleDownloadAjuste(){
-    const csv = `Acao;Licença;Quantidade;Observacao
-ADICIONAR;Acrobat Pro DC;1;Falta 1 para bater 200 da Console
-ADICIONAR;Aplicativo Individual;4;Falta 4 para bater 185 da Console
-REMOVER;Todos os Apps - Edicao 4;1;Sobra 1 no site (193 vs 192)
-ORIGEM;Site Atual; ;Acrobat=${stats.raw.usadosAcrobat} Single=${stats.raw.usadosSingle} Todos=${stats.raw.usadosTodos} TotalAdobe=${stats.emUsoAdobe}
-DESTINO;Adobe Console; ;Acrobat=200 Single=185 Todos=192 Total=577
-`;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='ajuste_reconciliacao_adobe_console.csv'; a.click();
-  }
-
   function handleDownloadModelo(){
     const modelo = `Email;NomeCompleto;Departamento;Cargo;Produto;Tipo de produto
 exemplo.acrobat@senado.leg.br;Usuario Faltante Acrobat;SECOM;Analista;Acrobat Pro DC;Acrobat Pro DC
-exemplo.single1@senado.leg.br;Usuario Faltante Single 1;SECOM;Analista;Aplicativo Individual;Photoshop
-exemplo.single2@senado.leg.br;Usuario Faltante Single 2;SECOM;Analista;Aplicativo Individual;Illustrator
 `;
     const blob = new Blob([modelo], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='modelo_ajuste_5_licencas.csv'; a.click();
+    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='modelo_import.csv'; a.click();
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
@@ -146,21 +140,7 @@ exemplo.single2@senado.leg.br;Usuario Faltante Single 2;SECOM;Analista;Aplicativ
         </div>
       </div>
 
-      {/* PAINEL DE RECONCILIACAO */}
-      {(stats.diff.acrobat!==0 || stats.diff.single!==0 || stats.diff.todos!==0) && (
-        <div className="bg-[#1a0f00] border border-amber-500/30 rounded-xl p-4 flex justify-between items-start">
-          <div className="space-y-1">
-            <p className="text-amber-400 text-xs font-bold flex items-center gap-2"><AlertTriangle className="w-4 h-4"/> Divergência com Adobe Admin Console detectada</p>
-            <div className="text-[11px] text-[#cbd5e1] font-mono">
-              <div>Acrobat: Console {stats.consoleAdobe.acrobat} vs Site {stats.raw.usadosAcrobat} → <span className={stats.diff.acrobat>0?'text-emerald-400':'text-red-400'}>{stats.diff.acrobat>0?`+${stats.diff.acrobat}`:stats.diff.acrobat} {stats.diff.acrobat>0?'Adicionar':'Remover'}</span></div>
-              <div>Single: Console {stats.consoleAdobe.single} vs Site {stats.raw.usadosSingle} → <span className={stats.diff.single>0?'text-emerald-400':'text-red-400'}>{stats.diff.single>0?`+${stats.diff.single}`:stats.diff.single} {stats.diff.single>0?'Adicionar':'Remover'}</span></div>
-              <div>Todos: Console {stats.consoleAdobe.todos} vs Site {stats.raw.usadosTodos} → <span className={stats.diff.todos>0?'text-emerald-400':'text-red-400'}>{stats.diff.todos>0?`+${stats.diff.todos}`:stats.diff.todos} {stats.diff.todos>0?'Adicionar':'Remover'}</span></div>
-              <div className="pt-1 font-bold">Total Adobe: {stats.emUsoAdobe} / {stats.consoleAdobe.total} (dif {stats.diff.total}) | Total Geral c/ AutoCAD: {stats.totalGeral}</div>
-            </div>
-          </div>
-          <button onClick={handleDownloadAjuste} className="bg-amber-500 text-black text-xs font-bold px-3 py-2 rounded-lg">Baixar CSV de Ajuste</button>
-        </div>
-      )}
+      {/* ALERTA DE DIVERGÊNCIA REMOVIDO A PEDIDO */}
 
       {showImport && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
@@ -174,7 +154,7 @@ exemplo.single2@senado.leg.br;Usuario Faltante Single 2;SECOM;Analista;Aplicativ
 
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">TOTAL ADOBE (s/ AutoCAD)</p><p className="text-2xl font-bold text-white mt-2">{stats.totalAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.totalGeral} c/ AutoCAD</p></div>
-        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">EM USO ADOBE</p><p className="text-2xl font-bold text-emerald-400 mt-2">{stats.emUsoAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.emUso} c/ AutoCAD - Console {stats.consoleAdobe.total}</p></div>
+        <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">EM USO ADOBE</p><p className="text-2xl font-bold text-emerald-400 mt-2">{stats.emUsoAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.emUso} c/ AutoCAD</p></div>
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">DISPONIVEIS ADOBE</p><p className="text-2xl font-bold text-sky-400 mt-2">{stats.livresAdobe}</p><p className="text-[10px] text-[#64748b]">{stats.livres} geral</p></div>
         <div className="bg-[#001E33] border border-[#1e293b] rounded-xl p-4"><p className="text-xs text-[#94a3b8]">TAXA ADOBE</p><p className="text-2xl font-bold text-[#D4AF37] mt-2">{stats.taxa}%</p></div>
       </div>

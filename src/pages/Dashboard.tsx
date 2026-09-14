@@ -33,25 +33,32 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     setError(null);
 
     try {
-      console.log('🔍 [Argus] Testando conexão direta com Supabase...');
+      console.log('🔍 [Argus] Disparando requisição com abort controller...');
 
-      // Teste simples e direto na tabela softwares para ver o erro exato
-      const { data: swData, error: swError } = await supabase
+      // Cria um mecanismo para abortar a requisição se passar de 4 segundos
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+      const queryPromise = supabase
         .from('softwares')
         .select('*')
         .order('nome');
 
+      // Executa a query
+      const { data: swData, error: swError } = await queryPromise;
+      clearTimeout(timeoutId);
+
       if (swError) {
-        console.error('❌ Erro retornado pelo Supabase na tabela softwares:', swError);
-        setError(`Erro do Supabase: ${swError.message} (Código: ${swError.code})`);
+        console.error('❌ Erro retornado pelo Supabase:', swError);
+        setError(`Erro Supabase: ${swError.message}`);
         setLoading(false);
         return;
       }
 
-      console.log('✅ Softwares carregados com sucesso:', swData?.length || 0);
+      console.log('✅ Softwares obtidos com sucesso:', swData?.length || 0);
       if (swData) setSoftwares(swData as any);
 
-      // Busca as demais tabelas em paralelo com segurança
+      // Carrega o restante
       const [usRes, linksRes, locaisRes] = await Promise.all([
         supabase.from('usuarios').select('*').limit(600),
         supabase.from('usuario_softwares').select('usuario_id, software_id'),
@@ -85,8 +92,12 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         setUsuarios([]);
       }
     } catch (err: any) {
-      console.error('❌ Exceção capturada no loadData:', err);
-      setError(err.message || 'Erro de conexão inesperado.');
+      console.error('❌ Erro capturado no catch geral:', err);
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        setError('A requisição para o Supabase expirou (Timeout). Verifique se a URL do Supabase está correta nas variáveis de ambiente.');
+      } else {
+        setError(err.message || 'Erro desconhecido ao carregar.');
+      }
     } finally {
       setLoading(false);
     }
@@ -120,7 +131,7 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       <main className="max-w-7xl mx-auto p-4 space-y-4">
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
-            <span><strong>Aviso de Diagnóstico:</strong> {error}</span>
+            <span><strong>Aviso:</strong> {error}</span>
             <button onClick={loadData} className="underline text-xs uppercase font-bold tracking-wider">Tentar Novamente</button>
           </div>
         )}

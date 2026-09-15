@@ -40,7 +40,13 @@ export function App() {
           {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
           {activeTab === 'admin-locais' && <AdminLocais />}
           {activeTab === 'permissoes' && <AccessManagement />}
-          {(activeTab === 'microsoft-apps' || activeTab === 'microsoft_apps' || activeTab === 'aplicativos-microsoft') && <MicrosoftApps />}
+          {(
+            activeTab === 'microsoft-apps' || 
+            activeTab === 'microsoft_apps' || 
+            activeTab === 'aplicativos-microsoft' || 
+            activeTab === 'aplicativos_microsoft' ||
+            activeTab === 'microsoft'
+          ) && <MicrosoftApps />}
         </div>
       </main>
     </div>

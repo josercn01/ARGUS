@@ -3,11 +3,7 @@ import {
   Cloud, 
   Search, 
   RefreshCw, 
-  Users, 
-  CheckCircle2, 
-  ExternalLink, 
-  Database,
-  ShieldAlert 
+  Users
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -25,7 +21,7 @@ export function MicrosoftApps() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAppFilter, setSelectedAppFilter] = useState('ALL');
 
-  // Dados iniciais de exemplo para evitar tela em branco caso a API demore ou falhe
+  // Dados iniciais seguros
   const [users, setUsers] = useState<M365AppUser[]>([
     {
       id: '1',
@@ -48,7 +44,6 @@ export function MicrosoftApps() {
   const handleSyncM365 = async () => {
     setLoading(true);
     try {
-      // 1. Obtém a sessão atual para capturar o provider_token da Microsoft
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError) throw sessionError;
@@ -59,43 +54,61 @@ export function MicrosoftApps() {
         throw new Error('Token Microsoft não encontrado. Por favor, faça Logout e entre novamente com a conta Microsoft.');
       }
 
-      // 2. Invoca a Edge Function passando o token
       const { data, error } = await supabase.functions.invoke('sync-m365', {
         body: { providerToken }
       });
       
       if (error) throw error;
 
-      if (data && data.success && data.users) {
-        const formattedUsers = data.users.map((u: any, index: number) => ({
-          id: String(index + 1),
-          display_name: u.displayName || 'Sem Nome',
-          user_principal_name: u.userPrincipalName || '',
-          assigned_licenses: u.assignedLicenses?.map((l: any) => l.skuId) || ['Licença Ativa'],
-          account_enabled: u.accountEnabled ?? true,
-          department: u.department || 'Não vinculado'
-        }));
+      if (data && data.success && Array.isArray(data.users)) {
+        const formattedUsers = data.users.map((u: any, index: number) => {
+          // Tratamento totalmente seguro para as licenças (aceita string, objeto ou array)
+          let licenses: string[] = ['Licença Ativa'];
+          if (Array.isArray(u.assignedLicenses)) {
+            licenses = u.assignedLicenses.map((l: any) => {
+              if (typeof l === 'string') return l;
+              return l?.skuId || l?.name || 'Licença M365';
+            });
+          }
+
+          return {
+            id: String(u.id || index + 1),
+            display_name: u.displayName || u.userPrincipalName || 'Sem Nome',
+            user_principal_name: u.userPrincipalName || '',
+            assigned_licenses: licenses.length > 0 ? licenses : ['Licença Ativa'],
+            account_enabled: u.accountEnabled ?? true,
+            department: u.department || 'Não vinculado'
+          };
+        });
+
         setUsers(formattedUsers);
         alert('Sincronização com o Active Directory / M365 realizada com sucesso!');
       } else {
         throw new Error(data?.error || 'Erro ao processar dados da API.');
       }
     } catch (error: any) {
-      console.warn('Erro na sincronização:', error.message);
-      alert(`Erro: ${error.message}`);
+      console.warn('Erro na sincronização:', error.message || error);
+      alert(`Erro: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredUsers = users.filter(user => {
+  // Garante que users é sempre um array antes de filtrar
+  const safeUsers = Array.isArray(users) ? users : [];
+
+  const filteredUsers = safeUsers.filter(user => {
+    const name = user.display_name || '';
+    const upn = user.user_principal_name || '';
+    const dept = user.department || '';
+
     const matchesSearch = 
-      user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.user_principal_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase()));
+      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      upn.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      dept.toLowerCase().includes(searchTerm.toLowerCase());
       
     if (selectedAppFilter === 'ALL') return matchesSearch;
-    return matchesSearch && user.assigned_licenses.includes(selectedAppFilter);
+    return matchesSearch && Array.isArray(user.assigned_licenses) && user.assigned_licenses.includes(selectedAppFilter);
   });
 
   return (

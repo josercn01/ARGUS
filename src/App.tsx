@@ -37,8 +37,7 @@ export function App() {
           {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
           {activeTab === 'admin-locais' && <AdminLocais />}
           {activeTab === 'permissoes' && <AccessManagement />}
-          {/* FIX: Aceita qualquer variação de microsoft para garantir que renderize */}
-          {(activeTab === 'microsoft-apps' || activeTab === 'microsoft_apps' || activeTab === 'aplicativos-microsoft' || activeTab === 'microsoft' || String(activeTab).toLowerCase().includes('microsoft')) && <MicrosoftApps />}
+          {activeTab === 'microsoft-apps' && <MicrosoftApps />}
         </div>
       </main>
     </div>

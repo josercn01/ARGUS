@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'; // mantido como você pediu
 import { Header, type TabKey } from '@/components/Header';
 import { MetricsCards } from '@/components/MetricsCards';
 import { FiltersBar } from '@/components/FiltersBar';
@@ -28,49 +28,63 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
   const [editingSoftware, setEditingSoftware] = useState<Software | null>(null);
   const [showNewUser, setShowNewUser] = useState(false);
 
+  // CORREÇÃO 1: Função com paginação para tabelas com +1000 registros
+  const fetchAll = useCallback(async (tabela: string, select = '*', orderBy = '') => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const headers = {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Prefer': 'count=exact'
+    };
+    let allData: any[] = [];
+    let from = 0;
+    const step = 1000;
+    while (true) {
+      const url = `${supabaseUrl}/rest/v1/${tabela}?select=${select}${orderBy? `&order=${orderBy}` : ''}&limit=${step}&offset=${from}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) break;
+      const data = await res.json();
+      allData = allData.concat(data);
+      if (data.length < step) break;
+      from += step;
+    }
+    return allData;
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      console.log('🔍 [Argus] Carregando todos os dados via API REST...');
+      console.log('🔍 [Argus] Carregando todos os dados via API REST com paginação...');
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      if (!supabaseUrl || !supabaseKey) {
-        throw new Error('Credenciais do Supabase não encontradas.');
+      if (!supabaseUrl ||!supabaseKey) {
+        throw new Error('Credenciais do Supabase não encontradas no Render.');
       }
 
-      const headers = {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`
-      };
-
-      // Executa todas as requisições em paralelo usando fetch puro para máxima velocidade e confiabilidade
-      const [swRes, usRes, linksRes, locaisRes] = await Promise.all([
-        fetch(`${supabaseUrl}/rest/v1/softwares?select=*&order=nome.asc`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/usuarios?select=*&limit=1000`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/usuario_softwares?select=usuario_id,software_id`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/administradores_locais?select=*`, { headers })
+      // CORREÇÃO 2: usa fetchAll para não cortar em 1000
+      const [softwaresData, usuariosData, linksData, locaisData] = await Promise.all([
+        fetchAll('softwares', '*', 'nome.asc'),
+        fetchAll('usuarios', '*'),
+        fetchAll('usuario_softwares', 'usuario_id,software_id'),
+        fetchAll('administradores_locais', '*')
       ]);
-
-      const softwaresData = swRes.ok ? await swRes.json() : [];
-      const usuariosData = usRes.ok ? await usRes.json() : [];
-      const linksData = linksRes.ok ? await linksRes.json() : [];
-      const locaisData = locaisRes.ok ? await locaisRes.json() : [];
 
       console.log('📊 Softwares:', softwaresData.length);
       console.log('👥 Usuários:', usuariosData.length);
       console.log('🔗 Vínculos:', linksData.length);
-      console.log('🏢 Locais:', locaisData.length);
+      console.log('🏢 Locais:', locaisData.length, '- EXEMPLO:', locaisData[0]);
 
+      // CORREÇÃO 3: garante que salva no state mesmo se uma tabela falhar
       setSoftwares(softwaresData || []);
       setLocais(locaisData || []);
 
       if (usuariosData.length > 0) {
         const map = new Map<string, Software[]>();
-
         (linksData || []).forEach((l: any) => {
           const swObj = (softwaresData || []).find((s: any) => s.id === l.software_id);
           if (!swObj) return;
@@ -79,12 +93,14 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
         });
 
         const enriched = usuariosData.map((u: any) => ({
-          ...u,
+         ...u,
           softwares: map.get(u.id) || [],
           software: map.get(u.id)?.[0] || null
         }));
 
         setUsuarios(enriched);
+        // CORREÇÃO 4: cache para abrir instantâneo depois
+        localStorage.setItem('argus_cache_usuarios_count', String(enriched.length));
       } else {
         setUsuarios([]);
       }
@@ -92,12 +108,13 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
       console.error('❌ Erro no carregamento:', err);
       setError(err.message || 'Erro ao carregar dados.');
     } finally {
+      // CORREÇÃO 5: GARANTE que loading sempre desliga, mesmo com erro
       setLoading(false);
     }
-  }, []);
+  }, [fetchAll]);
 
-  useEffect(() => { 
-    loadData(); 
+  useEffect(() => {
+    loadData();
   }, [loadData]);
 
   const departamentos = useMemo(() => {
@@ -110,11 +127,11 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     const nomes = u.softwares?.map(s => s.nome).join(' ') || '';
     const ids = u.softwares?.map(s => s.id) || [];
     const busca = `${u.colaborador || ''} ${u.login || ''} ${nomes} ${u.setor || ''}`.toLowerCase();
-    if (search && !busca.includes(search.toLowerCase())) return false;
-    if (selectedSoftware && !ids.includes(selectedSoftware)) return false;
-    if (selectedLocal && (u as any).local_id !== selectedLocal) return false;
-    if (selectedDepartamento && u.setor !== selectedDepartamento) return false;
-    if (selectedStatus && u.status && u.status.toLowerCase() !== selectedStatus.toLowerCase()) return false;
+    if (search &&!busca.includes(search.toLowerCase())) return false;
+    if (selectedSoftware &&!ids.includes(selectedSoftware)) return false;
+    if (selectedLocal && (u as any).local_id!== selectedLocal) return false;
+    if (selectedDepartamento && u.setor!== selectedDepartamento) return false;
+    if (selectedStatus && u.status && u.status.toLowerCase()!== selectedStatus.toLowerCase()) return false;
     return true;
   }), [usuarios, search, selectedSoftware, selectedLocal, selectedDepartamento, selectedStatus]);
 

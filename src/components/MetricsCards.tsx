@@ -12,9 +12,8 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
 
   const stats = useMemo(() => {
     const contratados = (softwares || []).filter((s:any)=> Number(s.qtd_contratada) > 0);
-    const totalGeral = contratados.reduce((a:any,b:any)=> a + (Number(b.qtd_contratada)||0), 0); // 720
+    const totalGeral = contratados.reduce((a:any,b:any)=> a + (Number(b.qtd_contratada)||0), 0);
 
-    // IDs dos Single Avulsos que contam pro Pool - SÓ OS 7 QUE SOMAM 189
     const poolId = (softwares || []).find((s:any)=> s.nome.toLowerCase().includes('pool single'))?.id;
     const nomesPool = ['photoshop','indesign','premiere','illustrator','lightroom','audition',' xd','adobe xd'];
     const idsPoolAvulso = new Set(
@@ -31,23 +30,22 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
       });
     });
 
-    // POOL VIRTUAL = 189 (74+31+27+26+19+9+3) - AUTOMATIZADO PELOS USUÁRIOS
     const poolVirtual = Array.from(usoPorSoftware.entries())
      .filter(([id])=> idsPoolAvulso.has(id))
      .reduce((acc,[,c])=> acc + c, 0);
 
     const detalhe = contratados.map((b:any)=>{
       let usado = usoPorSoftware.get(b.id) || 0;
-      if(b.id === poolId) usado = poolVirtual; // 189/225 sem linha no banco
+      if(b.id === poolId) usado = poolVirtual;
       const total = Number(b.qtd_contratada)||0;
       const livre = total - usado;
       const perc = total? (usado/total)*100 : 0;
       return {...b, usado, livre, perc };
     }).sort((a:any,b:any)=> b.perc - a.perc);
 
-    const emUso = detalhe.reduce((a:any,c:any)=> a + c.usado, 0); // 199+192+189+0 = 580
-    const livres = totalGeral - emUso; // 140
-    const taxa = totalGeral? Math.round((emUso/totalGeral)*100) : 0; // 80%
+    const emUso = detalhe.reduce((a:any,c:any)=> a + c.usado, 0);
+    const livres = totalGeral - emUso;
+    const taxa = totalGeral? Math.round((emUso/totalGeral)*100) : 0;
 
     return { totalGeral, emUso, livres, taxa, detalhe, usoPorSoftware, poolVirtual };
   }, [data, softwares]);
@@ -75,45 +73,160 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
-    const file = e.target.files?.[0]; if(!file) return;
-    setShowImport(true); setStatus('parsing'); setProgress(5); setLogs([`Arquivo: ${file.name}`]);
-    const text = await file.text(); const lines = text.split(/\r?\n/).filter(l=>l.trim());
-    const header = lines[0].split(';').map(h=>h.trim());
-    const idxEmail = header.indexOf('Email'), idxNome = header.indexOf('NomeCompleto'), idxDepto = header.indexOf('Departamento'), idxCargo = header.indexOf('Cargo'), idxProd = header.indexOf('Produto'), idxTipo = header.indexOf('Tipo de produto');
-    const emailsExistentes = new Set((data||[]).map((u:any)=>(u.email||'').toLowerCase().trim()));
-    const novosMap = new Map<string, any>();
-    for(let i=1;i<lines.length;i++){
-      const cols = lines[i].split(';'); if(cols.length<6) continue;
-      const emailLow = cols[idxEmail]?.trim().toLowerCase(); if(!emailLow || emailsExistentes.has(emailLow) || novosMap.has(emailLow)) continue;
-      novosMap.set(emailLow, { email_original: cols[idxEmail].trim(), nome: cols[idxNome].trim(), depto: cols[idxDepto].trim(), cargo: cols[idxCargo].trim(), produto: cols[idxProd].trim(), tipo: cols[idxTipo].trim() });
-    }
-    const listaNovos = Array.from(novosMap.values());
-    setProgress(30); setLogs(prev=>[...prev, `${listaNovos.length} NOVOS`]);
-    if(listaNovos.length===0){ setProgress(100); setStatus('success'); return; }
-    setStatus('importing');
-    try{
-      const { data: todosSofts } = await supabase.from('softwares').select('id,nome');
-      const softMap = new Map<string, string>(); (todosSofts||[]).forEach((s:any)=> softMap.set(s.nome.toLowerCase(), s.id));
-      const findSoftId = (t:string)=>{ const tl=t.toLowerCase(); for(const [n,id] of softMap.entries()) if(tl.includes(n) || n.includes(tl)) return id; return null; };
-      const payload = listaNovos.map(r=>({ email: r.email_original, login: r.email_original.split('@')[0].toLowerCase(), colaborador: r.nome, nome: r.nome, nome_completo: r.nome, departamento: r.depto, setor: r.depto, cargo: r.cargo, produto: r.produto, tipo_produto: r.tipo, status: 'ativo' }));
-      let insertedIds: any[] = [];
-      for(let i=0;i<payload.length;i+=100){
-        const { data: inserted, error } = await supabase.from('usuarios').upsert(payload.slice(i,i+100), { onConflict: 'email' }).select('id,email');
-        if(error) throw error; if(inserted) insertedIds.push(...inserted);
+    const file = e.target.files?.[0]; 
+    if(!file) return;
+    
+    setShowImport(true); 
+    setStatus('parsing'); 
+    setProgress(5); 
+    setLogs([`Lendo arquivo: ${file.name}`]);
+
+    try {
+      const text = await file.text(); 
+      const lines = text.split(/\r?\n/).filter(l=>l.trim());
+      if (lines.length <= 1) {
+        throw new Error('O arquivo CSV está vazio ou sem linhas de dados.');
       }
+
+      const header = lines[0].split(';').map(h=>h.trim());
+      const idxEmail = header.indexOf('Email');
+      const idxNome = header.indexOf('NomeCompleto');
+      const idxDepto = header.indexOf('Departamento');
+      const idxCargo = header.indexOf('Cargo');
+      const idxProd = header.indexOf('Produto');
+      const idxTipo = header.indexOf('Tipo de produto');
+
+      if (idxEmail === -1 || idxNome === -1) {
+        throw new Error('Cabeçalho inválido. Certifique-se de usar as colunas: Email, NomeCompleto, etc.');
+      }
+
+      const emailsExistentes = new Set((data||[]).map((u:any)=>(u.email||'').toLowerCase().trim()));
+      const novosMap = new Map<string, any>();
+
+      for(let i=1; i<lines.length; i++){
+        const cols = lines[i].split(';'); 
+        if(cols.length < 2) continue;
+        const emailRaw = cols[idxEmail]?.trim();
+        const emailLow = emailRaw?.toLowerCase(); 
+        
+        if(!emailLow || !emailLow.includes('@')) continue;
+        if(emailsExistentes.has(emailLow) || novosMap.has(emailLow)) continue;
+
+        novosMap.set(emailLow, { 
+          email_original: emailRaw, 
+          nome: cols[idxNome]?.trim() || 'Desconhecido', 
+          depto: cols[idxDepto]?.trim() || '', 
+          cargo: cols[idxCargo]?.trim() || '', 
+          produto: cols[idxProd]?.trim() || '', 
+          tipo: cols[idxTipo]?.trim() || '' 
+        });
+      }
+
+      const listaNovos = Array.from(novosMap.values());
+      setProgress(25); 
+      setLogs(prev=>[...prev, `Encontrados ${listaNovos.length} registros novos para importar.`]);
+
+      if(listaNovos.length === 0){ 
+        setProgress(100); 
+        setStatus('success'); 
+        setLogs(prev=>[...prev, 'Nenhum registro novo para inserir (todos já existem).']);
+        return; 
+      }
+
+      setStatus('importing');
+      setLogs(prev=>[...prev, 'Buscando catálogo de softwares no Supabase...']);
+
+      const { data: todosSofts, error: softError } = await supabase.from('softwares').select('id,nome');
+      if (softError) throw softError;
+
+      const softMap = new Map<string, string>(); 
+      (todosSofts||[]).forEach((s:any)=> softMap.set(s.nome.toLowerCase(), s.id));
+      
+      const findSoftId = (t:string)=>{ 
+        if(!t) return null;
+        const tl=t.toLowerCase(); 
+        for(const [n,id] of softMap.entries()) {
+          if(tl.includes(n) || n.includes(tl)) return id;
+        } 
+        return null; 
+      };
+
+      const payload = listaNovos.map(r=>({ 
+        email: r.email_original, 
+        login: r.email_original.split('@')[0].toLowerCase(), 
+        colaborador: r.nome, 
+        nome: r.nome, 
+        nome_completo: r.nome, 
+        departamento: r.depto, 
+        setor: r.depto, 
+        cargo: r.cargo, 
+        produto: r.produto, 
+        tipo_produto: r.tipo, 
+        status: 'ativo' 
+      }));
+
+      let insertedIds: any[] = [];
+      setLogs(prev=>[...prev, `Inserindo usuários em lotes de 100...`]);
+
+      for(let i=0; i<payload.length; i+=100){
+        const lote = payload.slice(i, i+100);
+        const { data: inserted, error: insertError } = await supabase
+          .from('usuarios')
+          .upsert(lote, { onConflict: 'email' })
+          .select('id,email');
+          
+        if(insertError) {
+          console.error('Erro no lote de usuários:', insertError);
+          throw new Error(`Erro ao inserir lote de usuários: ${insertError.message}`);
+        }
+        if(inserted) insertedIds.push(...inserted);
+        setProgress(30 + Math.round(((i + lote.length) / payload.length) * 40));
+      }
+
       const emailToId = new Map(insertedIds.map((u:any)=>[u.email.toLowerCase(), u.id]));
+      
+      // Validação de segurança caso algum ID venha faltando
       if(emailToId.size < listaNovos.length){
         const { data: buscados } = await supabase.from('usuarios').select('id,email').in('email', listaNovos.map(r=>r.email_original));
         buscados?.forEach((u:any)=> emailToId.set(u.email.toLowerCase(), u.id));
       }
+
       const vinculos: any[] = [];
       listaNovos.forEach(r=>{
-        const uid = emailToId.get(r.email_original.toLowerCase()); if(!uid) return;
-        r.tipo.split('|').map((t:string)=>t.trim()).filter(Boolean).forEach((t:string)=>{ const sid=findSoftId(t); if(sid) vinculos.push({ usuario_id: uid, software_id: sid }); });
+        const uid = emailToId.get(r.email_original.toLowerCase()); 
+        if(!uid) return;
+        r.tipo.split('|').map((t:string)=>t.trim()).filter(Boolean).forEach((t:string)=>{ 
+          const sid = findSoftId(t); 
+          if(sid) vinculos.push({ usuario_id: uid, software_id: sid }); 
+        });
       });
-      for(let i=0;i<vinculos.length;i+=200){ await supabase.from('usuario_softwares').upsert(vinculos.slice(i,i+200), { onConflict: 'usuario_id,software_id' }); }
-      setAdicionados(listaNovos); setProgress(100); setStatus('success'); setLogs(prev=>[...prev, `✓ ${listaNovos.length} adicionados`]); onRefresh?.();
-    }catch(err:any){ setStatus('error'); setLogs(prev=>[...prev,`ERRO: ${err.message}`]); }
+
+      setLogs(prev=>[...prev, `Vinculando ${vinculos.length} licenças aos usuários...`]);
+      
+      for(let i=0; i<vinculos.length; i+=200){
+        const loteVinculos = vinculos.slice(i, i+200);
+        const { error: vincError } = await supabase
+          .from('usuario_softwares')
+          .upsert(loteVinculos, { onConflict: 'usuario_id,software_id' });
+          
+        if(vincError) {
+          console.error('Erro ao vincular softwares:', vincError);
+        }
+      }
+
+      setAdicionados(listaNovos); 
+      setProgress(100); 
+      setStatus('success'); 
+      setLogs(prev=>[...prev, `✓ Importação concluída com sucesso! ${listaNovos.length} adicionados.`]); 
+      onRefresh?.();
+
+    } catch(err:any){ 
+      console.error('Erro crítico na importação:', err);
+      setStatus('error'); 
+      setLogs(prev=>[...prev, `ERRO: ${err.message || 'Falha desconhecida'}`]); 
+    } finally {
+      if(fileRef.current) fileRef.current.value = '';
+    }
   }
 
   const getBarGradient = (perc: number) => {
@@ -127,22 +240,31 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
     <div className="space-y-5">
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
-          <button onClick={()=>fileRef.current?.click()} className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#F5D76E] text-black text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_12px_rgba(212,175,55,0.4)] hover:brightness-110"><Upload className="w-4 h-4"/> Importar</button>
-          <button onClick={handleDownloadModelo} className="flex items-center gap-2 bg-[#0a1930] border border-cyan-500/30 text-cyan-300 text-xs font-bold px-4 py-2 rounded-lg hover:border-cyan-400/60 hover:shadow-[0_0_10px_rgba(0,229,255,0.3)]"><Download className="w-4 h-4"/> Modelo</button>
+          <button onClick={()=>fileRef.current?.click()} className="flex items-center gap-2 bg-gradient-to-r from-[#D4AF37] to-[#F5D76E] text-black text-xs font-bold px-4 py-2 rounded-lg shadow-[0_0_12px_rgba(212,175,55,0.4)] hover:brightness-110 cursor-pointer"><Upload className="w-4 h-4"/> Importar</button>
+          <button onClick={handleDownloadModelo} className="flex items-center gap-2 bg-[#0a1930] border border-cyan-500/30 text-cyan-300 text-xs font-bold px-4 py-2 rounded-lg hover:border-cyan-400/60 hover:shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"><Download className="w-4 h-4"/> Modelo</button>
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange}/>
         </div>
         <div className="flex items-center gap-3">
           <p className="text-[11px] text-[#7a9bb8] font-mono tracking-wide">{data.length} usuários • {stats.emUso} licenças em uso • Pool {stats.poolVirtual}/225</p>
-          <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold px-3 py-2 rounded-lg hover:bg-red-500/20"><Trash className="w-4 h-4"/> Apagar todos</button>
+          <button onClick={handleDeleteAll} className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold px-3 py-2 rounded-lg hover:bg-red-500/20 cursor-pointer"><Trash className="w-4 h-4"/> Apagar todos</button>
         </div>
       </div>
 
       {showImport && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-[#001E33] border border-cyan-500/20 rounded-xl w-full max-w-[550px] p-5 shadow-[0_0_30px_rgba(0,229,255,0.15)]">
-            <div className="flex justify-between mb-4"><h3 className="text-white font-bold">{status==='success'?`Concluído +${adicionados.length}`:'Importando...'}</h3><button onClick={()=>setShowImport(false)}><X className="w-5 h-5 text-white"/></button></div>
-            <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3"><div className="h-2 rounded bg-gradient-to-r from-[#D4AF37] to-cyan-400 transition-all" style={{width:`${progress}%`}}></div></div>
-            <div className="bg-[#00121E] border border-white/5 rounded p-3 max-h-32 overflow-auto text-[11px] font-mono text-[#cbd5e1] space-y-1">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>
+            <div className="flex justify-between mb-4">
+              <h3 className="text-white font-bold">
+                {status==='success' ? `Concluído (+${adicionados.length})` : status==='error' ? 'Erro na Importação' : 'Importando Planilha...'}
+              </h3>
+              <button onClick={()=>setShowImport(false)} className="cursor-pointer"><X className="w-5 h-5 text-white"/></button>
+            </div>
+            <div className="w-full bg-[#00121E] h-2 rounded-full overflow-hidden mb-3">
+              <div className={`h-2 rounded transition-all ${status === 'error' ? 'bg-red-500' : 'bg-gradient-to-r from-[#D4AF37] to-cyan-400'}`} style={{width:`${progress}%`}}></div>
+            </div>
+            <div className="bg-[#00121E] border border-white/5 rounded p-3 max-h-40 overflow-auto text-[11px] font-mono text-[#cbd5e1] space-y-1">
+              {logs.map((l,i)=><div key={i}>{l}</div>)}
+            </div>
           </div>
         </div>
       )}
@@ -179,8 +301,8 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
                 <p className="text-[11px] text-[#6b8aa8] mt-0.5">{b.qtd_contratada} contratadas</p>
               </div>
               <div className="absolute top-3 right-3 flex gap-1">
-                <button onClick={()=>onEditSoftware?.(b)} className="p-1.5 bg-[#0f243e] border border-white/10 rounded-md hover:border-amber-400/50"><Pencil className="w-3.5 h-3.5 text-amber-300"/></button>
-                <button onClick={()=>handleDelete(b.id)} className="p-1.5 bg-[#0f243e] border border-white/10 rounded-md hover:border-red-400/50"><Trash2 className="w-3.5 h-3.5 text-red-300"/></button>
+                <button onClick={()=>onEditSoftware?.(b)} className="p-1.5 bg-[#0f243e] border border-white/10 rounded-md hover:border-amber-400/50 cursor-pointer"><Pencil className="w-3.5 h-3.5 text-amber-300"/></button>
+                <button onClick={()=>handleDelete(b.id)} className="p-1.5 bg-[#0f243e] border border-white/10 rounded-md hover:border-red-400/50 cursor-pointer"><Trash2 className="w-3.5 h-3.5 text-red-300"/></button>
               </div>
             </div>
             <div className="flex justify-between items-end mt-4">

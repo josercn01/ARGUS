@@ -1,103 +1,76 @@
-import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Cloud, RefreshCw } from 'lucide-react';
 
 export function MicrosoftApps() {
-  const [logs, setLogs] = useState<string[]>(['Pronto para testar...'])
-  const [loading, setLoading] = useState(false)
-  const [dados, setDados] = useState<any>(null)
+  const [logs, setLogs] = useState<string[]>(['Clique em Testar Conexão']);
+  const [loading, setLoading] = useState(false);
+  const [dados, setDados] = useState<any>(null);
 
-  const addLog = (msg: string) => {
-    setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`,...prev])
-  }
+  const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`,...prev]);
 
   const testar = async () => {
-    setLoading(true)
-    setLogs([])
+    setLoading(true);
+    setLogs([]);
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.provider_token
-      addLog(token? `Provider Token presente ✅ (${token.substring(0, 20)}...)` : 'Provider Token vazio ❌ - faça logout/login')
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.provider_token;
 
       if (!token) {
-        throw new Error('Token vazio. Faça logout e login novamente.')
+        addLog('❌ Provider Token vazio. Faça LOGOUT e login com Microsoft de novo.');
+        return;
       }
+      addLog(`✅ Token presente: ${token.substring(0, 20)}...`);
 
-      addLog('Chamando edge sync-m365...')
-      const { data, error } = await supabase.functions.invoke('sync-m365', {
-        body: { providerToken: token }
-      })
+      // CHAMA O GRAPH DIRETO, SEM EDGE FUNCTION
+      addLog('Chamando graph.microsoft.com/v1.0/users...');
+      const res = await fetch('https://graph.microsoft.com/v1.0/users?$top=50&$select=id,displayName,mail,userPrincipalName', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      if (error) throw error
-      if (!data?.success) throw new Error(data?.error || 'Erro desconhecido')
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`Graph erro ${res.status}: ${t}`);
+      }
+      const json = await res.json();
+      addLog(`✅ SUCESSO! ${json.value.length} usuários lidos direto da Microsoft`);
+      setDados({ users: json.value, totalUsuarios: json.value.length });
 
-      addLog(`Sucesso! ${data.totalUsuarios} usuários, ${data.totalLicenciados} licenciados`)
-      setDados(data)
     } catch (e: any) {
-      addLog(`ERRO: ${e.message}`)
+      addLog(`❌ ERRO: ${e.message}`);
+      console.error(e);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-3">
-        <button
-          onClick={testar}
-          disabled={loading}
-          className="bg-[#D4AF37] text-black px-6 py-2 rounded font-bold disabled:opacity-50"
-        >
-          {loading? 'Testando...' : 'Testar Conexão'}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center"><Cloud className="w-5 h-5 text-cyan-400" /></div>
+          <div><h1 className="text-xl font-bold">Aplicativos Microsoft</h1><p className="text-xs text-zinc-400">Teste direto Graph API (sem Edge)</p></div>
+        </div>
+        <button onClick={testar} disabled={loading} className="bg-[#D4AF37] hover:bg-[#c19b2e] text-black px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
+          <RefreshCw className={`w-4 h-4 ${loading? 'animate-spin' : ''}`} />{loading? 'Testando...' : 'Testar Conexão'}
         </button>
       </div>
 
-      {dados?.licencasContagem && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {dados.licencasContagem.map((lic: any) => (
-            <div key={lic.skuId} className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
-              <p className="text-zinc-400 text-sm">{lic.nome}</p>
-              <p className="text-2xl font-bold text-white">{lic.total} usuários</p>
-              <p className="text-xs text-zinc-500 truncate">{lic.skuId}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
       {dados?.users && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-zinc-800 font-bold text-white">
-            Usuários ({dados.totalUsuarios})
-          </div>
-          <div className="overflow-auto max-h-[400px]">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-zinc-800 text-zinc-400">
-                <tr>
-                  <th className="p-3">Nome</th>
-                  <th className="p-3">Email</th>
-                  <th className="p-3">Licenças</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dados.users.map((u: any) => (
-                  <tr key={u.id} className="border-t border-zinc-800 text-white">
-                    <td className="p-3">{u.displayName}</td>
-                    <td className="p-3 text-zinc-400">{u.mail || u.userPrincipalName}</td>
-                    <td className="p-3">{u.licencasNomes?.map((l: any) => l.nome).join(', ') || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
+        <div className="bg-[#00121E] border border-[#1e293b] rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-[#1e293b] font-bold">Usuários Microsoft ({dados.totalUsuarios})</div>
+          <div className="max-h-[500px] overflow-auto">
+            <table className="w-full text-sm"><thead className="bg-[#000d17] text-zinc-400 text-xs"><tr><th className="p-3 text-left">Nome</th><th className="p-3 text-left">Email</th></tr></thead>
+              <tbody>{dados.users.map((u: any) => <tr key={u.id} className="border-t border-[#1e293b]"><td className="p-3 text-white">{u.displayName}</td><td className="p-3 text-zinc-400">{u.mail || u.userPrincipalName}</td></tr>)}</tbody>
             </table>
           </div>
         </div>
       )}
 
-      <div className="bg-black border border-zinc-800 rounded-xl p-4 font-mono text-xs h-48 overflow-auto">
-        {logs.map((l, i) => (
-          <div key={i} className="text-zinc-300">{l}</div>
-        ))}
+      <div className="bg-black border border-[#1e293b] rounded-xl p-4 font-mono text-xs h-48 overflow-auto">
+        {logs.map((l, i) => <div key={i} className="text-zinc-300 py-0.5">{l}</div>)}
       </div>
     </div>
-  )
+  );
 }
-
-export default MicrosoftApps
+export default MicrosoftApps;

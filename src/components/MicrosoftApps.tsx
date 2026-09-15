@@ -56,10 +56,10 @@ export function MicrosoftApps() {
       const providerToken = session?.provider_token;
 
       if (!providerToken) {
-        throw new Error('Token de acesso Microsoft não encontrado na sessão. Faça login novamente usando a conta Microsoft.');
+        throw new Error('Token Microsoft não encontrado. Por favor, faça Logout e entre novamente com a conta Microsoft.');
       }
 
-      // 2. Invoca a Edge Function passando o token do usuário logado
+      // 2. Invoca a Edge Function passando o token
       const { data, error } = await supabase.functions.invoke('sync-m365', {
         body: { providerToken }
       });
@@ -78,11 +78,11 @@ export function MicrosoftApps() {
         setUsers(formattedUsers);
         alert('Sincronização com o Active Directory / M365 realizada com sucesso!');
       } else {
-        throw new Error(data?.error || 'Erro desconhecido ao processar resposta.');
+        throw new Error(data?.error || 'Erro ao processar dados da API.');
       }
     } catch (error: any) {
-      console.warn('Modo simulado / Erro na Edge Function:', error.message);
-      alert(`Aviso: ${error.message}`);
+      console.warn('Erro na sincronização:', error.message);
+      alert(`Erro: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -93,7 +93,7 @@ export function MicrosoftApps() {
       user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.user_principal_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase()));
-     
+      
     if (selectedAppFilter === 'ALL') return matchesSearch;
     return matchesSearch && user.assigned_licenses.includes(selectedAppFilter);
   });

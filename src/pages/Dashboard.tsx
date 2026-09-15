@@ -33,68 +33,64 @@ export function Dashboard({ user, role }: { user: AuthUser | null; role: SystemR
     setError(null);
 
     try {
-      console.log('🔍 [Argus] Usando fetch nativo direto na API do Supabase...');
+      console.log('🔍 [Argus] Carregando todos os dados via API REST...');
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !supabaseKey) {
-        throw new Error('Variáveis de ambiente do Supabase ausentes no cliente.');
+        throw new Error('Credenciais do Supabase não encontradas.');
       }
 
-      // Requisição HTTP pura para testar a tabela softwares
-      const res = await fetch(`${supabaseUrl}/rest/v1/softwares?select=*`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
-      });
+      const headers = {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      };
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Erro HTTP ${res.status}: ${errText}`);
-      }
-
-      const softwaresData = await res.json();
-      console.log('✅ Softwares obtidos via fetch nativo:', softwaresData?.length || 0);
-      setSoftwares(softwaresData || []);
-
-      // Busca as demais tabelas em paralelo usando o client normal agora que sabemos que a rede responde
-      const [usRes, linksRes, locaisRes] = await Promise.all([
-        supabase.from('usuarios').select('*').limit(600),
-        supabase.from('usuario_softwares').select('usuario_id, software_id'),
-        supabase.from('administradores_locais').select('*')
+      // Executa todas as requisições em paralelo usando fetch puro para máxima velocidade e confiabilidade
+      const [swRes, usRes, linksRes, locaisRes] = await Promise.all([
+        fetch(`${supabaseUrl}/rest/v1/softwares?select=*&order=nome.asc`, { headers }),
+        fetch(`${supabaseUrl}/rest/v1/usuarios?select=*&limit=1000`, { headers }),
+        fetch(`${supabaseUrl}/rest/v1/usuario_softwares?select=usuario_id,software_id`, { headers }),
+        fetch(`${supabaseUrl}/rest/v1/administradores_locais?select=*`, { headers })
       ]);
 
-      if (locaisRes.data) setLocais(locaisRes.data as any);
+      const softwaresData = swRes.ok ? await swRes.json() : [];
+      const usuariosData = usRes.ok ? await usRes.json() : [];
+      const linksData = linksRes.ok ? await linksRes.json() : [];
+      const locaisData = locaisRes.ok ? await locaisRes.json() : [];
 
-      const linksList = linksRes.data || [];
-      const usuariosList = usRes.data || [];
-      const softwaresList = softwaresData || [];
+      console.log('📊 Softwares:', softwaresData.length);
+      console.log('👥 Usuários:', usuariosData.length);
+      console.log('🔗 Vínculos:', linksData.length);
+      console.log('🏢 Locais:', locaisData.length);
 
-      if (usuariosList.length > 0) {
+      setSoftwares(softwaresData || []);
+      setLocais(locaisData || []);
+
+      if (usuariosData.length > 0) {
         const map = new Map<string, Software[]>();
 
-        linksList.forEach((l: any) => {
-          const swObj = softwaresList.find((s: any) => s.id === l.software_id);
+        (linksData || []).forEach((l: any) => {
+          const swObj = (softwaresData || []).find((s: any) => s.id === l.software_id);
           if (!swObj) return;
           if (!map.has(l.usuario_id)) map.set(l.usuario_id, []);
           map.get(l.usuario_id)!.push(swObj);
         });
 
-        const enriched = usuariosList.map(u => ({
+        const enriched = usuariosData.map((u: any) => ({
           ...u,
           softwares: map.get(u.id) || [],
           software: map.get(u.id)?.[0] || null
         }));
 
-        setUsuarios(enriched as any);
+        setUsuarios(enriched);
       } else {
         setUsuarios([]);
       }
     } catch (err: any) {
-      console.error('❌ Erro no fetch nativo:', err);
-      setError(err.message || 'Erro de comunicação com o servidor.');
+      console.error('❌ Erro no carregamento:', err);
+      setError(err.message || 'Erro ao carregar dados.');
     } finally {
       setLoading(false);
     }

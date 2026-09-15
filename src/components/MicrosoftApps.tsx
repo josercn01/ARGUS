@@ -48,8 +48,21 @@ export function MicrosoftApps() {
   const handleSyncM365 = async () => {
     setLoading(true);
     try {
-      // Tenta chamar a Supabase Edge Function se existir, senão simula o refresh com segurança
-      const { data, error } = await supabase.functions.invoke('sync-m365');
+      // 1. Obtém a sessão atual para capturar o provider_token da Microsoft
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) throw sessionError;
+      
+      const providerToken = session?.provider_token;
+
+      if (!providerToken) {
+        throw new Error('Token de acesso Microsoft não encontrado na sessão. Faça login novamente usando a conta Microsoft.');
+      }
+
+      // 2. Invoca a Edge Function passando o token do usuário logado
+      const { data, error } = await supabase.functions.invoke('sync-m365', {
+        body: { providerToken }
+      });
       
       if (error) throw error;
 
@@ -64,13 +77,12 @@ export function MicrosoftApps() {
         }));
         setUsers(formattedUsers);
         alert('Sincronização com o Active Directory / M365 realizada com sucesso!');
+      } else {
+        throw new Error(data?.error || 'Erro desconhecido ao processar resposta.');
       }
     } catch (error: any) {
       console.warn('Modo simulado / Erro na Edge Function:', error.message);
-      // Mantém os dados locais para não quebrar a interface
-      setTimeout(() => {
-        alert('Sincronização simulada com sucesso! (Configure a Edge Function para dados reais em nuvem).');
-      }, 800);
+      alert(`Aviso: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -81,7 +93,7 @@ export function MicrosoftApps() {
       user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.user_principal_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+     
     if (selectedAppFilter === 'ALL') return matchesSearch;
     return matchesSearch && user.assigned_licenses.includes(selectedAppFilter);
   });

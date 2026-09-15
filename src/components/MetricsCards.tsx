@@ -112,7 +112,8 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
         
         if(!emailLow || !emailLow.includes('@')) continue;
         
-        const login = emailLow.split('@')[0].trim();
+        // Força o login estritamente em minúsculas para evitar duplicatas por conflito de Case
+        const login = emailLow.split('@')[0].toLowerCase().trim();
         if(!login) continue;
 
         if(novosMap.has(login)) {

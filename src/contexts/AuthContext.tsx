@@ -26,7 +26,6 @@ export function AuthProvider({ children }: any) {
           if (perm?.role) {
             setRole(perm.role.toLowerCase() as Role)
           } else if (data.session.user.email?.toLowerCase() === 'josercn@senado.leg.br') {
-            // CORRIGIDO AQUI: era josercr, agora josercn
             setRole('super_admin')
           }
         }
@@ -48,7 +47,12 @@ export function AuthProvider({ children }: any) {
           .select('role')
           .ilike('email', session.user.email!)
           .maybeSingle()
-        if (perm?.role) setRole(perm.role.toLowerCase() as Role)
+        
+        if (perm?.role) {
+          setRole(perm.role.toLowerCase() as Role)
+        } else if (session.user.email?.toLowerCase() === 'josercn@senado.leg.br') {
+          setRole('super_admin')
+        }
       } else {
         setUser(null)
         setRole('consulta')
@@ -72,13 +76,27 @@ export function AuthProvider({ children }: any) {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut()
+      // Encerra a sessão globalmente no Supabase
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch (err) {
+      console.error('Erro ao sair:', err);
     } finally {
-      localStorage.clear()
-      sessionStorage.clear()
-      setUser(null)
-      setRole('consulta')
-      window.location.href = '/' // FORÇA SAIR
+      // Limpeza profunda de armazenamentos e tokens residuais
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('supabase') || key.includes('sb-'))) {
+          localStorage.removeItem(key);
+        }
+      }
+
+      setUser(null);
+      setRole('consulta');
+
+      // Redireciona e limpa o histórico da sessão atual
+      window.location.replace('/');
     }
   }
 

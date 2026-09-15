@@ -4,6 +4,7 @@ import { LoginScreen } from '@/components/LoginScreen';
 import { Header, TabKey } from '@/components/Header';
 import { Dashboard } from '@/pages/Dashboard';
 import { AdminLocais } from '@/components/AdminLocais';
+import { AccessManagement } from '@/components/AccessManagement'; // <-- Importa o componente correto
 import { MicrosoftApps } from '@/components/MicrosoftApps';
 import { Loader2 } from 'lucide-react';
 
@@ -33,11 +34,12 @@ export function App() {
         onTabChange={setActiveTab} 
       />
 
-      {/* Conteúdo Principal com margem para compensar a sidebar (ml-72) */}
+      {/* Conteúdo Principal */}
       <main className="flex-1 ml-72 p-8 overflow-x-hidden">
         <div className="max-w-7xl mx-auto">
           {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
           {activeTab === 'admin-locais' && <AdminLocais />}
+          {activeTab === 'permissoes' && <AccessManagement />}
           {activeTab === 'microsoft-apps' && <MicrosoftApps />}
         </div>
       </main>

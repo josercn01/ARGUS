@@ -4,6 +4,9 @@ import { supabase } from '@/lib/supabase'
 type Role = 'super_admin' | 'admin' | 'editor' | 'consulta'
 const AuthContext = createContext<any>(null)
 
+// Seus emails com poder total, sem depender do banco
+const SUPER_ADMINS = ['josercn@senado.leg.br', 'josercr@senado.leg.br']
+
 export function AuthProvider({ children }: any) {
   const [user, setUser] = useState<any>(null)
   const [role, setRole] = useState<Role>('consulta')
@@ -14,45 +17,49 @@ export function AuthProvider({ children }: any) {
 
     async function evaluateUser(sessionUser: any) {
       if (!sessionUser) {
-        setUser(null)
-        setRole('consulta')
+        if(mounted){ setUser(null); setRole('consulta') }
         return
       }
 
-      setUser(sessionUser)
+      if(mounted) setUser(sessionUser)
       const emailUser = sessionUser.email?.toLowerCase() || ''
 
-      // REGRA SUPREMA: Força super_admin imediatamente para o seu e-mail
-      if (emailUser === 'josercn@senado.leg.br') {
-        setRole('super_admin')
+      // REGRA SUPREMA: mantém a sua, só adicionei os 2 emails
+      if (SUPER_ADMINS.includes(emailUser)) {
+        if(mounted) setRole('super_admin')
         return
       }
 
-      // Busca na tabela de permissões para os demais usuários
+      // BLINDAGEM: Busca no banco com timeout de 1.5s pra não travar a tela preta
+      // Se o RLS bloquear (seu caso), ele aborta e te deixa como consulta
       try {
-        const { data: perm } = await supabase
+        const queryPromise = supabase
           .from('permissoes_usuarios')
           .select('role')
           .ilike('email', emailUser)
           .maybeSingle()
         
-        if (perm?.role) {
-          setRole(perm.role.toLowerCase() as Role)
-        } else {
-          setRole('consulta')
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout-permissao')), 1500)
+        )
+
+        const { data: perm } = await Promise.race([queryPromise, timeoutPromise]) as any
+        
+        if (mounted) {
+          if (perm?.role) setRole(perm.role.toLowerCase() as Role)
+          else setRole('consulta')
         }
-      } catch (e) {
-        console.error('Erro ao buscar permissão', e)
-        setRole('consulta')
+      } catch (e: any) {
+        // Se deu timeout ou RLS, não trava - só loga e segue
+        if(e.message !== 'timeout-permissao') console.error('Erro ao buscar permissão', e)
+        if(mounted) setRole('consulta')
       }
     }
 
     async function init() {
       try {
         const { data } = await supabase.auth.getSession()
-        if (mounted) {
-          await evaluateUser(data.session?.user)
-        }
+        if (mounted) await evaluateUser(data.session?.user)
       } catch (e) {
         console.error('Auth init error', e)
       } finally {
@@ -60,7 +67,8 @@ export function AuthProvider({ children }: any) {
       }
     }
 
-    const timeout = setTimeout(() => setLoading(false), 3000)
+    // Timeout de segurança: nunca fica mais de 2.5s em loading
+    const timeout = setTimeout(() => { if(mounted) setLoading(false) }, 2500)
     init()
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -81,7 +89,9 @@ export function AuthProvider({ children }: any) {
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: { 
-        scopes: 'openid profile email User.Read User.ReadBasic.All',
+        // Adicionei offline_access pra garantir que o provider_token venha na sessão
+        // Mantive seus escopos que você já tem permissão
+        scopes: 'openid profile email offline_access User.Read User.ReadBasic.All',
         redirectTo: window.location.origin
       }
     })
@@ -93,22 +103,11 @@ export function AuthProvider({ children }: any) {
     } catch (err) {
       console.error('Erro ao sair:', err);
     } finally {
+      // Limpa primeiro, depois reseta estado
       localStorage.clear();
       sessionStorage.clear();
-      
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.includes('supabase') || key.includes('sb-') || key.includes('auth'))) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-
       setUser(null);
       setRole('consulta');
-
-      // Redireciona limpando os tokens e hashes da URL para evitar re-login automático
       window.location.href = window.location.origin + window.location.pathname;
     }
   }

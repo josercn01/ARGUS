@@ -4,7 +4,7 @@ import { LoginScreen } from '@/components/LoginScreen';
 import { Header, TabKey } from '@/components/Header';
 import { Dashboard } from '@/pages/Dashboard';
 import { AdminLocais } from '@/components/AdminLocais';
-import { AccessManagement } from '@/components/AccessManagement'; // <-- Importa o componente correto
+import { AccessManagement } from '@/components/AccessManagement';
 import { MicrosoftApps } from '@/components/MicrosoftApps';
 import { Loader2 } from 'lucide-react';
 
@@ -40,7 +40,7 @@ export function App() {
           {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
           {activeTab === 'admin-locais' && <AdminLocais />}
           {activeTab === 'permissoes' && <AccessManagement />}
-          {activeTab === 'microsoft-apps' && <MicrosoftApps />}
+          {(activeTab === 'microsoft-apps' || activeTab === 'microsoft_apps' || activeTab === 'aplicativos-microsoft') && <MicrosoftApps />}
         </div>
       </main>
     </div>

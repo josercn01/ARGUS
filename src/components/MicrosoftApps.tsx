@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-export default function MicrosoftApps() {
+export function MicrosoftApps()
+export default MicrosoftApps
+{
   const [logs, setLogs] = useState<string[]>(['Pronto para testar...'])
   const [loading, setLoading] = useState(false)
   const [dados, setDados] = useState<any>(null)

@@ -69,35 +69,36 @@ export const AdminLocais: React.FC = () => {
     return lista.length;
   };
 
+  // CORREÇÃO: fetch nativo com paginação para não travar no supabase-js
   const loadData = async () => {
     setLoading(true);
     try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!supabaseUrl ||!supabaseKey) throw new Error('Credenciais não encontradas');
+
+      const headers = {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      };
+
       let allData: AdminRecord[] = [];
-      let page = 0;
+      let from = 0;
       const pageSize = 1000;
-      let fetchMore = true;
-
-      while (fetchMore) {
-        const { data: dbData, error } = await supabase
-          .from('administradores_locais')
-          .select('*')
-          .order('endereco_logico', { ascending: true })
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-
-        if (error) throw error;
-
-        if (dbData && dbData.length > 0) {
-          allData = [...allData, ...dbData];
-          if (dbData.length < pageSize) {
-            fetchMore = false;
-          } else {
-            page++;
-          }
-        } else {
-          fetchMore = false;
-        }
+      while (true) {
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/administradores_locais?select=*&order=endereco_logico.asc&limit=${pageSize}&offset=${from}`,
+          { headers }
+        );
+        if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
+        const chunk = await res.json();
+        allData = [...allData,...chunk];
+        console.log(`[AdminLocais] Lote ${from}: ${chunk.length} - Total acumulado: ${allData.length}`);
+        if (chunk.length < pageSize) break;
+        from += pageSize;
       }
 
+      console.log('🏢 Locais carregados:', allData.length, 'EXEMPLO:', allData[0]);
       setData(allData);
     } catch (err: any) {
       console.error(`Erro ao carregar dados: ${err.message}`);
@@ -106,18 +107,22 @@ export const AdminLocais: React.FC = () => {
     }
   };
 
+  // CORREÇÃO: histórico também via fetch nativo para não dar timeout
   const loadHistorico = async () => {
     try {
-      const { data: histData, error } = await supabase
-        .from('administradores_locais_historico')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(10);
-
-      if (error) {
-        setHistorico([]);
-        return;
-      }
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!supabaseUrl ||!supabaseKey) { setHistorico([]); return; }
+      const headers = {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      };
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/administradores_locais_historico?select=*&order=updated_at.desc&limit=10`,
+        { headers }
+      );
+      if (!res.ok) { setHistorico([]); return; }
+      const histData = await res.json();
       setHistorico(histData || []);
     } catch (err) {
       setHistorico([]);
@@ -133,13 +138,13 @@ export const AdminLocais: React.FC = () => {
     emailLogado?: string
   ) => {
     try {
-      let autorStr = nomeLogado && emailLogado ? `${nomeLogado} (${emailLogado})` : (nomeLogado || 'Administrador TI');
+      let autorStr = nomeLogado && emailLogado? `${nomeLogado} (${emailLogado})` : (nomeLogado || 'Administrador TI');
       if (!nomeLogado) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const n = user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Administrador TI';
           const e = user.email || '';
-          autorStr = e ? `${n} (${e})` : n;
+          autorStr = e? `${n} (${e})` : n;
         }
       }
 
@@ -212,7 +217,7 @@ export const AdminLocais: React.FC = () => {
 
   const handleSaveRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentRecord.endereco_logico || !currentRecord.administradores) {
+    if (!currentRecord.endereco_logico ||!currentRecord.administradores) {
       alert('Preencha o Endereço Lógico e os Administradores.');
       return;
     }
@@ -220,7 +225,7 @@ export const AdminLocais: React.FC = () => {
     const { data: { user } } = await supabase.auth.getUser();
     const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
     const emailUsuario = user?.email || '';
-    const modificadoPorStr = emailUsuario ? `${nomeUsuario} (${emailUsuario})` : nomeUsuario;
+    const modificadoPorStr = emailUsuario? `${nomeUsuario} (${emailUsuario})` : nomeUsuario;
 
     const host = currentRecord.endereco_logico.trim().toUpperCase();
     const adminsNovos = currentRecord.administradores.trim();
@@ -238,12 +243,12 @@ export const AdminLocais: React.FC = () => {
     try {
       if (isEditing && currentRecord.id) {
         const antigo = data.find((i) => i.id === currentRecord.id);
-        const adminsAntigos = antigo ? antigo.administradores : '';
+        const adminsAntigos = antigo? antigo.administradores : '';
 
         const { error } = await supabase
-          .from('administradores_locais')
-          .update(payload)
-          .eq('id', currentRecord.id);
+         .from('administradores_locais')
+         .update(payload)
+         .eq('id', currentRecord.id);
         if (error) throw error;
 
         await registrarHistorico(host, adminsAntigos, adminsNovos, 'EDIÇÃO', nomeUsuario, emailUsuario);
@@ -286,7 +291,7 @@ export const AdminLocais: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
       const emailUsuario = user?.email || '';
-      const modificadoPorStr = emailUsuario ? `${nomeUsuario} (${emailUsuario}) (REVERSÃO)` : `${nomeUsuario} (REVERSÃO)`;
+      const modificadoPorStr = emailUsuario? `${nomeUsuario} (${emailUsuario}) (REVERSÃO)` : `${nomeUsuario} (REVERSÃO)`;
 
       const existente = data.find(
         (i) => i.endereco_logico.toUpperCase() === itemHist.endereco_logico.toUpperCase()
@@ -305,15 +310,15 @@ export const AdminLocais: React.FC = () => {
 
       if (existente && existente.id) {
         const { error } = await supabase
-          .from('administradores_locais')
-          .update(payload)
-          .eq('id', existente.id);
+         .from('administradores_locais')
+         .update(payload)
+         .eq('id', existente.id);
         if (error) throw error;
       } else {
         const { error } = await supabase.from('administradores_locais').insert([
           {
             endereco_logico: itemHist.endereco_logico,
-            ...payload,
+           ...payload,
             departamento: 'Geral',
             setor: 'Geral'
           }
@@ -349,7 +354,7 @@ export const AdminLocais: React.FC = () => {
         const { data: { user } } = await supabase.auth.getUser();
         const nomeUsuario = user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || 'Administrador TI';
         const emailUsuario = user?.email || '';
-        const modificadoPorStr = emailUsuario ? `${nomeUsuario} (${emailUsuario})` : nomeUsuario;
+        const modificadoPorStr = emailUsuario? `${nomeUsuario} (${emailUsuario})` : nomeUsuario;
 
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
@@ -369,9 +374,9 @@ export const AdminLocais: React.FC = () => {
           const host = (
             row['ENDEREÇO LÓGICO'] || row.ENDERECO_LOGICO || row.Host || row.HOSTNAME || ''
           )
-            .toString()
-            .trim()
-            .toUpperCase();
+           .toString()
+           .trim()
+           .toUpperCase();
 
           const admins = (
             row['ADMINISTRADORES LOCAIS'] ||
@@ -380,8 +385,8 @@ export const AdminLocais: React.FC = () => {
             row.Admins ||
             ''
           )
-            .toString()
-            .trim();
+           .toString()
+           .trim();
 
           if (!host) continue;
 
@@ -407,7 +412,7 @@ export const AdminLocais: React.FC = () => {
               modificado_por: modificadoPorStr,
               updated_at: new Date().toISOString()
             });
-            if (existing.administradores !== admins) {
+            if (existing.administradores!== admins) {
               await registrarHistorico(host, existing.administradores, admins, 'IMPORTAÇÃO (ATUALIZAÇÃO)', nomeUsuario, emailUsuario);
             }
           }
@@ -441,7 +446,7 @@ export const AdminLocais: React.FC = () => {
       'SETOR': item.setor || '',
       'ALERTAS': item.alerta || 'OK',
       'MODIFICADO POR': item.modificado_por || '',
-      'ÚLTIMA ATUALIZAÇÃO': item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR') : ''
+      'ÚLTIMA ATUALIZAÇÃO': item.updated_at? new Date(item.updated_at).toLocaleString('pt-BR') : ''
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -454,13 +459,13 @@ export const AdminLocais: React.FC = () => {
     const searchLower = search.toLowerCase().trim();
     return data.filter((item) => {
       const matchesSearch =
-        !searchLower ||
+       !searchLower ||
         item.endereco_logico.toLowerCase().includes(searchLower) ||
         item.administradores.toLowerCase().includes(searchLower) ||
         (item.departamento && item.departamento.toLowerCase().includes(searchLower)) ||
         (item.setor && item.setor.toLowerCase().includes(searchLower));
 
-      const matchesAlerta = !filterAlerta || item.alerta === 'Revisar permissionamento';
+      const matchesAlerta =!filterAlerta || item.alerta === 'Revisar permissionamento';
       return matchesSearch && matchesAlerta;
     });
   }, [data, search, filterAlerta]);
@@ -501,10 +506,10 @@ export const AdminLocais: React.FC = () => {
             Novo Cadastro
           </button>
 
-          <label className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 cursor-pointer transition-colors shadow-sm text-sm font-medium ${importing ? 'opacity-50' : ''}`}>
+          <label className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 cursor-pointer transition-colors shadow-sm text-sm font-medium ${importing? 'opacity-50' : ''}`}>
             <Upload className="w-4 h-4" />
-            {importing ? 'Importando...' : 'Importar Planilha'}
-            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={importing} className="hidden" />
+            {importing? 'Importando...' : 'Importar Planilha'}
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} disabled={importing} className="hidden" />
           </label>
 
           <button
@@ -516,7 +521,7 @@ export const AdminLocais: React.FC = () => {
           </button>
 
           <button onClick={loadData} title="Recarregar" className="p-2 bg-[#0f172a] border border-[#1e293b] rounded-lg text-slate-300 hover:bg-[#1e293b]">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading? 'animate-spin' : ''}`} />
           </button>
         </div>
       </header>
@@ -549,9 +554,9 @@ export const AdminLocais: React.FC = () => {
           </div>
         </div>
 
-        <div 
-          onClick={() => setFilterAlerta(!filterAlerta)} 
-          className={`p-5 rounded-2xl border cursor-pointer transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${filterAlerta ? 'bg-[#0b1329] border-amber-500 ring-2 ring-amber-500/30' : 'bg-[#0b1329] border-[#1e293b] hover:border-amber-500/40'}`}
+        <div
+          onClick={() => setFilterAlerta(!filterAlerta)}
+          className={`p-5 rounded-2xl border cursor-pointer transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${filterAlerta? 'bg-[#0b1329] border-amber-500 ring-2 ring-amber-500/30' : 'bg-[#0b1329] border-[#1e293b] hover:border-amber-500/40'}`}
         >
           <div>
             <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Alertas</p>
@@ -677,9 +682,9 @@ export const AdminLocais: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e293b]">
-              {loading ? (
+              {loading? (
                 <tr><td colSpan={6} className="p-8 text-center text-slate-400">Carregando dados...</td></tr>
-              ) : filteredData.length === 0 ? (
+              ) : filteredData.length === 0? (
                 <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
               ) : (
                 filteredData.map((item) => {
@@ -698,7 +703,7 @@ export const AdminLocais: React.FC = () => {
                           const modPor = item.modificado_por || 'Sistema';
                           const parts = modPor.split(/[-–()]+/);
                           const nome = parts[0]?.trim() || modPor;
-                          const email = parts[1]?.trim() || (parts.length > 2 ? parts[2]?.trim() : '');
+                          const email = parts[1]?.trim() || (parts.length > 2? parts[2]?.trim() : '');
 
                           return (
                             <div>
@@ -708,12 +713,12 @@ export const AdminLocais: React.FC = () => {
                               </div>
                               {email && (
                                 <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                                  {email.includes('@') ? email : `@${email}`}
+                                  {email.includes('@')? email : `@${email}`}
                                 </div>
                               )}
                               <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-1">
                                 <Clock className="w-3 h-3" />
-                                {item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR') : '-'}
+                                {item.updated_at? new Date(item.updated_at).toLocaleString('pt-BR') : '-'}
                               </div>
                             </div>
                           );
@@ -751,7 +756,7 @@ export const AdminLocais: React.FC = () => {
             </div>
             <div className="p-6 max-h-[70vh] overflow-y-auto space-y-3">
               <p className="text-xs text-slate-400 mb-2">Selecione abaixo a alteração que deseja reverter (desfazer):</p>
-              {historico.length === 0 ? (
+              {historico.length === 0? (
                 <p className="text-center text-slate-400 py-8">Nenhum histórico recente registrado.</p>
               ) : (
                 historico.map((hist) => (
@@ -790,7 +795,7 @@ export const AdminLocais: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0b1329] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-[#1e293b] text-slate-100">
             <div className="flex items-center justify-between p-5 border-b border-[#1e293b] bg-[#0f172a]">
-              <h3 className="text-lg font-bold text-white">{isEditing ? 'Editar Estação e Administradores' : 'Novo Cadastro de Estação'}</h3>
+              <h3 className="text-lg font-bold text-white">{isEditing? 'Editar Estação e Administradores' : 'Novo Cadastro de Estação'}</h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSaveRecord} className="p-6 space-y-4">
@@ -801,7 +806,7 @@ export const AdminLocais: React.FC = () => {
                   required
                   placeholder="EX: ST01234"
                   value={currentRecord.endereco_logico || ''}
-                  onChange={(e) => setCurrentRecord({ ...currentRecord, endereco_logico: e.target.value })}
+                  onChange={(e) => setCurrentRecord({...currentRecord, endereco_logico: e.target.value })}
                   className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm uppercase font-mono text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -813,7 +818,7 @@ export const AdminLocais: React.FC = () => {
                   rows={3}
                   placeholder="usuario1 | usuario2 | Administrator"
                   value={currentRecord.administradores || ''}
-                  onChange={(e) => setCurrentRecord({ ...currentRecord, administradores: e.target.value })}
+                  onChange={(e) => setCurrentRecord({...currentRecord, administradores: e.target.value })}
                   className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -825,7 +830,7 @@ export const AdminLocais: React.FC = () => {
                     type="text"
                     placeholder="Ex: STI"
                     value={currentRecord.departamento || ''}
-                    onChange={(e) => setCurrentRecord({ ...currentRecord, departamento: e.target.value })}
+                    onChange={(e) => setCurrentRecord({...currentRecord, departamento: e.target.value })}
                     className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -835,7 +840,7 @@ export const AdminLocais: React.FC = () => {
                     type="text"
                     placeholder="Ex: Suporte"
                     value={currentRecord.setor || ''}
-                    onChange={(e) => setCurrentRecord({ ...currentRecord, setor: e.target.value })}
+                    onChange={(e) => setCurrentRecord({...currentRecord, setor: e.target.value })}
                     className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -847,7 +852,7 @@ export const AdminLocais: React.FC = () => {
                   type="text"
                   placeholder="Motivo da permissão especial..."
                   value={currentRecord.justificativa || ''}
-                  onChange={(e) => setCurrentRecord({ ...currentRecord, justificativa: e.target.value })}
+                  onChange={(e) => setCurrentRecord({...currentRecord, justificativa: e.target.value })}
                   className="w-full px-3 py-2 bg-[#0f172a] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

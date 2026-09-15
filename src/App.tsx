@@ -24,6 +24,14 @@ export function App() {
     return <LoginScreen />;
   }
 
+  // Normaliza a aba ativa para lowercase e remove caracteres especiais para comparação segura
+  const normalizedTab = String(activeTab || '').toLowerCase().trim();
+
+  const isDashboard = normalizedTab === 'dashboard' || normalizedTab === '';
+  const isAdminLocais = normalizedTab.includes('local') || normalizedTab.includes('admin-locais');
+  const isPermissoes = normalizedTab.includes('permiss') || normalizedTab.includes('access');
+  const isMicrosoft = normalizedTab.includes('microsoft') || normalizedTab.includes('aplicativ');
+
   return (
     <div className="min-h-screen bg-[#000d17] text-white flex">
       {/* Sidebar Fixa na Esquerda */}
@@ -37,16 +45,10 @@ export function App() {
       {/* Conteúdo Principal */}
       <main className="flex-1 ml-72 p-8 overflow-x-hidden">
         <div className="max-w-7xl mx-auto">
-          {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
-          {activeTab === 'admin-locais' && <AdminLocais />}
-          {activeTab === 'permissoes' && <AccessManagement />}
-          {(
-            activeTab === 'microsoft-apps' || 
-            activeTab === 'microsoft_apps' || 
-            activeTab === 'aplicativos-microsoft' || 
-            activeTab === 'aplicativos_microsoft' ||
-            activeTab === 'microsoft'
-          ) && <MicrosoftApps />}
+          {isDashboard && <Dashboard user={user} role={role} />}
+          {isAdminLocais && <AdminLocais />}
+          {isPermissoes && <AccessManagement />}
+          {isMicrosoft && <MicrosoftApps />}
         </div>
       </main>
     </div>

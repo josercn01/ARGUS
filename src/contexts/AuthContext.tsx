@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-type Role = 'super_admin' | 'admin' | 'consulta'
+type Role = 'super_admin' | 'admin' | 'editor' | 'consulta'
 const AuthContext = createContext<any>(null)
 
 export function AuthProvider({ children }: any) {
@@ -17,26 +17,27 @@ export function AuthProvider({ children }: any) {
         const { data } = await supabase.auth.getSession()
         if (mounted && data.session?.user) {
           setUser(data.session.user)
-          // busca role SEM travar
           const { data: perm } = await supabase
             .from('permissoes_usuarios')
             .select('role')
             .ilike('email', data.session.user.email!)
             .maybeSingle()
           
-          if (perm?.role) setRole(perm.role as Role)
-          else if (data.session.user.email?.toLowerCase() === 'josercr@senado.leg.br') setRole('super_admin')
+          if (perm?.role) {
+            setRole(perm.role.toLowerCase() as Role)
+          } else if (data.session.user.email?.toLowerCase() === 'josercn@senado.leg.br') {
+            // CORRIGIDO AQUI: era josercr, agora josercn
+            setRole('super_admin')
+          }
         }
       } catch (e) {
         console.error('Auth init error', e)
       } finally {
-        if (mounted) setLoading(false) // <--- ISSO DESTRAVA O BOTÃO
+        if (mounted) setLoading(false)
       }
     }
 
-    // Safety: destrava em 3s de qualquer jeito
     const timeout = setTimeout(() => setLoading(false), 3000)
-    
     init()
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -47,9 +48,10 @@ export function AuthProvider({ children }: any) {
           .select('role')
           .ilike('email', session.user.email!)
           .maybeSingle()
-        if (perm?.role) setRole(perm.role as Role)
+        if (perm?.role) setRole(perm.role.toLowerCase() as Role)
       } else {
         setUser(null)
+        setRole('consulta')
       }
       setLoading(false)
     })
@@ -69,8 +71,15 @@ export function AuthProvider({ children }: any) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      localStorage.clear()
+      sessionStorage.clear()
+      setUser(null)
+      setRole('consulta')
+      window.location.href = '/' // FORÇA SAIR
+    }
   }
 
   return (

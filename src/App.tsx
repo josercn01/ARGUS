@@ -1,10 +1,16 @@
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginScreen } from '@/components/LoginScreen';
+import { Header, TabKey } from '@/components/Header';
 import { Dashboard } from '@/pages/Dashboard';
+import { AdminLocais } from '@/components/AdminLocais'; // Ajuste o caminho se necessário
+import { Permissoes } from '@/components/Permissoes';     // Ajuste o caminho se necessário
+import { MicrosoftApps } from '@/components/MicrosoftApps';
 import { Loader2 } from 'lucide-react';
 
 export function App() {
   const { user, role, loading } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
 
   if (loading) {
     return (
@@ -18,7 +24,27 @@ export function App() {
     return <LoginScreen />;
   }
 
-  return <Dashboard user={user} role={role} />;
+  return (
+    <div className="min-h-screen bg-[#000d17] text-white flex">
+      {/* Sidebar Fixa na Esquerda */}
+      <Header 
+        user={user} 
+        role={role} 
+        activeTab={activeTab} 
+        onTabChange={setActiveTab} 
+      />
+
+      {/* Conteúdo Principal da Aplicação com margem para compensar a sidebar (ml-72) */}
+      <main className="flex-1 ml-72 p-8 overflow-x-hidden">
+        <div className="max-w-7xl mx-auto">
+          {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
+          {activeTab === 'admin-locais' && <AdminLocais />}
+          {activeTab === 'permissoes' && <Permissoes />}
+          {activeTab === 'microsoft-apps' && <MicrosoftApps />}
+        </div>
+      </main>
+    </div>
+  );
 }
 
 export default App;

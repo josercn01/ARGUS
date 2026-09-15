@@ -44,11 +44,12 @@ export function AccessManagement({ currentUserEmail }: any) {
     finally { setSaving(false) }
   }
 
+  // CORRIGIDO: usa email=eq. em vez de id
   const handleEditar = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      const res = await fetch(`${url}/rest/v1/permissoes_usuarios?id=eq.${editingUser.id}`, {
+      const res = await fetch(`${url}/rest/v1/permissoes_usuarios?email=eq.${encodeURIComponent(editingUser.email)}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ role: novoPerfil })
@@ -59,9 +60,13 @@ export function AccessManagement({ currentUserEmail }: any) {
     finally { setSaving(false) }
   }
 
-  const handleExcluir = async (id: string, email: string) => {
+  // CORRIGIDO: usa só email
+  const handleExcluir = async (email: string) => {
     if (!confirm(`Remover ${email}?`)) return
-    await fetch(`${url}/rest/v1/permissoes_usuarios?id=eq.${id}`, { method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${key}` } })
+    await fetch(`${url}/rest/v1/permissoes_usuarios?email=eq.${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    })
     loadAcessos()
   }
 
@@ -93,13 +98,13 @@ export function AccessManagement({ currentUserEmail }: any) {
         <div className="max-h-[600px] overflow-y-auto">
           {loading? <div className="p-10 text-center text-slate-400">Carregando...</div>
           : filtrados.map((a: any) => (
-              <div key={a.id} className="grid grid-cols-4 gap-4 p-4 text-xs border-b border-white/5 hover:bg-white/5 text-slate-300">
+              <div key={a.email} className="grid grid-cols-4 gap-4 p-4 text-xs border-b border-white/5 hover:bg-white/5 text-slate-300">
                 <span className="font-mono truncate">{a.email}</span>
                 <span><span className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">{a.role}</span></span>
-                <span>{new Date(a.created_at).toLocaleString('pt-BR')}</span>
+                <span>{a.created_at? new Date(a.created_at).toLocaleString('pt-BR') : '-'}</span>
                 <span className="flex gap-3">
                   <button onClick={() => openEdit(a)} className="text-yellow-400 hover:text-yellow-300 flex items-center gap-1"><Pencil className="w-3 h-3" /> Editar</button>
-                  <button onClick={() => handleExcluir(a.id, a.email)} className="text-rose-400 hover:text-rose-300">Excluir</button>
+                  <button onClick={() => handleExcluir(a.email)} className="text-rose-400 hover:text-rose-300">Excluir</button>
                 </span>
               </div>
             ))}

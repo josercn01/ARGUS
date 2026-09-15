@@ -25,7 +25,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#000d17] text-white flex">
+    <div className="min-h-screen w-full bg-[#000d17] text-white flex overflow-x-hidden">
       {/* Sidebar Fixa na Esquerda */}
       <Header 
         user={user} 
@@ -34,9 +34,9 @@ export function App() {
         onTabChange={setActiveTab} 
       />
 
-      {/* Conteúdo Principal */}
-      <main className="flex-1 ml-72 p-8 overflow-x-hidden">
-        <div className="max-w-7xl mx-auto">
+      {/* Conteúdo Principal com altura mínima total e margem garantida */}
+      <main className="flex-1 ml-72 min-h-screen p-8 bg-[#000d17] box-border">
+        <div className="max-w-7xl mx-auto w-full">
           {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
           {activeTab === 'admin-locais' && <AdminLocais />}
           {activeTab === 'permissoes' && <AccessManagement />}

@@ -1,112 +1,87 @@
-import { useState, useEffect } from 'react';
-import { Cloud, Bug, CheckCircle, AlertTriangle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
-export function MicrosoftApps() {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
+export default function MicrosoftApps() {
+  const [logs, setLogs] = useState<string[]>(['Pronto para testar...'])
+  const [loading, setLoading] = useState(false)
+  const [dados, setDados] = useState<any>(null)
 
-  const addLog = (msg: string) => {
-    console.log(`[ARGUS DEBUG] ${msg}`);
-    setLogs(prev => [...prev, `${new Date().toLocaleTimeString()} - ${msg}`]);
-  };
+  const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`,...prev])
 
-  useEffect(() => {
-    addLog('Componente MicrosoftApps montado com sucesso no DOM.');
-    
-    // Testa a sessão do Supabase imediatamente ao carregar
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) {
-        addLog(`Erro ao buscar sessão: ${error.message}`);
-      } else if (data.session) {
-        setSessionInfo(data.session);
-        addLog(`Sessão ativa encontrada para o usuário: ${data.session.user?.email}`);
-        if (data.session.provider_token) {
-          addLog('Provider Token da Microsoft presente na sessão! ✅');
-        } else {
-          addLog('AVISO: Provider Token está VAZIO (Falta refazer o login com a Microsoft). ❌');
-        }
-      } else {
-        addLog('Nenhuma sessão ativa encontrada.');
-      }
-    });
-  }, []);
-
-  const handleTestInvoke = async () => {
-    addLog('Iniciando teste de chamada para a Edge Function sync-m365...');
+  const testar = async () => {
+    setLoading(true)
+    setLogs([])
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const providerToken = session?.provider_token;
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.provider_token
+      addLog(token? `Provider Token presente ✅ (${token.substring(0,20)}...)` : 'Provider Token vazio ❌ - faça logout/login')
 
-      if (!providerToken) {
-        addLog('Erro: Token não disponível para envio.');
-        alert('Token não encontrado na sessão.');
-        return;
-      }
+      if (!token) throw new Error('Token vazio. Seu AuthContext ainda não está com offline_access')
 
-      addLog('Enviando requisição para a Edge Function...');
+      addLog('Chamando edge sync-m365...')
       const { data, error } = await supabase.functions.invoke('sync-m365', {
-        body: { providerToken }
-      });
+        body: { providerToken: token }
+      })
 
-      if (error) {
-        addLog(`Erro retornado pela Edge Function: ${JSON.stringify(error)}`);
-      } else {
-        addLog(`Sucesso! Resposta recebida: ${JSON.stringify(data).substring(0, 100)}...`);
-      }
-    } catch (err: any) {
-      addLog(`Exceção capturada: ${err.message || err}`);
+      if (error) throw error
+      if (!data.success) throw new Error(data.error)
+
+      addLog(`Sucesso! ${data.totalUsuarios} usuários, ${data.totalLicenciados} licenciados`)
+      setDados(data)
+
+    } catch (e: any) {
+      addLog(`ERRO: ${e.message}`)
+    } finally {
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="w-full bg-[#0b1329] border border-cyan-500/40 p-6 rounded-2xl text-white space-y-6 shadow-2xl">
-      <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-        <div className="w-10 h-10 bg-cyan-500/20 border border-cyan-500 rounded-xl flex items-center justify-center text-cyan-400">
-          <Bug className="w-5 h-5 animate-pulse" />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-white">Painel de Diagnóstico - Microsoft Apps</h2>
-          <p className="text-xs text-slate-400">Este painel rastreia visualmente a execução e o estado da aba.</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex gap-3">
+        <button onClick={testar} disabled={loading} className="bg-[#D4AF37] text-black px-6 py-2 rounded font-bold disabled:opacity-50">
+          {loading? 'Testando...' : 'Testar Conexão'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-black/40 border border-white/10 p-4 rounded-xl space-y-2">
-          <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Status da Autenticação</h3>
-          <p className="text-xs text-slate-300">
-            <strong>Usuário Logado:</strong> {sessionInfo?.user?.email || 'Verificando...'}
-          </p>
-          <p className="text-xs text-slate-300">
-            <strong>Provider Token:</strong> {sessionInfo?.provider_token ? 'Disponível (Ativo)' : 'Ausente / Nulo'}
-          </p>
-          <button 
-            onClick={handleTestInvoke}
-            className="mt-3 w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-2 px-4 rounded-lg transition cursor-pointer"
-          >
-            Testar Conexão com Edge Function
-          </button>
-        </div>
-
-        <div className="bg-black/40 border border-white/10 p-4 rounded-xl space-y-2">
-          <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Renderização do Layout</h3>
-          <p className="text-xs text-slate-300 flex items-center gap-1.5">
-            <CheckCircle className="w-4 h-4 text-emerald-400" /> O container está visível no DOM.
-          </p>
-          <p className="text-[11px] text-slate-400">
-            Se você está vendo esta caixa na tela, o problema de tela preta foi superado e o componente está ativo.
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-black/60 border border-white/10 p-4 rounded-xl space-y-2 font-mono text-[11px]">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Log de Execução em Tempo Real:</h3>
-        <div className="max-h-40 overflow-y-auto space-y-1 text-cyan-300">
-          {logs.map((log, idx) => (
-            <div key={idx}>&gt; {log}</div>
+      {/* Cards de Licenças */}
+      {dados?.licencasContagem && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {dados.licencasContagem.map((lic: any) => (
+            <div key={lic.skuId} className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
+              <p className="text-zinc-400 text-sm">{lic.nome}</p>
+              <p className="text-2xl font-bold text-white">{lic.total} usuários</p>
+              <p className="text-xs text-zinc-500 truncate">{lic.skuId}</p>
+            </div>
           ))}
         </div>
+      )}
+
+      {/* Tabela de Usuários */}
+      {dados?.users && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-zinc-800 font-bold">Usuários ({dados.totalUsuarios})</div>
+          <div className="overflow-auto max-h-[400px]">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-zinc-800 text-zinc-400"><tr><th className="p-3">Nome</th><th className="p-3">Email</th><th className="p-3">Licenças</th></tr></thead>
+              <tbody>
+                {dados.users.map((u: any) => (
+                  <tr key={u.id} className="border-t border-zinc-800">
+                    <td className="p-3">{u.displayName}</td>
+                    <td className="p-3 text-zinc-400">{u.mail || u.userPrincipalName}</td>
+                    <td className="p-3">{u.licencasNomes?.map((l:any)=>l.nome).join(', ') || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Log de Debug */}
+      <div className="bg-black border border-zinc-800 rounded-xl p-4 font-mono text-xs h-48 overflow-auto">
+        {logs.map((l,i)=><div key={i} className="text-zinc-300">{l}</div>)}
       </div>
     </div>
-  );
+  )
 }

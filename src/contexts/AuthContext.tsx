@@ -80,7 +80,10 @@ export function AuthProvider({ children }: any) {
   const signInWithMicrosoft = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: { scopes: 'email openid profile' }
+      options: { 
+        scopes: 'openid profile email User.Read User.ReadBasic.All',
+        redirectTo: window.location.origin
+      }
     })
   }
 

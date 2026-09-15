@@ -182,13 +182,16 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
       }));
 
       let insertedIds: any[] = [];
-      setLogs(prev=>[...prev, `Inserindo usuários em lotes...`]);
+      setLogs(prev=>[...prev, `Inserindo usuários em lotes (tratando conflitos por login)...`]);
 
       for(let i=0; i<payload.length; i+=100){
         const lote = payload.slice(i, i+100);
-        const resUser = await fetch(`${supabaseUrl}/rest/v1/usuarios`, {
+        const resUser = await fetch(`${supabaseUrl}/rest/v1/usuarios?on_conflict=login`, {
           method: 'POST',
-          headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=representation' },
+          headers: { 
+            ...headers, 
+            'Prefer': 'resolution=merge-duplicates,return=representation' 
+          },
           body: JSON.stringify(lote)
         });
         
@@ -235,7 +238,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
       setAdicionados(listaNovos); 
       setProgress(100); 
       setStatus('success'); 
-      setLogs(prev=>[...prev, `✓ Importação concluída com sucesso! ${listaNovos.length} adicionados.`]); 
+      setLogs(prev=>[...prev, `✓ Importação concluída com sucesso! ${listaNovos.length} processados.`]); 
       onRefresh?.();
 
     } catch(err:any){ 

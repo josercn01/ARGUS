@@ -26,17 +26,12 @@ export function App() {
 
   return (
     <div className="min-h-screen w-full bg-[#000d17] text-white flex overflow-x-hidden">
-      <Header
-        user={user}
-        role={role}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
+      <Header user={user} role={role} activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 ml-72 min-h-screen p-8 bg-[#000d17] box-border">
         <div className="max-w-7xl mx-auto w-full">
           {activeTab === 'dashboard' && <Dashboard user={user} role={role} />}
-          {activeTab === 'admin-locais' && <AdminLocais />}
-          {activeTab === 'permissoes' && <AccessManagement />}
+          {activeTab === 'admin-locais' && <AdminLocais role={role} />}
+          {activeTab === 'permissoes' && <AccessManagement currentRole={role} currentUserEmail={user?.email || ''} />}
           {activeTab === 'microsoft-apps' && <MicrosoftApps />}
         </div>
       </main>

@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-export function MicrosoftApps()
-export default MicrosoftApps
-{
+export function MicrosoftApps() {
   const [logs, setLogs] = useState<string[]>(['Pronto para testar...'])
   const [loading, setLoading] = useState(false)
   const [dados, setDados] = useState<any>(null)
 
-  const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`,...prev])
+  const addLog = (msg: string) => {
+    setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`,...prev])
+  }
 
   const testar = async () => {
     setLoading(true)
@@ -16,9 +16,11 @@ export default MicrosoftApps
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.provider_token
-      addLog(token? `Provider Token presente ✅ (${token.substring(0,20)}...)` : 'Provider Token vazio ❌ - faça logout/login')
+      addLog(token? `Provider Token presente ✅ (${token.substring(0, 20)}...)` : 'Provider Token vazio ❌ - faça logout/login')
 
-      if (!token) throw new Error('Token vazio. Seu AuthContext ainda não está com offline_access')
+      if (!token) {
+        throw new Error('Token vazio. Faça logout e login novamente.')
+      }
 
       addLog('Chamando edge sync-m365...')
       const { data, error } = await supabase.functions.invoke('sync-m365', {
@@ -26,11 +28,10 @@ export default MicrosoftApps
       })
 
       if (error) throw error
-      if (!data.success) throw new Error(data.error)
+      if (!data?.success) throw new Error(data?.error || 'Erro desconhecido')
 
       addLog(`Sucesso! ${data.totalUsuarios} usuários, ${data.totalLicenciados} licenciados`)
       setDados(data)
-
     } catch (e: any) {
       addLog(`ERRO: ${e.message}`)
     } finally {
@@ -41,12 +42,15 @@ export default MicrosoftApps
   return (
     <div className="space-y-6">
       <div className="flex gap-3">
-        <button onClick={testar} disabled={loading} className="bg-[#D4AF37] text-black px-6 py-2 rounded font-bold disabled:opacity-50">
+        <button
+          onClick={testar}
+          disabled={loading}
+          className="bg-[#D4AF37] text-black px-6 py-2 rounded font-bold disabled:opacity-50"
+        >
           {loading? 'Testando...' : 'Testar Conexão'}
         </button>
       </div>
 
-      {/* Cards de Licenças */}
       {dados?.licencasContagem && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {dados.licencasContagem.map((lic: any) => (
@@ -59,19 +63,26 @@ export default MicrosoftApps
         </div>
       )}
 
-      {/* Tabela de Usuários */}
       {dados?.users && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-zinc-800 font-bold">Usuários ({dados.totalUsuarios})</div>
+          <div className="p-4 border-b border-zinc-800 font-bold text-white">
+            Usuários ({dados.totalUsuarios})
+          </div>
           <div className="overflow-auto max-h-[400px]">
             <table className="w-full text-sm text-left">
-              <thead className="bg-zinc-800 text-zinc-400"><tr><th className="p-3">Nome</th><th className="p-3">Email</th><th className="p-3">Licenças</th></tr></thead>
+              <thead className="bg-zinc-800 text-zinc-400">
+                <tr>
+                  <th className="p-3">Nome</th>
+                  <th className="p-3">Email</th>
+                  <th className="p-3">Licenças</th>
+                </tr>
+              </thead>
               <tbody>
                 {dados.users.map((u: any) => (
-                  <tr key={u.id} className="border-t border-zinc-800">
+                  <tr key={u.id} className="border-t border-zinc-800 text-white">
                     <td className="p-3">{u.displayName}</td>
                     <td className="p-3 text-zinc-400">{u.mail || u.userPrincipalName}</td>
-                    <td className="p-3">{u.licencasNomes?.map((l:any)=>l.nome).join(', ') || '-'}</td>
+                    <td className="p-3">{u.licencasNomes?.map((l: any) => l.nome).join(', ') || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -80,10 +91,13 @@ export default MicrosoftApps
         </div>
       )}
 
-      {/* Log de Debug */}
       <div className="bg-black border border-zinc-800 rounded-xl p-4 font-mono text-xs h-48 overflow-auto">
-        {logs.map((l,i)=><div key={i} className="text-zinc-300">{l}</div>)}
+        {logs.map((l, i) => (
+          <div key={i} className="text-zinc-300">{l}</div>
+        ))}
       </div>
     </div>
   )
 }
+
+export default MicrosoftApps

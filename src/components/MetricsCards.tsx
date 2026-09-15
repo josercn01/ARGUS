@@ -103,7 +103,6 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
         throw new Error('Cabeçalho inválido. As colunas "Email" e "NomeCompleto" são obrigatórias.');
       }
 
-      const emailsExistentes = new Set((data||[]).map((u:any)=>(u.email||'').toLowerCase().trim()));
       const novosMap = new Map<string, any>();
 
       for(let i=1; i<lines.length; i++){
@@ -112,16 +111,28 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
         const emailLow = emailRaw?.toLowerCase(); 
         
         if(!emailLow || !emailLow.includes('@')) continue;
-        if(emailsExistentes.has(emailLow) || novosMap.has(emailLow)) continue;
+        
+        const login = emailLow.split('@')[0].trim();
+        if(!login) continue;
 
-        novosMap.set(emailLow, { 
-          email_original: emailRaw, 
-          nome: cols[idxNome] || 'Desconhecido', 
-          depto: idxDepto !== -1 ? cols[idxDepto] : '', 
-          cargo: idxCargo !== -1 ? cols[idxCargo] : '', 
-          produto: idxProd !== -1 ? cols[idxProd] : '', 
-          tipo: idxTipo !== -1 ? cols[idxTipo] : '' 
-        });
+        if(novosMap.has(login)) {
+          const regExistente = novosMap.get(login);
+          const tiposAtuais = regExistente.tipo.split('|').map((t:string)=>t.trim());
+          const novosTipos = (cols[idxTipo] || '').split('|').map((t:string)=>t.trim());
+          
+          const combinado = Array.from(new Set([...tiposAtuais, ...novosTipos])).filter(Boolean).join(' | ');
+          regExistente.tipo = combinado;
+        } else {
+          novosMap.set(login, { 
+            email_original: emailRaw, 
+            login: login,
+            nome: cols[idxNome] || 'Desconhecido', 
+            depto: idxDepto !== -1 ? cols[idxDepto] : '', 
+            cargo: idxCargo !== -1 ? cols[idxCargo] : '', 
+            produto: idxProd !== -1 ? cols[idxProd] : '', 
+            tipo: idxTipo !== -1 ? cols[idxTipo] : '' 
+          });
+        }
       }
 
       const listaNovos = Array.from(novosMap.values());
@@ -129,13 +140,13 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
       setLogs(prev=>[
         ...prev, 
         `Total no arquivo: ${totalRegistrosArquivo} registros.`,
-        `Novos identificados para importar: ${listaNovos.length} registros.`
+        `Registros únicos consolidados para importar: ${listaNovos.length}.`
       ]);
 
       if(listaNovos.length === 0){ 
         setProgress(100); 
         setStatus('success'); 
-        setLogs(prev=>[...prev, 'Nenhum registro novo encontrado (todos já cadastrados).']);
+        setLogs(prev=>[...prev, 'Nenhum registro válido encontrado.']);
         return; 
       }
 
@@ -169,7 +180,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
 
       const payload = listaNovos.map(r=>({ 
         email: r.email_original, 
-        login: r.email_original.split('@')[0].toLowerCase(), 
+        login: r.login, 
         colaborador: r.nome, 
         nome: r.nome, 
         nome_completo: r.nome, 
@@ -182,7 +193,7 @@ export function MetricsCards({ data, softwares, onEditSoftware, onRefresh }: any
       }));
 
       let insertedIds: any[] = [];
-      setLogs(prev=>[...prev, `Inserindo usuários em lotes (tratando conflitos por login)...`]);
+      setLogs(prev=>[...prev, `Inserindo usuários em lotes (sem chaves duplicadas)...`]);
 
       for(let i=0; i<payload.length; i+=100){
         const lote = payload.slice(i, i+100);

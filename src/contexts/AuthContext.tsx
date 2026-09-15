@@ -12,22 +12,46 @@ export function AuthProvider({ children }: any) {
   useEffect(() => {
     let mounted = true
 
+    async function evaluateUser(sessionUser: any) {
+      if (!sessionUser) {
+        setUser(null)
+        setRole('consulta')
+        return
+      }
+
+      setUser(sessionUser)
+      const emailUser = sessionUser.email?.toLowerCase() || ''
+
+      // REGRA SUPREMA: Força super_admin imediatamente para o seu e-mail
+      if (emailUser === 'josercn@senado.leg.br') {
+        setRole('super_admin')
+        return
+      }
+
+      // Busca na tabela de permissões para os demais usuários
+      try {
+        const { data: perm } = await supabase
+          .from('permissoes_usuarios')
+          .select('role')
+          .ilike('email', emailUser)
+          .maybeSingle()
+        
+        if (perm?.role) {
+          setRole(perm.role.toLowerCase() as Role)
+        } else {
+          setRole('consulta')
+        }
+      } catch (e) {
+        console.error('Erro ao buscar permissão', e)
+        setRole('consulta')
+      }
+    }
+
     async function init() {
       try {
         const { data } = await supabase.auth.getSession()
-        if (mounted && data.session?.user) {
-          setUser(data.session.user)
-          const { data: perm } = await supabase
-            .from('permissoes_usuarios')
-            .select('role')
-            .ilike('email', data.session.user.email!)
-            .maybeSingle()
-          
-          if (perm?.role) {
-            setRole(perm.role.toLowerCase() as Role)
-          } else if (data.session.user.email?.toLowerCase() === 'josercn@senado.leg.br') {
-            setRole('super_admin')
-          }
+        if (mounted) {
+          await evaluateUser(data.session?.user)
         }
       } catch (e) {
         console.error('Auth init error', e)
@@ -40,24 +64,10 @@ export function AuthProvider({ children }: any) {
     init()
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        setUser(session.user)
-        const { data: perm } = await supabase
-          .from('permissoes_usuarios')
-          .select('role')
-          .ilike('email', session.user.email!)
-          .maybeSingle()
-        
-        if (perm?.role) {
-          setRole(perm.role.toLowerCase() as Role)
-        } else if (session.user.email?.toLowerCase() === 'josercn@senado.leg.br') {
-          setRole('super_admin')
-        }
-      } else {
-        setUser(null)
-        setRole('consulta')
+      if (mounted) {
+        await evaluateUser(session?.user)
+        setLoading(false)
       }
-      setLoading(false)
     })
 
     return () => {
@@ -76,27 +86,27 @@ export function AuthProvider({ children }: any) {
 
   const signOut = async () => {
     try {
-      // Encerra a sessão globalmente no Supabase
       await supabase.auth.signOut({ scope: 'global' });
     } catch (err) {
       console.error('Erro ao sair:', err);
     } finally {
-      // Limpeza profunda de armazenamentos e tokens residuais
       localStorage.clear();
       sessionStorage.clear();
       
+      const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.includes('supabase') || key.includes('sb-'))) {
-          localStorage.removeItem(key);
+        if (key && (key.includes('supabase') || key.includes('sb-') || key.includes('auth'))) {
+          keysToRemove.push(key);
         }
       }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
 
       setUser(null);
       setRole('consulta');
 
-      // Redireciona e limpa o histórico da sessão atual
-      window.location.replace('/');
+      // Redireciona limpando os tokens e hashes da URL para evitar re-login automático
+      window.location.href = window.location.origin + window.location.pathname;
     }
   }
 

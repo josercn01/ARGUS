@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-// Dados totais tirados do seu print do admin center
 const PRODUTOS = [
   { id: 'CopilotStudioViral', nome: 'Avaliação de Viral do Microsoft Copilot Studio', total: 10000 },
   { id: 'StreamViral', nome: 'Avaliação do Microsoft Stream', total: 1000000 },
@@ -30,7 +29,7 @@ const MAP_PART: Record<string, string> = {
   "FLOW_FREE": "FLOW_FREE", "STANDARDPACK": "STANDARDPACK"
 };
 
-export default function Licencas() {
+export function MicrosoftApps() {
   const [contagem, setContagem] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -46,6 +45,7 @@ export default function Licencas() {
       while (url) {
         const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         const j = await r.json();
+        if(!j.value) break;
         j.value.forEach((u:any) => ids.push(u.id));
         url = j['@odata.nextLink'] || null;
       }
@@ -78,7 +78,7 @@ export default function Licencas() {
   }, []);
 
   return (
-    <div className="bg-white min-h-screen text-[#323130] font-sans">
+    <div className="bg-white min-h-screen text-[#323130] font-sans -m-8 p-8">
       <div className="px-6 py-4">
         <h1 className="text-[20px] font-semibold">Licenças</h1>
         <div className="flex items-center gap-4 mt-3 text-[12px]">
@@ -96,7 +96,6 @@ export default function Licencas() {
 
           {PRODUTOS.map(p => {
             const atribuidas = contagem[p.id] || 0;
-            // Para os que você tem total fixo, usa a contagem real. Para os trials, mostra 0 se não contar
             const total = p.total;
             const disponiveis = total - atribuidas;
             const pct = total > 0? (atribuidas / total) * 100 : 0;

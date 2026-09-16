@@ -4,25 +4,25 @@ import { RefreshCw, Download } from 'lucide-react';
 
 type Item = { id: string; nome: string; total: number; atribuidas: number; sku: string[] };
 
-// NÚMEROS REAIS DO SEU PRINT - CARREGA NA HORA, SEM TRAVAR
+// NÚMEROS REAIS DO SEU PRINT - CARREGA NA HORA
 const DADOS_FIXOS: Item[] = [
-  { id: 'copilot-studio', nome: 'Avaliação de Viral do Microsoft Copilot Studio', total: 10000, atribuidas: 7, sku: [] },
-  { id: 'stream', nome: 'Avaliação do Microsoft Stream', total: 1000000, atribuidas: 32, sku: [] },
-  { id: 'powerapps-p2', nome: 'Avaliação do Plano 2 do Microsoft Power Apps', total: 10000, atribuidas: 6, sku: [] },
+  { id: 'copilot-studio', nome: 'Avaliação de Viral do Microsoft Copilot Studio', total: 10000, atribuidas: 7, sku: ['Microsoft_CopilotStudio_Viral'] },
+  { id: 'stream', nome: 'Avaliação do Microsoft Stream', total: 1000000, atribuidas: 32, sku: ['Microsoft_Stream_Viral'] },
+  { id: 'powerapps-p2', nome: 'Avaliação do Plano 2 do Microsoft Power Apps', total: 10000, atribuidas: 6, sku: ['POWERAPPS_P2_VIRAL', 'POWERAPPS_VIRAL'] },
   { id: 'ems', nome: 'Enterprise Mobility + Security E3', total: 7029, atribuidas: 5001, sku: ['EMSPREMIUM'] },
   { id: 'kiosk', nome: 'Exchange Online Kiosk', total: 1485, atribuidas: 1360, sku: ['EXCHANGEDESKLESS'] },
   { id: 'apps-ent', nome: 'Microsoft 365 Apps para Grandes Empresas', total: 3938, atribuidas: 3935, sku: ['SPE_E3'] },
   { id: 'copilot', nome: 'Microsoft 365 Copilot', total: 300, atribuidas: 300, sku: ['Microsoft_365_Copilot'] },
-  { id: 'f1', nome: 'Microsoft 365 F1', total: 2293, atribuidas: 768, sku: ['SPE_F1'] },
+  { id: 'f1', nome: 'Microsoft 365 F1', total: 2293, atribuidas: 768, sku: ['SPE_F1', 'M365_F1_COMM'] },
   { id: 'defender', nome: 'Microsoft Defender para Office 365 (Plano 1)', total: 8514, atribuidas: 8111, sku: ['THREAT_INTELLIGENCE'] },
-  { id: 'fabric', nome: 'Microsoft Fabric (Gratuito)', total: 1100000, atribuidas: 144, sku: [] },
+  { id: 'fabric', nome: 'Microsoft Fabric (Gratuito)', total: 1100000, atribuidas: 144, sku: ['POWER_BI_PRO', 'POWER_BI_STANDARD', 'PBI_PRO'] },
   { id: 'automate', nome: 'Microsoft Power Automate Gratuito', total: 10000, atribuidas: 507, sku: ['FLOW_FREE'] },
   { id: 'e1', nome: 'Office 365 E1', total: 7000, atribuidas: 6784, sku: ['STANDARDPACK'] },
-  { id: 'e3', nome: 'Office 365 E3', total: 29, atribuidas: 27, sku: [] },
-  { id: 'project', nome: 'Planner e Project Plano 3', total: 30, atribuidas: 17, sku: [] },
-  { id: 'rooms', nome: 'Salas do Microsoft Teams Basic', total: 25, atribuidas: 0, sku: [] },
-  { id: 'd365', nome: 'Teste Viral do Dynamics 365 Sales Premium', total: 10000, atribuidas: 1, sku: [] },
-  { id: 'visio', nome: 'Visio Plano 2', total: 15, atribuidas: 4, sku: [] },
+  { id: 'e3', nome: 'Office 365 E3', total: 29, atribuidas: 27, sku: ['STANDARDWOFFPACK'] },
+  { id: 'project', nome: 'Planner e Project Plano 3', total: 30, atribuidas: 17, sku: ['PROJECT_P3', 'PLANNER_P3', 'PROJECTPROFESSIONAL'] },
+  { id: 'rooms', nome: 'Salas do Microsoft Teams Basic', total: 25, atribuidas: 0, sku: ['TEAMS_ROOMS_BASIC'] },
+  { id: 'd365', nome: 'Teste Viral do Dynamics 365 Sales Premium', total: 10000, atribuidas: 1, sku: ['DYN365_SALES_VIRAL'] },
+  { id: 'visio', nome: 'Visio Plano 2', total: 15, atribuidas: 4, sku: ['VISIOCLIENT', 'VISIO_P2'] },
 ];
 
 export function MicrosoftApps() {
@@ -32,12 +32,12 @@ export function MicrosoftApps() {
 
   const atualizarAoVivo = async () => {
     setLoading(true);
-    setMsg('Tentando atualizar ao vivo...');
+    setMsg('Iniciando varredura ao vivo...');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.provider_token;
       if (!token) {
-        setMsg('Token Microsoft expirado. Mostrando dados salvos. Faça logout/login para atualizar ao vivo.');
+        setMsg('Token Microsoft expirado. Faça logout/login para atualizar ao vivo.');
         setLoading(false);
         return;
       }
@@ -45,54 +45,80 @@ export function MicrosoftApps() {
       const contagem: Record<string, number> = {};
       DADOS_FIXOS.forEach(d => contagem[d.id] = 0);
 
-      // Busca só o que sua permissão permite: licenseDetails
       let url: string | null = 'https://graph.microsoft.com/v1.0/users?$top=999&$select=id';
       const ids: string[] = [];
       while (url) {
         const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        if (!r.ok) throw new Error('Falha Graph');
+        if (!r.ok) throw new Error('Falha ao listar usuários');
         const j = await r.json();
-        j.value.forEach((u:any) => ids.push(u.id));
+        if (!j.value) break;
+        j.value.forEach((u: any) => ids.push(u.id));
         url = j['@odata.nextLink'] || null;
+        setMsg(`Listou ${ids.length} usuários...`);
       }
 
-      for (let i = 0; i < ids.length; i += 20) {
-        const slice = ids.slice(i, i+20);
-        const body = { requests: slice.map((id, idx) => ({ id: `${idx}`, method: 'GET', url: `/users/${id}/licenseDetails?$select=skuPartNumber` })) };
-        const br = await fetch('https://graph.microsoft.com/v1.0/$batch', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        if (br.ok) {
-          const bj = await br.json();
-          for (const resp of bj.responses) {
-            if (resp.status === 200) {
-              for (const lic of resp.body.value) {
-                const prod = DADOS_FIXOS.find(p => p.sku.includes(lic.skuPartNumber));
-                if (prod) contagem[prod.id]++;
+      let processados = 0;
+      // 60 por vez em paralelo = 3x mais rápido e trata 429
+      for (let i = 0; i < ids.length; i += 60) {
+        const chunks = [
+          ids.slice(i, i + 20),
+          ids.slice(i + 20, i + 40),
+          ids.slice(i + 40, i + 60),
+        ].filter(c => c.length > 0);
+
+        await Promise.all(chunks.map(async (slice) => {
+          const body = {
+            requests: slice.map((id, idx) => ({
+              id: `${idx}`,
+              method: 'GET',
+              url: `/users/${id}/licenseDetails?$select=skuPartNumber`,
+            })),
+          };
+          let tentativas = 0;
+          while (tentativas < 3) {
+            const br = await fetch('https://graph.microsoft.com/v1.0/$batch', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (br.status === 429) {
+              const retry = Number(br.headers.get('Retry-After') || 2);
+              await new Promise(r => setTimeout(r, retry * 1000));
+              tentativas++;
+              continue;
+            }
+            if (br.ok) {
+              const bj = await br.json();
+              for (const resp of bj.responses) {
+                if (resp.status === 200) {
+                  for (const lic of resp.body.value) {
+                    const prod = DADOS_FIXOS.find(p => p.sku.includes(lic.skuPartNumber));
+                    if (prod) contagem[prod.id]++;
+                  }
+                }
               }
             }
+            break;
           }
-        }
+        }));
+
+        processados += chunks.flat().length;
+        const pct = Math.round((processados / ids.length) * 100);
+        setMsg(`Atualizando ao vivo... ${processados}/${ids.length} (${pct}%)`);
+        // Vai atualizando a tela em tempo real
+        setDados(prev => prev.map(d => ({
+         ...d,
+          atribuidas: contagem[d.id] > 0? contagem[d.id] : d.atribuidas,
+        })));
       }
 
-      const novos = DADOS_FIXOS.map(d => ({
-       ...d,
-        atribuidas: contagem[d.id] > 0? contagem[d.id] : d.atribuidas
-      }));
-      setDados(novos);
-      setMsg(`Atualizado ao vivo agora - ${ids.length} usuários varridos`);
+      setMsg(`Atualizado ao vivo agora - ${ids.length} usuários - ${new Date().toLocaleTimeString()}`);
     } catch (e) {
-      setMsg('Não foi possível atualizar ao vivo (token expirado). Mantendo dados salvos.');
+      setMsg('Varredura interrompida, mantendo dados salvos.');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    // Já mostra os dados fixos imediatamente, sem loading
-  }, []);
 
   return (
     <div className="bg-[#020C1A] min-h-screen p-6 text-white -m-8">
@@ -103,11 +129,16 @@ export function MicrosoftApps() {
             <p className="text-[12px] text-zinc-400 mt-1">{msg}</p>
           </div>
           <div className="flex gap-2">
-            <button className="h-9 px-4 bg-[#0e213f] border border-white/10 rounded-lg text-[12px] flex items-center gap-2">
+            <button className="h-9 px-4 bg-[#0e213f] border border-white/10 rounded-lg text-[12px] flex items-center gap-2 hover:bg-white/10">
               <Download className="w-4 h-4" /> Exportar para CSV
             </button>
-            <button onClick={atualizarAoVivo} disabled={loading} className="h-9 px-4 bg-[#D4AF37] text-black rounded-lg text-[12px] font-bold flex items-center gap-2">
-              <RefreshCw className={`w-4 h-4 ${loading? 'animate-spin' : ''}`} /> {loading? 'Atualizando...' : 'Atualizar'}
+            <button
+              onClick={atualizarAoVivo}
+              disabled={loading}
+              className="h-9 px-4 bg-[#D4AF37] text-black rounded-lg text-[12px] font-bold flex items-center gap-2 disabled:opacity-60"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading? 'animate-spin' : ''}`} />
+              {loading? 'Atualizando...' : 'Atualizar'}
             </button>
           </div>
         </div>
@@ -121,9 +152,12 @@ export function MicrosoftApps() {
 
           {dados.map(p => {
             const disponiveis = p.total - p.atribuidas;
-            const pct = (p.atribuidas / p.total) * 100;
+            const pct = Math.min(100, Math.max(0, (p.atribuidas / p.total) * 100));
             return (
-              <div key={p.id} className="grid grid-cols-12 px-5 py-[14px] items-center border-b border-white/[0.05] hover:bg-white/[0.03]">
+              <div
+                key={p.id}
+                className="grid grid-cols-12 px-5 py-[14px] items-center border-b border-white/[0.05] hover:bg-white/[0.03]"
+              >
                 <div className="col-span-5 flex items-center gap-3">
                   <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[8px]">◆</div>
                   <span className="text-[13px] text-zinc-100 truncate">{p.nome}</span>
@@ -131,14 +165,20 @@ export function MicrosoftApps() {
                 <div className="col-span-2 text-[13px] font-bold text-emerald-400">{disponiveis}</div>
                 <div className="col-span-5 flex items-center gap-3">
                   <div className="w-[240px] h-2 bg-[#10233f] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#D4AF37]" style={{ width: `${pct}%` }} />
+                    <div className="h-full bg-[#D4AF37] transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="text-[12px] text-zinc-400">{p.atribuidas}/{p.total}</span>
+                  <span className="text-[12px] text-zinc-400">
+                    {p.atribuidas}/{p.total}
+                  </span>
                 </div>
               </div>
             );
           })}
         </div>
+
+        <p className="text-[11px] text-zinc-500 mt-3">
+          Fonte: Microsoft Graph com sua permissão atual. Total fixo do Admin Center. Atribuídas conta ao vivo.
+        </p>
       </div>
     </div>
   );

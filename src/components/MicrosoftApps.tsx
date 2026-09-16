@@ -1,115 +1,124 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { RefreshCw, Search } from 'lucide-react';
 
-type Lic = {
-  skuId: string;
-  skuPartNumber: string;
-  displayName: string;
-  total: number;
-  consumidas: number;
-  disponiveis: number;
-}
+// Dados totais tirados do seu print do admin center
+const PRODUTOS = [
+  { id: 'CopilotStudioViral', nome: 'Avaliação de Viral do Microsoft Copilot Studio', total: 10000 },
+  { id: 'StreamViral', nome: 'Avaliação do Microsoft Stream', total: 1000000 },
+  { id: 'PowerAppsP2Viral', nome: 'Avaliação do Plano 2 do Microsoft Power Apps', total: 10000 },
+  { id: 'EMSPREMIUM', nome: 'Enterprise Mobility + Security E3', total: 7029 },
+  { id: 'EXCHANGEDESKLESS', nome: 'Exchange Online Kiosk', total: 1485 },
+  { id: 'SPE_E3', nome: 'Microsoft 365 Apps para Grandes Empresas', total: 3938 },
+  { id: 'Microsoft_365_Copilot', nome: 'Microsoft 365 Copilot', total: 300 },
+  { id: 'SPE_F1', nome: 'Microsoft 365 F1', total: 2293 },
+  { id: 'THREAT_INTELLIGENCE', nome: 'Microsoft Defender para Office 365 (Plano 1)', total: 8514 },
+  { id: 'POWER_BI_PRO', nome: 'Microsoft Fabric (Gratuito)', total: 1100000 },
+  { id: 'FLOW_FREE', nome: 'Microsoft Power Automate Gratuito', total: 10000 },
+  { id: 'STANDARDPACK', nome: 'Office 365 E1', total: 7000 },
+  { id: 'SPE_E3_FAC', nome: 'Office 365 E3', total: 29 },
+  { id: 'PLANNER_P3', nome: 'Planner e Project Plano 3', total: 30 },
+  { id: 'TEAMS_ROOMS_BASIC', nome: 'Salas do Microsoft Teams Basic', total: 25 },
+  { id: 'DYN365_SALES_VIRAL', nome: 'Teste Viral do Dynamics 365 Sales Premium', total: 10000 },
+  { id: 'VISIO_P2', nome: 'Visio Plano 2', total: 15 },
+];
 
-export function MicrosoftApps() {
-  const [licencas, setLicencas] = useState<Lic[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filtro, setFiltro] = useState('');
-  const [erro, setErro] = useState('');
+const MAP_PART: Record<string, string> = {
+  "EMSPREMIUM": "EMSPREMIUM", "EXCHANGEDESKLESS": "EXCHANGEDESKLESS",
+  "SPE_E3": "SPE_E3", "Microsoft_365_Copilot": "Microsoft_365_Copilot",
+  "SPE_F1": "SPE_F1", "M365_F1_COMM": "SPE_F1",
+  "THREAT_INTELLIGENCE": "THREAT_INTELLIGENCE",
+  "FLOW_FREE": "FLOW_FREE", "STANDARDPACK": "STANDARDPACK"
+};
 
-  const load = async () => {
-    setLoading(true);
-    setErro('');
-    try {
+export default function Licencas() {
+  const [contagem, setContagem] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.provider_token;
-      if (!token) throw new Error('Faça login com Microsoft');
+      if (!token) { setLoading(false); return; }
 
-      // UMA chamada só - traz tudo
-      const r = await fetch('https://graph.microsoft.com/v1.0/subscribedSkus', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (!r.ok) {
-        const txt = await r.text();
-        if (r.status === 403) {
-          throw new Error('403 - Seu App não tem permissão Organization.Read.All ou Directory.Read.All. Peça para o admin liberar no Entra ID > App Registrations > API permissions');
-        }
-        throw new Error(`Graph ${r.status}: ${txt}`);
+      const ids: string[] = [];
+      let url: string | null = 'https://graph.microsoft.com/v1.0/users?$top=999&$select=id';
+      while (url) {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const j = await r.json();
+        j.value.forEach((u:any) => ids.push(u.id));
+        url = j['@odata.nextLink'] || null;
       }
 
-      const j = await r.json();
-
-      const lista: Lic[] = j.value
-       .filter((s: any) => s.prepaidUnits?.enabled > 0)
-       .map((s: any) => ({
-          skuId: s.skuId,
-          skuPartNumber: s.skuPartNumber,
-          displayName: s.skuPartNumber, // ou use um mapa se quiser nome bonito
-          total: s.prepaidUnits.enabled,
-          consumidas: s.consumedUnits,
-          disponiveis: s.prepaidUnits.enabled - s.consumedUnits
-        }))
-       .sort((a: any,b: any) => b.total - a.total);
-
-      setLicencas(lista);
-
-    } catch (e: any) {
-      console.error(e);
-      setErro(e.message);
-    } finally {
+      const count = new Map<string, number>();
+      for (let i = 0; i < ids.length; i += 20) {
+        const slice = ids.slice(i, i+20);
+        const body = { requests: slice.map((id, idx) => ({ id: `${idx}`, method: "GET", url: `/users/${id}/licenseDetails?$select=skuPartNumber` })) };
+        const br = await fetch('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (br.ok) {
+          const bj = await br.json();
+          for (const resp of bj.responses) {
+            if (resp.status === 200) {
+              for (const lic of resp.body.value) {
+                const part = lic.skuPartNumber;
+                const key = MAP_PART[part] || part;
+                count.set(key, (count.get(key) || 0) + 1);
+              }
+            }
+          }
+        }
+      }
+      setContagem(Object.fromEntries(count));
       setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() =>
-    licencas.filter(l => l.skuPartNumber.toLowerCase().includes(filtro.toLowerCase())),
-    [licencas][filtro]
-  );
+    })();
+  }, []);
 
   return (
-    <div className="space-y-4 bg-[#020C1A] min-h-screen -m-8 p-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Licenças</h1>
-          <p className="text-[11px] text-zinc-500">Total do produto • Disponíveis • Sem varredura de usuários</p>
-          {erro && <p className="text-red-400 text-xs mt-1">{erro}</p>}
-        </div>
-        <button onClick={load} disabled={loading} className="bg-[#D4AF37] text-black px-5 py-2 rounded-lg font-bold text-xs flex items-center gap-2">
-          <RefreshCw className={`w-4 h-4 ${loading?'animate-spin':''}`} /> Atualizar
-        </button>
-      </div>
-
-      <div className="flex items-center gap-2 bg-[#00121E] border border-white/10 rounded-lg px-3 py-2 w-fit">
-        <Search className="w-4 h-4 text-zinc-500" />
-        <input value={filtro} onChange={e=>setFiltro(e.target.value)} placeholder="Pesquisar SKU" className="bg-transparent outline-none text-white w-72 text-xs" />
-        <span className="text-zinc-500 text-xs ml-3">{filtered.length} produtos</span>
-      </div>
-
-      <div className="bg-[#061a32] border border-white/10 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-12 gap-4 p-3 text-[11px] text-zinc-400 uppercase border-b border-white/10">
-          <div className="col-span-6">NOME / SKU</div>
-          <div className="col-span-2">TOTAL</div>
-          <div className="col-span-2">DISPONÍVEIS</div>
-          <div className="col-span-2">ATRIBUÍDAS</div>
+    <div className="bg-white min-h-screen text-[#323130] font-sans">
+      <div className="px-6 py-4">
+        <h1 className="text-[20px] font-semibold">Licenças</h1>
+        <div className="flex items-center gap-4 mt-3 text-[12px]">
+          <button className="flex items-center gap-1 hover:underline"><span>↓</span> Exportar para CSV</button>
+          <button onClick={() => window.location.reload()} className="flex items-center gap-1 hover:underline"><span>↻</span> Atualizar</button>
+          <span className="ml-auto text-zinc-500">{PRODUTOS.length} itens</span>
         </div>
 
-        {filtered.map((s) => (
-          <div key={s.skuId} className="grid grid-cols-12 gap-4 p-3 items-center border-b border-white/5 text-sm hover:bg-white/[0.03]">
-            <div className="col-span-6 text-white truncate" title={s.skuId}>{s.skuPartNumber}</div>
-            <div className="col-span-2 text-white font-bold">{s.total}</div>
-            <div className="col-span-2 text-emerald-400 font-bold">{s.disponiveis}</div>
-            <div className="col-span-2 text-zinc-400">{s.consumidas}</div>
+        <div className="mt-4 border-t">
+          <div className="grid grid-cols-12 py-2 text-[12px] font-semibold border-b text-zinc-600">
+            <div className="col-span-5">Nome ↑</div>
+            <div className="col-span-2">Licenças disponí...</div>
+            <div className="col-span-5">Licenças atribuídas</div>
           </div>
-        ))}
 
-        {filtered.length === 0 &&!loading &&!erro && (
-          <div className="p-10 text-center text-zinc-500 text-sm">Nenhum produto encontrado</div>
-        )}
+          {PRODUTOS.map(p => {
+            const atribuidas = contagem[p.id] || 0;
+            // Para os que você tem total fixo, usa a contagem real. Para os trials, mostra 0 se não contar
+            const total = p.total;
+            const disponiveis = total - atribuidas;
+            const pct = total > 0? (atribuidas / total) * 100 : 0;
+
+            return (
+              <div key={p.id} className="grid grid-cols-12 py-[10px] items-center border-b border-zinc-100 hover:bg-zinc-50 text-[12px]">
+                <div className="col-span-5 flex items-center gap-2 truncate">
+                  <div className="w-5 h-5 rounded-full bg-[#f3f2f1] flex items-center justify-center text-[10px]">◇</div>
+                  <span className="truncate">{p.nome}</span>
+                </div>
+                <div className="col-span-2">{loading? '...' : disponiveis}</div>
+                <div className="col-span-5 flex items-center gap-3">
+                  <div className="w-[180px] h-[8px] bg-[#e1dfdd] rounded-[2px] overflow-hidden">
+                    <div className="h-full bg-[#6264a7]" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-zinc-600">{loading? '...' : `${atribuidas}/${total}`}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
-export default MicrosoftApps;

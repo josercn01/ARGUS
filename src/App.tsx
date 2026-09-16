@@ -6,6 +6,7 @@ import { Dashboard } from '@/pages/Dashboard';
 import { AdminLocais } from '@/components/AdminLocais';
 import { AccessManagement } from '@/components/AccessManagement';
 import { MicrosoftApps } from '@/components/MicrosoftApps';
+import { AdobeApps } from '@/components/AdobeApps';
 import { Loader2 } from 'lucide-react';
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
           {activeTab === 'admin-locais' && <AdminLocais role={role} />}
           {activeTab === 'permissoes' && <AccessManagement currentRole={role} currentUserEmail={user?.email || ''} />}
           {activeTab === 'microsoft-apps' && <MicrosoftApps />}
+          {activeTab === 'adobe-apps' && <AdobeApps />}
         </div>
       </main>
     </div>

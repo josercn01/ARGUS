@@ -5,11 +5,12 @@ import {
   ShieldCheck,
   LogOut,
   Cloud,
+  Database,
 } from 'lucide-react';
 import type { AuthUser, SystemRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
-export type TabKey = 'dashboard' | 'admin-locais' | 'permissoes' | 'microsoft-apps' | 'adobe-apps';
+export type TabKey = 'dashboard' | 'admin-locais' | 'permissoes' | 'microsoft-apps' | 'adobe-apps' | 'sistemas-corporativos';
 
 interface HeaderProps {
   user: AuthUser | null;
@@ -25,6 +26,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
     { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard, category: 'Principal' },
     { id: 'admin-locais', label: 'Admin Locais', icon: Monitor, category: 'Principal' },
     { id: 'permissoes', label: 'Acessos e Permissões', icon: ShieldCheck, category: 'Principal' },
+    { id: 'sistemas-corporativos', label: 'Sistemas Corporativos', icon: Database, category: 'Principal', sub: '48 sistemas mapeados' },
     { id: 'microsoft-apps', label: 'Aplicativos Microsoft', icon: Cloud, category: 'Microsoft 365', sub: 'Admin Center M365 API' },
     { id: 'adobe-apps', label: 'Aplicativos Adobe', icon: Cloud, category: 'Microsoft 365', sub: 'Admin Console Adobe @senado' },
   ];
@@ -61,12 +63,15 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
                   onClick={() => onTabChange(item.id)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
-                    ? 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
+                   ? 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
                       : 'text-[#94a3b8] hover:text-white hover:bg-[#001E33]'
                   }`}
                 >
                   <Icon className={`w-4 h-4 shrink-0 ${isActive? 'text-[#001726]' : 'text-[#D4AF37]'}`} />
-                  <span className="truncate">{item.label}</span>
+                  <div className="text-left overflow-hidden">
+                    <div className="truncate">{item.label}</div>
+                    {item.sub && <div className="text-[9px] opacity-75 font-normal truncate">{item.sub}</div>}
+                  </div>
                 </button>
               );
             })}
@@ -87,7 +92,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
                   onClick={() => onTabChange(item.id)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
-                    ? 'bg-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+                   ? 'bg-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(0,229,255,0.4)]'
                       : 'text-[#94a3b8] hover:text-white hover:bg-cyan-500/10'
                   }`}
                 >

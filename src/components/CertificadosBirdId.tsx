@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Search, ShieldCheck, AlertTriangle, Clock, XCircle, Plus, Edit2, Trash2, X, Save, Calendar, User, FileKey, Download, Upload, FileSpreadsheet } from 'lucide-react';
+import { Search, ShieldCheck, Clock, XCircle, Plus, Edit2, Trash2, X, Save, Calendar, User, FileKey, Download, Upload, FileSpreadsheet } from 'lucide-react';
 
 type Certificado = {
   id: number;
@@ -20,38 +20,29 @@ function parseDate(venc: string): Date | null {
   if(!venc) return null;
   let v: Date;
   if(venc.includes('/')){
-    const parts = venc.split('/').map(Number);
-    // aceita DD/MM/YYYY ou YYYY/MM/DD
-    if(parts[0] > 1000) v = new Date(parts[0], parts[1]-1, parts[2]); // YYYY/MM/DD
-    else v = new Date(parts[2], parts[1]-1, parts[0]); // DD/MM/YYYY
+    const [a,b,c] = venc.split('/').map(Number);
+    if(a > 1000) v = new Date(a,b-1,c);
+    else v = new Date(c,b-1,a);
   } else {
     v = new Date(venc);
   }
-  v.setHours(12,0,0,0); // evita bug de fuso
+  v.setHours(12,0,0,0);
   return isNaN(v.getTime())? null : v;
 }
-
-function formatBR(dateStr: string): string {
-  const d = parseDate(dateStr);
-  if(!d) return dateStr || '-';
-  return d.toLocaleDateString('pt-BR');
-}
-
-function diasRestantes(venc: string): number {
-  const v = parseDate(venc);
-  if(!v) return 9999;
+function formatBR(dateStr: string){ const d = parseDate(dateStr); return d? d.toLocaleDateString('pt-BR') : dateStr; }
+function diasRestantes(venc: string){
+  const v = parseDate(venc); if(!v) return 9999;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   v.setHours(0,0,0,0);
-  return Math.ceil((v.getTime() - hoje.getTime()) / (1000*60*60*24));
+  return Math.ceil((v.getTime()-hoje.getTime())/(1000*60*60*24));
 }
-
-function getStatus(dias: number) {
-  if (dias < 0) return { label: 'VENCIDO', color: 'bg-red-500/10 border-red-500/30 text-red-400', dot: 'bg-red-500' };
-  if (dias <= 7) return { label: 'VENCE EM 7 DIAS', color: 'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot: 'bg-red-500' };
-  if (dias <= 15) return { label: 'VENCE EM 15 DIAS', color: 'bg-orange-500/10 border-orange-500/30 text-orange-300', dot: 'bg-orange-500' };
-  if (dias <= 30) return { label: 'VENCE EM 30 DIAS', color: 'bg-amber-500/10 border-amber-500/30 text-amber-300', dot: 'bg-amber-400' };
-  if (dias <= 60) return { label: 'VENCE EM 60 DIAS', color: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300', dot: 'bg-yellow-400' };
-  return { label: 'ATIVO', color: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300', dot: 'bg-emerald-500' };
+function getStatus(dias: number){
+  if(dias<0) return { label:'VENCIDO', color:'bg-red-500/10 border-red-500/30 text-red-400', dot:'bg-red-500' };
+  if(dias<=7) return { label:'VENCE EM 7 DIAS', color:'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot:'bg-red-500' };
+  if(dias<=15) return { label:'VENCE EM 15 DIAS', color:'bg-orange-500/10 border-orange-500/30 text-orange-300', dot:'bg-orange-500' };
+  if(dias<=30) return { label:'VENCE EM 30 DIAS', color:'bg-amber-500/10 border-amber-500/30 text-amber-300', dot:'bg-amber-400' };
+  if(dias<=60) return { label:'VENCE EM 60 DIAS', color:'bg-yellow-500/10 border-yellow-500/30 text-yellow-300', dot:'bg-yellow-400' };
+  return { label:'ATIVO', color:'bg-emerald-500/10 border-emerald-500/30 text-emerald-300', dot:'bg-emerald-500' };
 }
 
 const DADOS_INICIAIS: Certificado[] = [
@@ -61,58 +52,52 @@ const DADOS_INICIAIS: Certificado[] = [
 ];
 
 export function CertificadosBirdId() {
-  const [dados, setDados] = useState<Certificado[]>(() => DADOS_INICIAIS.map(d => ({...d, dias: diasRestantes(d.vencimento)})));
+  const [dados, setDados] = useState<Certificado[]>(() => {
+    const saved = localStorage.getItem('bird_certs');
+    if(saved){ try{ return JSON.parse(saved).map((d:Certificado)=>({...d, dias: diasRestantes(d.vencimento)})); }catch{} }
+    return DADOS_INICIAIS.map(d => ({...d, dias: diasRestantes(d.vencimento)}));
+  });
   const [busca, setBusca] = useState('');
   const [filtroAlerta, setFiltroAlerta] = useState<'todos'|'vencidos'|'7'|'15'|'30'|'60'>('todos');
   const [filtroStatus, setFiltroStatus] = useState('Todos');
   const [editItem, setEditItem] = useState<Certificado | null>(null);
   const [novoItem, setNovoItem] = useState<Omit<Certificado,'id'|'dias'> | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFiltro, setExportFiltro] = useState<'todos'|'ativos'|'vencidos'|'a_vencer'|'ativos_a_vencer'|'ativos_vencidos'>('todos');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const salvarLocal = (arr: Certificado[]) => { localStorage.setItem('bird_certs', JSON.stringify(arr)); };
+
   const importarPlanilha = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if(!file) return;
+    const file = e.target.files?.[0]; if(!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
       const lines = text.split('\n').filter(l=>l.trim());
       let start = 0;
-      for(let i=0;i<Math.min(10, lines.length);i++){
-        if(lines[i].toLowerCase().includes('nome') && (lines[i].toLowerCase().includes('vencimento') || lines[i].toLowerCase().includes('cpf'))){ start = i+1; break; }
-      }
+      for(let i=0;i<Math.min(10, lines.length);i++){ if(lines[i].toLowerCase().includes('nome') && lines[i].toLowerCase().includes('vencimento')){ start = i+1; break; } }
       const novos: Certificado[] = [];
       for(let i=start;i<lines.length;i++){
         const cols = lines[i].split(/[,;\t]/).map(c=>c.replace(/^"|"$/g,'').trim());
         if(cols.length < 5) continue;
-        let nome = cols[0]||'', area = cols[1]||'', setor = cols[2]||'', cpf = cols[3]||'', numero = cols[4]||'', emissao = cols[5]||'', vencimento = cols[6]||'', status = cols[7]||'ATIVO', telefone = cols[8]||'', obs = cols[9]||'';
-        if(cols.length>=10 &&!isNaN(Number(cols[7]))){
-          status = cols[8]||'ATIVO'; telefone = cols[9]||'';
-        }
-        if(!nome) continue;
-        if(nome.toLowerCase().includes('total de certificados')) continue;
-        novos.push({ id: Date.now()+i, nome, area, setor, cpf, numero, emissao: emissao.slice(0,10), vencimento: vencimento.slice(0,10), status: status.toUpperCase(), telefone, observacao: obs, dias: diasRestantes(vencimento) });
+        let [nome, area, setor, cpf, numero, emissao, vencimento, status, telefone, obs] = cols;
+        if(cols.length>=10 &&!isNaN(Number(cols[7]))){ status = cols[8]; telefone = cols[9]; }
+        if(!nome || nome.toLowerCase().includes('total de certificados')) continue;
+        novos.push({ id: Date.now()+i, nome, area, setor, cpf, numero, emissao: emissao?.slice(0,10)||'', vencimento: vencimento?.slice(0,10)||'', status: (status||'ATIVO').toUpperCase(), telefone: telefone||'', observacao: obs||'', dias: diasRestantes(vencimento) });
       }
-      if(novos.length>0){
-        setDados(novos);
-        alert(`Importados ${novos.length} certificados com sucesso!`);
-      } else {
-        alert('Não consegui ler a planilha. Exporte como CSV (vírgula)');
-      }
+      if(novos.length>0){ setDados(novos); salvarLocal(novos); alert(`Importados ${novos.length} certificados!`); }
     };
-    if(file.name.endsWith('.csv')) reader.readAsText(file, 'utf-8');
-    else alert('Para XLSX, por favor exporte como CSV UTF-8.');
-    e.target.value = '';
+    reader.readAsText(file, 'utf-8'); e.target.value='';
   };
 
   const stats = useMemo(() => {
     const comDias = dados.map(d => ({...d, dias: d.dias?? diasRestantes(d.vencimento)}));
-    const vencidos = comDias.filter(d => d.dias! < 0).length;
-    const ativos = comDias.filter(d => d.dias! >= 0).length;
     return {
       disponiveis: 761,
       emUso: comDias.length,
-      ativos,
-      vencidos,
+      ativos: comDias.filter(d=>d.dias!>=0 && d.dias! > 60).length + comDias.filter(d=>d.dias!>=0 && d.dias!<=60).length, // total ativos
+      ativosPuross: comDias.filter(d=>d.dias! > 60).length,
+      vencidos: comDias.filter(d=>d.dias! < 0).length,
       aVencer: comDias.filter(d=>d.dias!>=0 && d.dias!<=60).length,
       alert60: comDias.filter(d=>d.dias!>=0 && d.dias!<=60).length,
       alert30: comDias.filter(d=>d.dias!>=0 && d.dias!<=30).length,
@@ -122,8 +107,9 @@ export function CertificadosBirdId() {
     };
   }, [dados]);
 
+  // === ORDEM CORRIGIDA: A VENCER -> ATIVOS -> VENCIDOS ===
   const filtrados = useMemo(() => {
-    return stats.comDias.filter(d => {
+    const base = stats.comDias.filter(d => {
       const matchBusca =!busca || `${d.nome} ${d.setor} ${d.numero} ${d.cpf}`.toLowerCase().includes(busca.toLowerCase());
       const matchStatus = filtroStatus==='Todos' || d.status.toUpperCase().includes(filtroStatus.toUpperCase());
       let matchAlerta = true;
@@ -133,38 +119,52 @@ export function CertificadosBirdId() {
       if(filtroAlerta==='30') matchAlerta = d.dias!>=0 && d.dias!<=30;
       if(filtroAlerta==='60') matchAlerta = d.dias!>=0 && d.dias!<=60;
       return matchBusca && matchStatus && matchAlerta;
-    }).sort((a,b)=>{
+    });
+    return base.sort((a,b)=>{
       const da = a.dias!, db = b.dias!;
-      const aVencer = da >=0 && da <=60;
-      const bVencer = db >=0 && db <=60;
-      const aAtivo = da > 60;
-      const bAtivo = db > 60;
-      const aVencido = da < 0;
-      const bVencido = db < 0;
-
+      const aVencer = da>=0 && da<=60;
+      const bVencer = db>=0 && db<=60;
+      const aAtivo = da>60;
+      const bAtivo = db>60;
+      const aVencido = da<0;
+      const bVencido = db<0;
       if(aVencer &&!bVencer) return -1;
       if(!aVencer && bVencer) return 1;
       if(aVencer && bVencer) return da - db;
-
       if(aAtivo && bVencido) return -1;
       if(aVencido && bAtivo) return 1;
       if(aAtivo && bAtivo) return da - db;
-
       if(aVencido && bVencido) return db - da;
-
       return da - db;
     });
   }, [stats.comDias, busca, filtroStatus, filtroAlerta]);
 
-  const excluir = (id:number)=>{ if(confirm('Excluir certificado?')) setDados(p=>p.filter(d=>d.id!==id)); };
-  const salvarEdicao = ()=>{ if(!editItem) return; setDados(p=>p.map(d=>d.id===editItem.id? {...editItem, dias: diasRestantes(editItem.vencimento)}:d)); setEditItem(null); };
+  const excluir = (id:number)=>{ if(confirm('Excluir?')){ const novo = dados.filter(d=>d.id!==id); setDados(novo); salvarLocal(novo); } };
+  const salvarEdicao = ()=>{ if(!editItem) return; const novo = dados.map(d=>d.id===editItem.id? {...editItem, dias: diasRestantes(editItem.vencimento)}:d); setDados(novo); salvarLocal(novo); setEditItem(null); };
   const salvarNovo = ()=>{
     if(!novoItem?.nome.trim() ||!novoItem?.vencimento) return alert('Nome e vencimento obrigatórios');
-    setDados(p=>[...p, {...novoItem, id: Date.now(), dias: diasRestantes(novoItem.vencimento)}]); setNovoItem(null);
+    const novo = [...dados, {...novoItem, id: Date.now(), dias: diasRestantes(novoItem.vencimento)} as Certificado];
+    setDados(novo); salvarLocal(novo); setNovoItem(null);
   };
-  const exportar = ()=>{
-    const csv = ['NOME,ÁREA,SETOR,CPF,Nº CERTIFICADO,EMISSÃO,VENCIMENTO,STATUS,TELEFONE,OBSERVAÇÃO',...filtrados.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}","${d.status}","${d.telefone}","${d.observacao.replace(/"/g,'')}"`)].join('\n');
-    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`certificados_bird_id_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+
+  const executarExport = ()=>{
+    let lista = stats.comDias;
+    if(exportFiltro==='ativos') lista = lista.filter(d=>d.dias!>=0);
+    if(exportFiltro==='vencidos') lista = lista.filter(d=>d.dias!<0);
+    if(exportFiltro==='a_vencer') lista = lista.filter(d=>d.dias!>=0 && d.dias!<=60);
+    if(exportFiltro==='ativos_a_vencer') lista = lista.filter(d=>d.dias!>=0 && d.dias!<=60 || d.dias! > 60).filter(d=>d.dias!>=0);
+    if(exportFiltro==='ativos_vencidos') lista = lista; // todos menos a vencer já é ativo+vencido? Mantém todos
+    if(exportFiltro==='ativos_vencidos') lista = stats.comDias; // caso queira tudo
+
+    // Filtros específicos do modal
+    if(exportFiltro==='ativos') lista = stats.comDias.filter(d=>d.dias! > 60);
+    if(exportFiltro==='a_vencer') lista = stats.comDias.filter(d=>d.dias!>=0 && d.dias!<=60);
+    if(exportFiltro==='ativos_a_vencer') lista = stats.comDias.filter(d=>d.dias!>=0);
+    if(exportFiltro==='ativos_vencidos') lista = stats.comDias;
+
+    const csv = ['NOME,ÁREA,SETOR,CPF,Nº CERTIFICADO,EMISSÃO,VENCIMENTO,STATUS,TELEFONE,OBSERVAÇÃO',...lista.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}","${getStatus(d.dias!).label}","${d.telefone}","${d.observacao.replace(/"/g,'')}"`)].join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`bird_id_${exportFiltro}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+    setShowExportModal(false);
   };
 
   return (
@@ -176,13 +176,13 @@ export function CertificadosBirdId() {
             <div>
               <h1 className="text-[22px] font-bold leading-none">Certificados Bird ID</h1>
               <p className="text-[11px] text-[#D4AF37] font-mono mt-1 tracking-widest">GESTÃO DE CERTIFICADOS DIGITAIS • CT BIRD ID</p>
-              <p className="text-[12px] text-zinc-400 mt-2">Importe sua planilha ou gerencie os {stats.emUso} certificados carregados</p>
+              <p className="text-[12px] text-zinc-400 mt-2">Gerencie os {stats.emUso} certificados carregados</p>
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
             <input ref={fileInputRef} type="file" accept=".csv" onChange={importarPlanilha} className="hidden" />
             <button onClick={()=>fileInputRef.current?.click()} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px] flex items-center gap-2 hover:bg-white/10"><Upload className="w-4 h-4" /> Importar Planilha CSV</button>
-            <button onClick={exportar} className="h-11 px-4 rounded-xl bg-[#0a1930] border border-white/10 text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button>
+            <button onClick={()=>setShowExportModal(true)} className="h-11 px-4 rounded-xl bg-[#0a1930] border border-white/10 text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button>
             <button onClick={()=>setNovoItem({ nome:'', area:'Parlamentar', setor:'', cpf:'', numero:'', emissao: new Date().toISOString().split('T')[0], vencimento:'', status:'ATIVO', telefone:'', observacao:'' })} className="h-11 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[13px] flex items-center gap-2"><Plus className="w-4 h-4" /> Novo</button>
           </div>
         </div>
@@ -192,7 +192,7 @@ export function CertificadosBirdId() {
             <FileSpreadsheet className="w-5 h-5 text-amber-400" />
             <div className="flex-1">
               <div className="text-[13px] font-bold text-amber-300">Dados incompletos - importe sua planilha completa</div>
-              <div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados carregados. O total correto é 260. Clique em Importar Planilha CSV.</div>
+              <div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados. Importe o CSV completo com 259/260.</div>
             </div>
           </div>
         )}
@@ -200,7 +200,7 @@ export function CertificadosBirdId() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Disponíveis</div><div className="text-[26px] font-bold mt-1">761</div><div className="text-[11px] text-zinc-500 mt-1">Total Bird ID</div></div>
           <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Em Uso</div><div className="text-[26px] font-bold mt-1">{stats.emUso}</div><div className="text-[11px] text-[#D4AF37] mt-1">{stats.emUso} / 761 utilizados</div></div>
-          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"><div className="text-[10px] text-emerald-400 uppercase flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Ativos</div><div className="text-[26px] font-bold text-emerald-300 mt-1">{stats.ativos}</div><div className="text-[11px] text-emerald-400/70 mt-1">Dentro da validade</div></div>
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"><div className="text-[10px] text-emerald-400 uppercase flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Ativos</div><div className="text-[26px] font-bold text-emerald-300 mt-1">{stats.comDias.filter(d=>d.dias!>=0).length}</div><div className="text-[11px] text-emerald-400/70 mt-1">Dentro da validade</div></div>
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20"><div className="text-[10px] text-amber-400 uppercase flex items-center gap-1"><Clock className="w-3 h-3" /> A Vencer</div><div className="text-[26px] font-bold text-amber-300 mt-1">{stats.aVencer}</div><div className="text-[11px] text-amber-400/70 mt-1">Próximos 60 dias</div></div>
           <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20"><div className="text-[10px] text-red-400 uppercase flex items-center gap-1"><XCircle className="w-3 h-3" /> Vencidos</div><div className="text-[26px] font-bold text-red-400 mt-1">{stats.vencidos}</div><div className="text-[11px] text-red-400/70 mt-1">Ação necessária</div></div>
         </div>
@@ -217,7 +217,7 @@ export function CertificadosBirdId() {
 
         <div className="flex flex-col md:flex-row gap-3 mb-4">
           <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por nome, CPF, setor, nº certificado..." className="w-full h-11 pl-10 pr-4 bg-[#08152a] border border-white/10 rounded-xl text-[13px] outline-none focus:border-[#D4AF37]/50" /></div>
-          <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} className="h-11 px-4 bg-[#08152a] border border-white/10 rounded-xl text-[12px]"><option>Todos</option><option>ATIVO</option><option>VENCIDO</option><option>ALERTA</option></select>
+          <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} className="h-11 px-4 bg-[#08152a] border border-white/10 rounded-xl text-[12px]"><option>Todos</option><option>ATIVO</option><option>VENCIDO</option></select>
           <button onClick={()=>{setFiltroAlerta('todos'); setFiltroStatus('Todos'); setBusca('')}} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px]">Limpar filtros</button>
         </div>
 
@@ -237,9 +237,10 @@ export function CertificadosBirdId() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                    <button onClick={()=>setEditItem(cert)} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-[#D4AF37] hover:text-black flex items-center justify-center"><Edit2 className="w-3.5 h-3.5" /></button>
-                    <button onClick={()=>excluir(cert.id)} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-red-500 flex items-center justify-center"><Trash2 className="w-3.5 h-3.5" /></button>
+                  {/* BOTÕES EDITAR SEMPRE VISÍVEIS */}
+                  <div className="flex gap-1.5">
+                    <button onClick={()=>setEditItem(cert)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition" title="Editar"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={()=>excluir(cert.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500 hover:text-white flex items-center justify-center transition" title="Excluir"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
@@ -256,7 +257,32 @@ export function CertificadosBirdId() {
           })}
         </div>
 
-        {filtrados.length===0 && <div className="text-center py-12 text-zinc-500">Nenhum certificado encontrado.</div>}
+        {/* MODAL EXPORTAR COM FILTROS */}
+        {showExportModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setShowExportModal(false)} />
+            <div className="relative w-full max-w-md bg-[#0a1930] border border-white/10 rounded-2xl p-6 shadow-2xl">
+              <div className="flex justify-between mb-5"><h3 className="font-bold text-[14px]">Exportar Certificados</h3><button onClick={()=>setShowExportModal(false)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
+              <p className="text-[12px] text-zinc-400 mb-4">Escolha o filtro para exportação:</p>
+              <div className="space-y-2">
+                {[
+                  {id:'todos', label:'Todos os certificados', desc:`${stats.emUso} registros`},
+                  {id:'ativos', label:'Só Ativos (acima de 60 dias)', desc:`${stats.comDias.filter(d=>d.dias! > 60).length} registros`},
+                  {id:'a_vencer', label:'Só A Vencer (60,30,15,7 dias)', desc:`${stats.aVencer} registros - MAIS CRÍTICOS`},
+                  {id:'vencidos', label:'Só Vencidos', desc:`${stats.vencidos} registros`},
+                  {id:'ativos_a_vencer', label:'Ativos + A Vencer (tudo dentro da validade)', desc:`${stats.comDias.filter(d=>d.dias!>=0).length} registros`},
+                  {id:'ativos_vencidos', label:'Exportar tudo (Ativos + Vencidos)', desc:`${stats.emUso} registros`},
+                ].map(opt=>(
+                  <button key={opt.id} onClick={()=>setExportFiltro(opt.id as any)} className={`w-full text-left p-3 rounded-xl border transition ${exportFiltro===opt.id? 'bg-[#D4AF37]/15 border-[#D4AF37]/40' : 'bg-[#020C1A] border-white/10 hover:border-white/20'}`}>
+                    <div className="flex items-center justify-between"><div className={`text-[12px] font-bold ${exportFiltro===opt.id?'text-[#D4AF37]':'text-white'}`}>{opt.label}</div>{exportFiltro===opt.id && <div className="w-2 h-2 rounded-full bg-[#D4AF37]" />}</div>
+                    <div className="text-[11px] text-zinc-500 mt-1">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 mt-6"><button onClick={()=>setShowExportModal(false)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={executarExport} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button></div>
+            </div>
+          </div>
+        )}
 
         {editItem && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setEditItem(null)} />

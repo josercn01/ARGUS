@@ -7,6 +7,7 @@ import { AdminLocais } from '@/components/AdminLocais';
 import { AccessManagement } from '@/components/AccessManagement';
 import { MicrosoftApps } from '@/components/MicrosoftApps';
 import { AdobeApps } from '@/components/AdobeApps';
+import { SistemasCorporativos } from '@/components/SistemasCorporativos';
 import { Loader2 } from 'lucide-react';
 
 export function App() {
@@ -35,6 +36,7 @@ export function App() {
           {activeTab === 'permissoes' && <AccessManagement currentRole={role} currentUserEmail={user?.email || ''} />}
           {activeTab === 'microsoft-apps' && <MicrosoftApps />}
           {activeTab === 'adobe-apps' && <AdobeApps />}
+          {activeTab === 'sistemas-corporativos' && <SistemasCorporativos />}
         </div>
       </main>
     </div>

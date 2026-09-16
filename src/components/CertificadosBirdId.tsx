@@ -16,28 +16,44 @@ type Certificado = {
   dias?: number;
 };
 
-function diasRestantes(venc: string): number {
-  if(!venc) return 9999;
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  // aceita dd/mm/yyyy ou yyyy-mm-dd
+function parseDate(venc: string): Date | null {
+  if(!venc) return null;
   let v: Date;
-  if(venc.includes('/')){ const [d,m,y]=venc.split('/').map(Number); v = new Date(y,m-1,d); }
-  else { v = new Date(venc); }
+  if(venc.includes('/')){
+    const parts = venc.split('/').map(Number);
+    // aceita DD/MM/YYYY ou YYYY/MM/DD
+    if(parts[0] > 1000) v = new Date(parts[0], parts[1]-1, parts[2]); // YYYY/MM/DD
+    else v = new Date(parts[2], parts[1]-1, parts[0]); // DD/MM/YYYY
+  } else {
+    v = new Date(venc);
+  }
+  v.setHours(12,0,0,0); // evita bug de fuso
+  return isNaN(v.getTime())? null : v;
+}
+
+function formatBR(dateStr: string): string {
+  const d = parseDate(dateStr);
+  if(!d) return dateStr || '-';
+  return d.toLocaleDateString('pt-BR');
+}
+
+function diasRestantes(venc: string): number {
+  const v = parseDate(venc);
+  if(!v) return 9999;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
   v.setHours(0,0,0,0);
-  if(isNaN(v.getTime())) return 9999;
   return Math.ceil((v.getTime() - hoje.getTime()) / (1000*60*60*24));
 }
-function getStatus(dias: number, statusPlanilha: string) {
-  const st = statusPlanilha?.toUpperCase() || '';
-  if (st === 'VENCIDO' || dias < 0) return { label: 'VENCIDO', color: 'bg-red-500/10 border-red-500/30 text-red-400', dot: 'bg-red-500' };
-  if (dias <= 7 && dias >=0) return { label: 'VENCE EM 7 DIAS', color: 'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot: 'bg-red-500' };
-  if (dias <= 15 && dias >=0) return { label: 'VENCE EM 15 DIAS', color: 'bg-orange-500/10 border-orange-500/30 text-orange-300', dot: 'bg-orange-500' };
-  if (dias <= 30 && dias >=0) return { label: 'VENCE EM 30 DIAS', color: 'bg-amber-500/10 border-amber-500/30 text-amber-300', dot: 'bg-amber-400' };
-  if (dias <= 60 && dias >=0) return { label: 'VENCE EM 60 DIAS', color: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300', dot: 'bg-yellow-400' };
+
+function getStatus(dias: number) {
+  if (dias < 0) return { label: 'VENCIDO', color: 'bg-red-500/10 border-red-500/30 text-red-400', dot: 'bg-red-500' };
+  if (dias <= 7) return { label: 'VENCE EM 7 DIAS', color: 'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot: 'bg-red-500' };
+  if (dias <= 15) return { label: 'VENCE EM 15 DIAS', color: 'bg-orange-500/10 border-orange-500/30 text-orange-300', dot: 'bg-orange-500' };
+  if (dias <= 30) return { label: 'VENCE EM 30 DIAS', color: 'bg-amber-500/10 border-amber-500/30 text-amber-300', dot: 'bg-amber-400' };
+  if (dias <= 60) return { label: 'VENCE EM 60 DIAS', color: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300', dot: 'bg-yellow-400' };
   return { label: 'ATIVO', color: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300', dot: 'bg-emerald-500' };
 }
 
-// DADOS INICIAIS - VAI SER SUBSTITUÍDO AO IMPORTAR PLANILHA
 const DADOS_INICIAIS: Certificado[] = [
   { id: 1, nome: 'AMELIA ROSANA ALVES POVOA DANTAS', area: 'Legislativo', setor: 'GSCMOURA', cpf: '59867132149', numero: '11DE2212124D1EBF', emissao: '2022-12-12', vencimento: '2025-12-12', status: 'VENCIDO', telefone: '61991473257', observacao: 'Gabinete informado, não manifestou interesse' },
   { id: 2, nome: 'ALEXANDRE DE LANA SILVA', area: 'Administrativo', setor: 'SEGS', cpf: '76076776668', numero: '11DE2303316A8F1B', emissao: '2023-04-03', vencimento: '2026-04-03', status: 'VENCIDO', telefone: '61992829084', observacao: '' },
@@ -60,7 +76,6 @@ export function CertificadosBirdId() {
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
       const lines = text.split('\n').filter(l=>l.trim());
-      // Detecta header
       let start = 0;
       for(let i=0;i<Math.min(10, lines.length);i++){
         if(lines[i].toLowerCase().includes('nome') && (lines[i].toLowerCase().includes('vencimento') || lines[i].toLowerCase().includes('cpf'))){ start = i+1; break; }
@@ -69,12 +84,8 @@ export function CertificadosBirdId() {
       for(let i=start;i<lines.length;i++){
         const cols = lines[i].split(/[,;\t]/).map(c=>c.replace(/^"|"$/g,'').trim());
         if(cols.length < 5) continue;
-        // Tenta mapear: NOME, ÁREA, SETOR, CPF, Nº CERTIFICADO, EMISSÃO, VENCIMENTO, STATUS, TELEFONE, OBS
-        // CSV do seu modelo: NOME,ÁREA,SETOR,CPF,Nº CERTIFICADO,EMISSÃO,VENCIMENTO,STATUS,TELEFONE,OBSERVAÇÃO
-        // CSV exportado do site: Nome,Area,Setor,CPF,Certificado,Emissão,Vencimento,Dias Restantes,Status,Telefone
         let nome = cols[0]||'', area = cols[1]||'', setor = cols[2]||'', cpf = cols[3]||'', numero = cols[4]||'', emissao = cols[5]||'', vencimento = cols[6]||'', status = cols[7]||'ATIVO', telefone = cols[8]||'', obs = cols[9]||'';
-        // Se export do site, ajusta índices
-        if(cols.length>=10 &&!isNaN(Number(cols[7]))){ // Dias Restantes no lugar do status
+        if(cols.length>=10 &&!isNaN(Number(cols[7]))){
           status = cols[8]||'ATIVO'; telefone = cols[9]||'';
         }
         if(!nome) continue;
@@ -85,14 +96,11 @@ export function CertificadosBirdId() {
         setDados(novos);
         alert(`Importados ${novos.length} certificados com sucesso!`);
       } else {
-        alert('Não consegui ler a planilha. Exporte como CSV (vírgula) com colunas: NOME, ÁREA, SETOR, CPF, Nº CERTIFICADO, EMISSÃO, VENCIMENTO, STATUS, TELEFONE');
+        alert('Não consegui ler a planilha. Exporte como CSV (vírgula)');
       }
     };
     if(file.name.endsWith('.csv')) reader.readAsText(file, 'utf-8');
-    else {
-      // Para XLSX, pede CSV
-      alert('Para XLSX, por favor exporte como CSV no Excel: Arquivo > Salvar como > CSV UTF-8. Depois importe o CSV aqui.');
-    }
+    else alert('Para XLSX, por favor exporte como CSV UTF-8.');
     e.target.value = '';
   };
 
@@ -125,7 +133,27 @@ export function CertificadosBirdId() {
       if(filtroAlerta==='30') matchAlerta = d.dias!>=0 && d.dias!<=30;
       if(filtroAlerta==='60') matchAlerta = d.dias!>=0 && d.dias!<=60;
       return matchBusca && matchStatus && matchAlerta;
-    }).sort((a,b)=>a.dias!-b.dias!);
+    }).sort((a,b)=>{
+      const da = a.dias!, db = b.dias!;
+      const aVencer = da >=0 && da <=60;
+      const bVencer = db >=0 && db <=60;
+      const aAtivo = da > 60;
+      const bAtivo = db > 60;
+      const aVencido = da < 0;
+      const bVencido = db < 0;
+
+      if(aVencer &&!bVencer) return -1;
+      if(!aVencer && bVencer) return 1;
+      if(aVencer && bVencer) return da - db;
+
+      if(aAtivo && bVencido) return -1;
+      if(aVencido && bAtivo) return 1;
+      if(aAtivo && bAtivo) return da - db;
+
+      if(aVencido && bVencido) return db - da;
+
+      return da - db;
+    });
   }, [stats.comDias, busca, filtroStatus, filtroAlerta]);
 
   const excluir = (id:number)=>{ if(confirm('Excluir certificado?')) setDados(p=>p.filter(d=>d.id!==id)); };
@@ -164,7 +192,7 @@ export function CertificadosBirdId() {
             <FileSpreadsheet className="w-5 h-5 text-amber-400" />
             <div className="flex-1">
               <div className="text-[13px] font-bold text-amber-300">Dados incompletos - importe sua planilha completa</div>
-              <div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados carregados. O total correto é 260 (200 ativos + 57 vencidos + 3 a vencer). Clique em Importar Planilha CSV e selecione o arquivo exportado do Excel.</div>
+              <div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados carregados. O total correto é 260. Clique em Importar Planilha CSV.</div>
             </div>
           </div>
         )}
@@ -195,7 +223,7 @@ export function CertificadosBirdId() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {filtrados.map(cert => {
-            const s = getStatus(cert.dias!, cert.status);
+            const s = getStatus(cert.dias!);
             return (
               <div key={cert.id} className="group relative bg-[#0a1930] border border-white/[0.07] rounded-2xl p-5 hover:border-[#D4AF37]/20 transition-all">
                 <div className="flex items-start justify-between gap-3">
@@ -216,7 +244,7 @@ export function CertificadosBirdId() {
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
                   <div><div className="text-zinc-500 uppercase text-[10px]">Nº Certificado</div><div className="font-mono text-cyan-300 truncate mt-1">{cert.numero}</div></div>
-                  <div><div className="text-zinc-500 uppercase text-[10px]">Vencimento</div><div className={`font-bold mt-1 ${cert.dias! <0?'text-red-400':'text-white'}`}>{cert.vencimento? new Date(cert.vencimento).toLocaleDateString('pt-BR'): '-'} • {cert.dias! <0? `${Math.abs(cert.dias!)}d vencido` : `${cert.dias!}d restantes`}</div></div>
+                  <div><div className="text-zinc-500 uppercase text-[10px]">Vencimento</div><div className={`font-bold mt-1 ${cert.dias! <0?'text-red-400':'text-white'}`}>{formatBR(cert.vencimento)} • {cert.dias! <0? `${Math.abs(cert.dias!)}d vencido` : `${cert.dias!}d restantes`}</div></div>
                   <div><div className="text-zinc-500 uppercase text-[10px]">CPF / Contato</div><div className="mt-1 truncate">{cert.cpf}</div></div>
                 </div>
                 {cert.dias! >=0 && cert.dias! <=60 && (
@@ -228,9 +256,8 @@ export function CertificadosBirdId() {
           })}
         </div>
 
-        {filtrados.length===0 && <div className="text-center py-12 text-zinc-500">Nenhum certificado encontrado. Importe sua planilha completa.</div>}
+        {filtrados.length===0 && <div className="text-center py-12 text-zinc-500">Nenhum certificado encontrado.</div>}
 
-        {/* MODAIS - mantidos iguais */}
         {editItem && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setEditItem(null)} />
             <div className="relative w-full max-w-2xl bg-[#0a1930] border border-white/10 rounded-2xl p-6 shadow-2xl">

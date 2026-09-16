@@ -2,143 +2,112 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { RefreshCw, Search } from 'lucide-react';
 
-const TOTAL: Record<string, { nome: string, total: number }> = {
-  "EMSPREMIUM": { nome: "Enterprise Mobility + Security E3", total: 7029 },
-  "EXCHANGEDESKLESS": { nome: "Exchange Online Kiosk", total: 1485 },
-  "SPE_E3": { nome: "Microsoft 365 Apps para Grandes Empresas", total: 3938 },
-  "Microsoft_365_Copilot": { nome: "Microsoft 365 Copilot", total: 300 },
-  "SPE_F1": { nome: "Microsoft 365 F1", total: 2293 },
-  "THREAT_INTELLIGENCE": { nome: "Microsoft Defender para Office 365 (Plano 1)", total: 8514 },
-  "FLOW_FREE": { nome: "Microsoft Power Automate Gratuito", total: 10000 },
-  "STANDARDPACK": { nome: "Office 365 E1", total: 7000 },
-  "SPE_E3_FED": { nome: "Office 365 E3", total: 29 },
-  "M365_F1_COMM": { nome: "Microsoft 365 F1", total: 2293 },
-};
+type Lic = {
+  skuId: string;
+  skuPartNumber: string;
+  displayName: string;
+  total: number;
+  consumidas: number;
+  disponiveis: number;
+}
 
 export function MicrosoftApps() {
-  const [skus, setSkus] = useState<any[]>([]);
+  const [licencas, setLicencas] = useState<Lic[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtro, setFiltro] = useState('');
-  const [lastSync, setLastSync] = useState('');
-  const [progress, setProgress] = useState('');
+  const [erro, setErro] = useState('');
 
   const load = async () => {
     setLoading(true);
-    setProgress('Listando usuários...');
+    setErro('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.provider_token;
-      if (!token) throw new Error('Sem token Microsoft');
+      if (!token) throw new Error('Faça login com Microsoft');
 
-      // 1 - Pega só IDs (9 chamadas de 1000)
-      const allIds: string[] = [];
-      let url: string | null = 'https://graph.microsoft.com/v1.0/users?$top=999&$select=id';
-      while (url) {
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        const j = await r.json();
-        j.value.forEach((u: any) => allIds.push(u.id));
-        url = j['@odata.nextLink'] || null;
-        if (allIds.length > 10000) break;
-      }
-
-      // 2 - Busca licenseDetails em lote de 20 (usa $batch)
-      const count = new Map<string, number>();
-      let processed = 0;
-
-      for (let i = 0; i < allIds.length; i += 20) {
-        const slice = allIds.slice(i, i + 20);
-        setProgress(`Processando ${processed}/${allIds.length}...`);
-
-        const batchBody = {
-          requests: slice.map((id, idx) => ({
-            id: `${idx}`,
-            method: "GET",
-            url: `/users/${id}/licenseDetails?$select=skuPartNumber,skuId`
-          }))
-        };
-
-        const br = await fetch('https://graph.microsoft.com/v1.0/$batch', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(batchBody)
-        });
-
-        if (br.ok) {
-          const bj = await br.json();
-          for (const resp of bj.responses || []) {
-            if (resp.status === 200) {
-              for (const lic of (resp.body?.value || [])) {
-                const part = lic.skuPartNumber;
-                if (!part) continue;
-                count.set(part, (count.get(part) || 0) + 1);
-              }
-            }
-          }
-        }
-        processed += slice.length;
-        // pequena pausa pra não dar 429
-        await new Promise(r => setTimeout(r, 150));
-      }
-
-      console.log('Contagem por part:', Object.fromEntries(count));
-
-      const final = Array.from(count.entries()).map(([part, atribuidas]) => {
-        const base = TOTAL[part] || { nome: part, total: atribuidas };
-        return {
-          part,
-          nome: base.nome,
-          total: base.total,
-          atribuidas,
-          disponiveis: base.total - atribuidas,
-          percent: base.total? (atribuidas / base.total * 100) : 0
-        };
+      // UMA chamada só - traz tudo
+      const r = await fetch('https://graph.microsoft.com/v1.0/subscribedSkus', {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
-      setSkus(final.sort((a,b) => b.atribuidas - a.atribuidas));
-      setLastSync(`${new Date().toLocaleTimeString('pt-BR')} - ${allIds.length} varridos`);
-      setProgress('');
+      if (!r.ok) {
+        const txt = await r.text();
+        if (r.status === 403) {
+          throw new Error('403 - Seu App não tem permissão Organization.Read.All ou Directory.Read.All. Peça para o admin liberar no Entra ID > App Registrations > API permissions');
+        }
+        throw new Error(`Graph ${r.status}: ${txt}`);
+      }
+
+      const j = await r.json();
+
+      const lista: Lic[] = j.value
+       .filter((s: any) => s.prepaidUnits?.enabled > 0)
+       .map((s: any) => ({
+          skuId: s.skuId,
+          skuPartNumber: s.skuPartNumber,
+          displayName: s.skuPartNumber, // ou use um mapa se quiser nome bonito
+          total: s.prepaidUnits.enabled,
+          consumidas: s.consumedUnits,
+          disponiveis: s.prepaidUnits.enabled - s.consumedUnits
+        }))
+       .sort((a: any,b: any) => b.total - a.total);
+
+      setLicencas(lista);
+
     } catch (e: any) {
       console.error(e);
-      alert(e.message);
-      setProgress('');
+      setErro(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { load(); }, []);
-  const filtered = useMemo(() => skus.filter(s => s.nome.toLowerCase().includes(filtro.toLowerCase())), [skus, filtro]);
+
+  const filtered = useMemo(() =>
+    licencas.filter(l => l.skuPartNumber.toLowerCase().includes(filtro.toLowerCase())),
+    [licencas][filtro]
+  );
 
   return (
     <div className="space-y-4 bg-[#020C1A] min-h-screen -m-8 p-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Licenças</h1>
-          <p className="text-[11px] text-zinc-500">Total fixo • Atribuídas via licenseDetails (grupo) • {lastSync}</p>
-          {progress && <p className="text-[11px] text-[#D4AF37] animate-pulse">{progress}</p>}
+          <p className="text-[11px] text-zinc-500">Total do produto • Disponíveis • Sem varredura de usuários</p>
+          {erro && <p className="text-red-400 text-xs mt-1">{erro}</p>}
         </div>
         <button onClick={load} disabled={loading} className="bg-[#D4AF37] text-black px-5 py-2 rounded-lg font-bold text-xs flex items-center gap-2">
-          <RefreshCw className={`w-4 h-4 ${loading?'animate-spin':''}`} /> {loading? 'Varredo...' : 'Atualizar'}
+          <RefreshCw className={`w-4 h-4 ${loading?'animate-spin':''}`} /> Atualizar
         </button>
       </div>
+
       <div className="flex items-center gap-2 bg-[#00121E] border border-white/10 rounded-lg px-3 py-2 w-fit">
         <Search className="w-4 h-4 text-zinc-500" />
-        <input value={filtro} onChange={e=>setFiltro(e.target.value)} placeholder="Pesquisar" className="bg-transparent outline-none text-white w-72 text-xs" />
+        <input value={filtro} onChange={e=>setFiltro(e.target.value)} placeholder="Pesquisar SKU" className="bg-transparent outline-none text-white w-72 text-xs" />
+        <span className="text-zinc-500 text-xs ml-3">{filtered.length} produtos</span>
       </div>
+
       <div className="bg-[#061a32] border border-white/10 rounded-xl overflow-hidden">
         <div className="grid grid-cols-12 gap-4 p-3 text-[11px] text-zinc-400 uppercase border-b border-white/10">
-          <div className="col-span-5">NOME</div><div className="col-span-2">DISPONÍVEIS</div><div className="col-span-5">ATRIBUÍDAS</div>
+          <div className="col-span-6">NOME / SKU</div>
+          <div className="col-span-2">TOTAL</div>
+          <div className="col-span-2">DISPONÍVEIS</div>
+          <div className="col-span-2">ATRIBUÍDAS</div>
         </div>
-        {filtered.map((s: any) => (
-          <div key={s.part} className="grid grid-cols-12 gap-4 p-3 items-center border-b border-white/5 text-sm">
-            <div className="col-span-5 text-white truncate">{s.nome}</div>
-            <div className="col-span-2 text-white font-bold">{s.disponiveis.toLocaleString('pt-BR')}</div>
-            <div className="col-span-5 flex items-center gap-3">
-              <div className="flex-1 h-2 bg-black/50 rounded-full max-w-[220px]"><div className="h-2 bg-[#7c3aed] rounded-full" style={{ width: `${Math.min(s.percent, 100)}%`}} /></div>
-              <span className="text-zinc-400 text-xs">{s.atribuidas}/{s.total}</span>
-            </div>
+
+        {filtered.map((s) => (
+          <div key={s.skuId} className="grid grid-cols-12 gap-4 p-3 items-center border-b border-white/5 text-sm hover:bg-white/[0.03]">
+            <div className="col-span-6 text-white truncate" title={s.skuId}>{s.skuPartNumber}</div>
+            <div className="col-span-2 text-white font-bold">{s.total}</div>
+            <div className="col-span-2 text-emerald-400 font-bold">{s.disponiveis}</div>
+            <div className="col-span-2 text-zinc-400">{s.consumidas}</div>
           </div>
         ))}
+
+        {filtered.length === 0 &&!loading &&!erro && (
+          <div className="p-10 text-center text-zinc-500 text-sm">Nenhum produto encontrado</div>
+        )}
       </div>
     </div>
   );

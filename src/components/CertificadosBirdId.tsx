@@ -45,7 +45,9 @@ function getStatus(dias: number){
   return { label:'ATIVO', color:'bg-emerald-500/10 border-emerald-500/30 text-emerald-300', dot:'bg-emerald-500' };
 }
 
-const STORAGE_KEY = 'bird_certs_v2';
+const STORAGE_KEY = 'argus_bird_certificados_v4'; // ISOLADO - não conflita com M365
+const STORAGE_STATS = 'argus_bird_stats'; // pro Header ler
+const TOTAL_CONTRATO = 764;
 
 const DADOS_INICIAIS: Certificado[] = [
   { id: 1, nome: 'AMELIA ROSANA ALVES POVOA DANTAS', area: 'Legislativo', setor: 'GSCMOURA', cpf: '59867132149', numero: '11DE2212124D1EBF', emissao: '2022-12-12', vencimento: '2025-12-12', status: 'VENCIDO', telefone: '61991473257', observacao: 'Gabinete informado' },
@@ -56,10 +58,13 @@ const DADOS_INICIAIS: Certificado[] = [
 export function CertificadosBirdId() {
   const [dados, setDados] = useState<Certificado[]>(() => {
     try{
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if(saved){
-        const parsed = JSON.parse(saved) as Certificado[];
-        if(parsed.length > 3) return parsed.map(d=>({...d, dias: diasRestantes(d.vencimento)}));
+      // Tenta nova key primeiro, depois a antiga sua pra não perder dados
+      const savedNew = localStorage.getItem(STORAGE_KEY);
+      const savedOld = localStorage.getItem('bird_certs_v2');
+      const raw = savedNew || savedOld;
+      if(raw){
+        const parsed = JSON.parse(raw) as Certificado[];
+        if(parsed.length >= 3) return parsed.map(d=>({...d, dias: diasRestantes(d.vencimento)}));
       }
     }catch{}
     return DADOS_INICIAIS.map(d => ({...d, dias: diasRestantes(d.vencimento)}));
@@ -73,9 +78,19 @@ export function CertificadosBirdId() {
   const [exportFiltro, setExportFiltro] = useState<'todos'|'ativos'|'vencidos'|'a_vencer'|'ativos_a_vencer'|'ativos_vencidos'>('todos');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTÊNCIA AUTOMÁTICA - salva toda vez que dados mudam
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
+    localStorage.setItem('bird_certs_v2', JSON.stringify(dados)); // compatibilidade
+    const comDias = dados.map(d => diasRestantes(d.vencimento));
+    const stats = {
+      vencidos: comDias.filter(d=>d<0).length,
+      aVencer: comDias.filter(d=>d>=0 && d<=30).length,
+      ativos: comDias.filter(d=>d>30).length,
+      total: dados.length,
+      emUso: dados.length,
+      disponiveis: TOTAL_CONTRATO - dados.length,
+    };
+    localStorage.setItem(STORAGE_STATS, JSON.stringify(stats));
   }, [dados]);
 
   const importarPlanilha = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,11 +106,10 @@ export function CertificadosBirdId() {
         const cols = lines[i].split(/[,;\t]/).map(c=>c.replace(/^"|"$/g,'').trim());
         if(cols.length < 5) continue;
         let [nome, area, setor, cpf, numero, emissao, vencimento, status, telefone, obs] = cols;
-        if(cols.length>=10 &&!isNaN(Number(cols[7]))){ status = cols[8]; telefone = cols[9]; }
         if(!nome || nome.toLowerCase().includes('total de certificados')) continue;
-        novos.push({ id: Date.now()+i, nome, area, setor, cpf, numero, emissao: emissao?.slice(0,10)||'', vencimento: vencimento?.slice(0,10)||'', status: (status||'ATIVO').toUpperCase(), telefone: telefone||'', observacao: obs||'', dias: diasRestantes(vencimento) });
+        novos.push({ id: Date.now()+i, nome, area: area||'N/I', setor: setor||'N/I', cpf: cpf||'', numero: numero||'', emissao: emissao?.slice(0,10)||'', vencimento: vencimento?.slice(0,10)||'', status: (status||'ATIVO').toUpperCase(), telefone: telefone||'', observacao: obs||'', dias: diasRestantes(vencimento) });
       }
-      if(novos.length>0){ setDados(novos); alert(`Importados ${novos.length} certificados! Agora pode sair e voltar que não perde mais.`); }
+      if(novos.length>0){ setDados(novos); alert(`Importados ${novos.length} certificados! Agora pode dar F5 que não perde mais.`); }
     };
     reader.readAsText(file, 'utf-8'); e.target.value='';
   };
@@ -103,7 +117,7 @@ export function CertificadosBirdId() {
   const stats = useMemo(() => {
     const comDias = dados.map(d => ({...d, dias: d.dias?? diasRestantes(d.vencimento)}));
     return {
-      disponiveis: 761,
+      disponiveis: TOTAL_CONTRATO - comDias.length,
       emUso: comDias.length,
       ativos: comDias.filter(d=>d.dias!>=0).length,
       vencidos: comDias.filter(d=>d.dias! < 0).length,
@@ -132,17 +146,9 @@ export function CertificadosBirdId() {
       const da = a.dias!, db = b.dias!;
       const aVencer = da>=0 && da<=60;
       const bVencer = db>=0 && db<=60;
-      const aAtivo = da>60;
-      const bAtivo = db>60;
-      const aVencido = da<0;
-      const bVencido = db<0;
       if(aVencer &&!bVencer) return -1;
       if(!aVencer && bVencer) return 1;
       if(aVencer && bVencer) return da - db;
-      if(aAtivo && bVencido) return -1;
-      if(aVencido && bAtivo) return 1;
-      if(aAtivo && bAtivo) return da - db;
-      if(aVencido && bVencido) return db - da;
       return da - db;
     });
   }, [stats.comDias, busca, filtroStatus, filtroAlerta]);
@@ -159,14 +165,13 @@ export function CertificadosBirdId() {
     if(exportFiltro==='vencidos') lista = lista.filter(d=>d.dias!<0);
     if(exportFiltro==='a_vencer') lista = lista.filter(d=>d.dias!>=0 && d.dias!<=60);
     if(exportFiltro==='ativos_a_vencer') lista = lista.filter(d=>d.dias!>=0);
-    if(exportFiltro==='ativos_vencidos') lista = stats.comDias;
     const csv = ['NOME,ÁREA,SETOR,CPF,Nº CERTIFICADO,EMISSÃO,VENCIMENTO,STATUS,TELEFONE,OBSERVAÇÃO',...lista.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}","${getStatus(d.dias!).label}","${d.telefone}","${d.observacao.replace(/"/g,'')}"`)].join('\n');
     const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`bird_id_${exportFiltro}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
     setShowExportModal(false);
   };
 
   return (
-    <div className="bg-[#020C1A] min-h-screen -m-8 p-8 text-white">
+    <div className="bg-[#020C1A] min-h-screen p-8 text-white">
       <div className="max-w-[1600px] mx-auto">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex gap-3">
@@ -196,8 +201,8 @@ export function CertificadosBirdId() {
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-          <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Disponíveis</div><div className="text-[26px] font-bold mt-1">761</div></div>
-          <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Em Uso</div><div className="text-[26px] font-bold mt-1">{stats.emUso}</div><div className="text-[11px] text-[#D4AF37] mt-1">{stats.emUso} / 761 utilizados</div></div>
+          <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Disponíveis</div><div className="text-[26px] font-bold mt-1">{stats.disponiveis}</div></div>
+          <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Em Uso</div><div className="text-[26px] font-bold mt-1">{stats.emUso}</div><div className="text-[11px] text-[#D4AF37] mt-1">{stats.emUso} / {TOTAL_CONTRATO} utilizados</div></div>
           <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"><div className="text-[10px] text-emerald-400 uppercase flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Ativos</div><div className="text-[26px] font-bold text-emerald-300 mt-1">{stats.ativos}</div></div>
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20"><div className="text-[10px] text-amber-400 uppercase flex items-center gap-1"><Clock className="w-3 h-3" /> A Vencer</div><div className="text-[26px] font-bold text-amber-300 mt-1">{stats.aVencer}</div></div>
           <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20"><div className="text-[10px] text-red-400 uppercase flex items-center gap-1"><XCircle className="w-3 h-3" /> Vencidos</div><div className="text-[26px] font-bold text-red-400 mt-1">{stats.vencidos}</div></div>
@@ -236,8 +241,8 @@ export function CertificadosBirdId() {
                     </div>
                   </div>
                   <div className="flex gap-1.5">
-                    <button onClick={()=>setEditItem(cert)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition" title="Editar"><Edit2 className="w-4 h-4" /></button>
-                    <button onClick={()=>excluir(cert.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500 hover:text-white flex items-center justify-center transition" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                    <button onClick={()=>setEditItem(cert)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={()=>excluir(cert.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500 hover:text-white flex items-center justify-center transition"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
@@ -259,14 +264,12 @@ export function CertificadosBirdId() {
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setShowExportModal(false)} />
             <div className="relative w-full max-w-md bg-[#0a1930] border border-white/10 rounded-2xl p-6 shadow-2xl">
               <div className="flex justify-between mb-5"><h3 className="font-bold text-[14px]">Exportar Certificados</h3><button onClick={()=>setShowExportModal(false)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
-              <p className="text-[12px] text-zinc-400 mb-4">Escolha o filtro para exportação:</p>
               <div className="space-y-2">
                 {[
                   {id:'todos', label:'Todos', desc:`${stats.emUso} registros`},
                   {id:'ativos', label:'Só Ativos (>60 dias)', desc:`${stats.comDias.filter(d=>d.dias! > 60).length} registros`},
                   {id:'a_vencer', label:'Só A Vencer (60/30/15/7 dias)', desc:`${stats.aVencer} registros`},
                   {id:'vencidos', label:'Só Vencidos', desc:`${stats.vencidos} registros`},
-                  {id:'ativos_a_vencer', label:'Ativos + A Vencer (dentro da validade)', desc:`${stats.comDias.filter(d=>d.dias!>=0).length} registros`},
                 ].map(opt=>(
                   <button key={opt.id} onClick={()=>setExportFiltro(opt.id as any)} className={`w-full text-left p-3 rounded-xl border transition ${exportFiltro===opt.id? 'bg-[#D4AF37]/15 border-[#D4AF37]/40' : 'bg-[#020C1A] border-white/10'}`}>
                     <div className="flex items-center justify-between"><div className={`text-[12px] font-bold ${exportFiltro===opt.id?'text-[#D4AF37]':'text-white'}`}>{opt.label}</div>{exportFiltro===opt.id && <div className="w-2 h-2 rounded-full bg-[#D4AF37]" />}</div>
@@ -290,9 +293,6 @@ export function CertificadosBirdId() {
                 <input type="date" value={editItem.emissao} onChange={e=>setEditItem({...editItem, emissao:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
                 <input type="date" value={editItem.vencimento} onChange={e=>setEditItem({...editItem, vencimento:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-amber-500/30 rounded-lg text-[13px]" />
                 <input value={editItem.numero} onChange={e=>setEditItem({...editItem, numero:e.target.value})} className="col-span-2 h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px] font-mono" />
-                <input value={editItem.cpf} onChange={e=>setEditItem({...editItem, cpf:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input value={editItem.telefone} onChange={e=>setEditItem({...editItem, telefone:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <textarea value={editItem.observacao} onChange={e=>setEditItem({...editItem, observacao:e.target.value})} className="col-span-2 min-h-[60px] p-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
               </div>
               <div className="flex justify-end gap-2 mt-6"><button onClick={()=>setEditItem(null)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={salvarEdicao} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Save className="w-4 h-4" /> Salvar</button></div>
             </div>
@@ -308,9 +308,6 @@ export function CertificadosBirdId() {
                 <select value={novoItem.area} onChange={e=>setNovoItem({...novoItem, area:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]"><option>Parlamentar</option><option>Administrativo</option><option>Legislativo</option></select>
                 <input type="date" value={novoItem.vencimento} onChange={e=>setNovoItem({...novoItem, vencimento:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-amber-500/30 rounded-lg text-[13px]" />
                 <input type="date" value={novoItem.emissao} onChange={e=>setNovoItem({...novoItem, emissao:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input value={novoItem.numero} onChange={e=>setNovoItem({...novoItem, numero:e.target.value})} placeholder="Nº Certificado" className="col-span-2 h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px] font-mono" />
-                <input value={novoItem.cpf} onChange={e=>setNovoItem({...novoItem, cpf:e.target.value})} placeholder="CPF" className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input value={novoItem.telefone} onChange={e=>setNovoItem({...novoItem, telefone:e.target.value})} placeholder="Telefone" className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
               </div>
               <div className="flex justify-end gap-2 mt-6"><button onClick={()=>setNovoItem(null)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={salvarNovo} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Plus className="w-4 h-4" /> Cadastrar</button></div>
             </div>

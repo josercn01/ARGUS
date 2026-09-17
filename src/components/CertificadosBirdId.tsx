@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, ShieldCheck, Clock, XCircle, Plus, Edit2, Trash2, X, Save, Calendar, User, FileKey, Download, Upload, FileSpreadsheet } from 'lucide-react';
+import { Search, ShieldCheck, Clock, XCircle, Calendar, User, FileKey, Download, Upload, FileSpreadsheet, Trash2 } from 'lucide-react';
 
 type Certificado = {
   id: number;
@@ -29,9 +29,16 @@ function diasRestantes(venc: string){
   v.setHours(0,0,0,0);
   return Math.ceil((v.getTime()-hoje.getTime())/(1000*60*60*24));
 }
+function formatBR(dateStr: string){
+  const d = parseDate(dateStr);
+  return d? d.toLocaleDateString('pt-BR') : dateStr;
+}
+// CORREÇÃO: AGORA MOSTRA DIA EXATO QUANDO FALTA <=7 DIAS
 function getStatus(dias: number){
   if(dias<0) return { label:'VENCIDO', color:'bg-red-500/10 border-red-500/30 text-red-400', dot:'bg-red-500' };
-  if(dias<=7) return { label:'VENCE EM 7 DIAS', color:'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot:'bg-red-500' };
+  if(dias===0) return { label:'VENCE HOJE', color:'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot:'bg-red-500' };
+  if(dias===1) return { label:'VENCE EM 1 DIA', color:'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot:'bg-red-500' };
+  if(dias<=7) return { label:`VENCE EM ${dias} DIAS`, color:'bg-red-500/20 border-red-500/50 text-red-300 animate-pulse', dot:'bg-red-500' };
   if(dias<=15) return { label:'VENCE EM 15 DIAS', color:'bg-orange-500/10 border-orange-500/30 text-orange-300', dot:'bg-orange-500' };
   if(dias<=30) return { label:'VENCE EM 30 DIAS', color:'bg-amber-500/10 border-amber-500/30 text-amber-300', dot:'bg-amber-400' };
   if(dias<=60) return { label:'VENCE EM 60 DIAS', color:'bg-yellow-500/10 border-yellow-500/30 text-yellow-300', dot:'bg-yellow-400' };
@@ -142,26 +149,21 @@ export function CertificadosBirdId() {
       return matchBusca && matchArea && matchAlerta;
     });
 
-    // ORDEM NOVA: A VENCER (0-60) -> ATIVOS (>60) -> VENCIDOS (<0)
-    // Dentro de cada grupo, quanto mais perto de vencer, na frente
+    // ORDEM: A VENCER (0-60) -> ATIVOS (>60) -> VENCIDOS (<0)
     return base.sort((a,b)=>{
       const da = a.dias!, db = b.dias!;
       const aVencer = da>=0 && da<=60;
       const bVencer = db>=0 && db<=60;
       const aAtivo = da>60;
       const bAtivo = db>60;
-      const aVencido = da<0;
-      const bVencido = db<0;
 
       if(aVencer &&!bVencer) return -1;
       if(!aVencer && bVencer) return 1;
-      if(aVencer && bVencer) return da - db; // 2 dias antes de 15 dias
-
-      if(aAtivo &&!bAtivo &&!bVencer) return -1;
-      if(!aAtivo && bAtivo &&!aVencer) return 1;
-      if(aAtivo && bAtivo) return da - db; // 70 dias antes de 300 dias
-
-      if(aVencido && bVencido) return db - da; // -1 dia antes de -300 dias
+      if(aVencer && bVencer) return da - db;
+      if(aAtivo && bAtivo) return da - db;
+      if(aAtivo && db<0) return -1;
+      if(da<0 && bAtivo) return 1;
+      if(da<0 && db<0) return db - da;
       return 0;
     });
   }, [stats.comDias, busca, filtroArea, filtroAlerta]);
@@ -189,9 +191,17 @@ export function CertificadosBirdId() {
           </div>
         </div>
 
+        {stats.emUso===0 && (
+          <div className="mb-6 p-8 rounded-2xl bg-[#0a1930] border border-dashed border-white/10 flex flex-col items-center justify-center text-center">
+            <FileKey className="w-10 h-10 text-zinc-600 mb-3" />
+            <div className="text-[14px] font-bold text-zinc-300">Nenhum certificado carregado</div>
+            <div className="text-[12px] text-zinc-500 mt-1">Clique em Importar Planilha CSV</div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Disponíveis</div><div className="text-[26px] font-bold mt-1">{stats.disponiveis}</div></div>
-          <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Em Uso</div><div className="text-[26px] font-bold mt-1">{stats.emUso}</div><div className="text-[11px] text-[#D4AF37] mt-1">{stats.emUso} / {TOTAL_CONTRATO} utilizados</div></div>
+          <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Em Uso</div><div className="text-[26px] font-bold mt-1">{stats.emUso}</div><div className="text-[11px] text-[#D4AF37] mt-1">{stats.emUso} / {TOTAL_CONTRATO}</div></div>
           <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"><div className="text-[10px] text-emerald-400 uppercase">Ativos</div><div className="text-[26px] font-bold text-emerald-300 mt-1">{stats.ativos}</div></div>
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20"><div className="text-[10px] text-amber-400 uppercase">A Vencer</div><div className="text-[26px] font-bold text-amber-300 mt-1">{stats.aVencer}</div></div>
           <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20"><div className="text-[10px] text-red-400 uppercase">Vencidos</div><div className="text-[26px] font-bold text-red-400 mt-1">{stats.vencidos}</div></div>
@@ -207,7 +217,7 @@ export function CertificadosBirdId() {
         </div>
 
         <div className="flex gap-3 mb-4">
-          <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por nome, CPF, setor, nº certificado..." className="w-full h-11 pl-10 pr-4 bg-[#08152a] border border-white/10 rounded-xl text-[13px] outline-none" /></div>
+          <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por nome, CPF, setor..." className="w-full h-11 pl-10 pr-4 bg-[#08152a] border border-white/10 rounded-xl text-[13px] outline-none" /></div>
           <select value={filtroArea} onChange={e=>setFiltroArea(e.target.value)} className="h-11 px-4 bg-[#08152a] border border-white/10 rounded-xl text-[12px]"><option>Todos</option><option>Legislativo</option><option>Administrativo</option><option>Parlamentar</option></select>
           <button onClick={()=>{setBusca(''); setFiltroArea('Todos'); setFiltroAlerta('todos')}} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px]">Limpar</button>
         </div>
@@ -221,12 +231,12 @@ export function CertificadosBirdId() {
                   <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]"><User className="w-5 h-5" /></div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-[13px] font-bold truncate">{cert.nome}</h3>
-                    <div className="flex gap-2 mt-1"><span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold ${s.color}`}>{s.label}</span><span className="text-[11px] text-zinc-500">{cert.setor} • {cert.area}</span></div>
+                    <div className="flex gap-2 mt-1 flex-wrap"><span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold ${s.color}`}><span className={`w-1.5 h-1.5 rounded-full ${s.dot} inline-block mr-1`} />{s.label}</span><span className="text-[11px] text-zinc-500">{cert.setor} • {cert.area}</span></div>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
                   <div><div className="text-zinc-500 text-[10px] uppercase">Nº Certificado</div><div className="font-mono text-cyan-300 truncate">{cert.numero}</div></div>
-                  <div><div className="text-zinc-500 text-[10px] uppercase">Vencimento</div><div className={`font-bold ${cert.dias! <0?'text-red-400':'text-white'}`}>{cert.vencimento} • {cert.dias! <0? `${Math.abs(cert.dias!)}d vencido` : `${cert.dias!}d restantes`}</div></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase">Vencimento</div><div className={`font-bold ${cert.dias! <0?'text-red-400':'text-white'}`}>{formatBR(cert.vencimento)} • {cert.dias! <0? `${Math.abs(cert.dias!)}d vencido` : `${cert.dias!}d restantes`}</div></div>
                   <div><div className="text-zinc-500 text-[10px] uppercase">CPF</div><div>{cert.cpf}</div></div>
                 </div>
               </div>

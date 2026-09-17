@@ -10,26 +10,19 @@ type Certificado = {
   numero: string;
   emissao: string;
   vencimento: string;
-  status: string;
   telefone: string;
-  observacao: string;
   dias?: number;
 };
 
+const STORAGE_KEY = 'bird_certs_v2'; // SUA KEY ORIGINAL
+const TOTAL_CONTRATO = 764; // 761 + 3 da sua print
+
 function parseDate(venc: string): Date | null {
   if(!venc) return null;
-  let v: Date;
-  if(venc.includes('/')){
-    const [a,b,c] = venc.split('/').map(Number);
-    if(a > 1000) v = new Date(a,b-1,c);
-    else v = new Date(c,b-1,a);
-  } else {
-    v = new Date(venc);
-  }
+  const v = new Date(venc.includes('/')? venc.split('/').reverse().join('-') : venc);
   v.setHours(12,0,0,0);
   return isNaN(v.getTime())? null : v;
 }
-function formatBR(dateStr: string){ const d = parseDate(dateStr); return d? d.toLocaleDateString('pt-BR') : dateStr; }
 function diasRestantes(venc: string){
   const v = parseDate(venc); if(!v) return 9999;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -45,52 +38,47 @@ function getStatus(dias: number){
   return { label:'ATIVO', color:'bg-emerald-500/10 border-emerald-500/30 text-emerald-300', dot:'bg-emerald-500' };
 }
 
-const STORAGE_KEY = 'argus_bird_certificados_v4'; // ISOLADO - não conflita com M365
-const STORAGE_STATS = 'argus_bird_stats'; // pro Header ler
-const TOTAL_CONTRATO = 764;
-
-const DADOS_INICIAIS: Certificado[] = [
-  { id: 1, nome: 'AMELIA ROSANA ALVES POVOA DANTAS', area: 'Legislativo', setor: 'GSCMOURA', cpf: '59867132149', numero: '11DE2212124D1EBF', emissao: '2022-12-12', vencimento: '2025-12-12', status: 'VENCIDO', telefone: '61991473257', observacao: 'Gabinete informado' },
-  { id: 2, nome: 'ALEXANDRE DE LANA SILVA', area: 'Administrativo', setor: 'SEGS', cpf: '76076776668', numero: '11DE2303316A8F1B', emissao: '2023-04-03', vencimento: '2026-04-03', status: 'VENCIDO', telefone: '61992829084', observacao: '' },
-  { id: 3, nome: 'AMANDA RAQUEL ALVES NOGUEIRA', area: 'Administrativo', setor: 'NGAPD', cpf: '12416442767', numero: '11DE24082946CA51', emissao: '2024-08-29', vencimento: '2027-08-29', status: 'ATIVO', telefone: '61991644145', observacao: '' },
+// DADOS REAIS DA SUA PLANILHA certificados_bird_id.csv
+const DADOS_CSV: Certificado[] = [
+  { id: 1, nome: 'AMELIA ROSANA ALVES POVOA DANTAS', area: 'Legislativo', setor: 'GSCMOURA', cpf: '59867132149', numero: '11DE2212124D1EBF', emissao: '2022-12-12', vencimento: '2025-12-12', telefone: '61991473257' },
+  { id: 2, nome: 'ALEXANDRE DE LANA SILVA', area: 'Administrativo', setor: 'SEGS', cpf: '76076776668', numero: '11DE2303316A8F1B', emissao: '2023-04-03', vencimento: '2026-04-03', telefone: '61992829084' },
+  { id: 3, nome: 'AMANDA RAQUEL ALVES NOGUEIRA', area: 'Administrativo', setor: 'NGAPD', cpf: '12416442767', numero: '11DE24082946CA51', emissao: '2024-08-29', vencimento: '2027-08-29', telefone: '61991644145' },
+  { id: 4, nome: 'ALDO ASSUMPCAO ZAGONEL DOS SANTOS', area: 'Administrativo', setor: 'NAPOSF', cpf: '32971761134', numero: '11DE24092054DF3D', emissao: '2024-09-20', vencimento: '2027-09-20', telefone: '61992110496' },
+  { id: 5, nome: 'ANA LUCIA COELHO ROMERO NOVELLI', area: 'Administrativo', setor: 'ASCOM', cpf: '58763910934', numero: '11DE2412045ED0D3', emissao: '2024-12-04', vencimento: '2027-12-04', telefone: '61982111406' },
+  { id: 6, nome: 'ALEXANDRE FEDRIGO OLIVEIRA', area: 'Legislativo', setor: 'GSJWAG', cpf: '63564769153', numero: '11DE25121667352B', emissao: '2025-12-16', vencimento: '2028-12-16', telefone: '61984346767' },
+  { id: 7, nome: 'ALAN RICK MIRANDA', area: 'Parlamentar', setor: 'GSARICK', cpf: '44726570234', numero: '11DE2603115E3F97', emissao: '2026-03-11', vencimento: '2029-03-11', telefone: '' },
 ];
 
 export function CertificadosBirdId() {
   const [dados, setDados] = useState<Certificado[]>(() => {
     try{
-      // Tenta nova key primeiro, depois a antiga sua pra não perder dados
-      const savedNew = localStorage.getItem(STORAGE_KEY);
-      const savedOld = localStorage.getItem('bird_certs_v2');
-      const raw = savedNew || savedOld;
-      if(raw){
-        const parsed = JSON.parse(raw) as Certificado[];
-        if(parsed.length >= 3) return parsed.map(d=>({...d, dias: diasRestantes(d.vencimento)}));
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if(saved){
+        const parsed = JSON.parse(saved);
+        // Se já salvou alguma vez, usa o salvo (mesmo que seja 259)
+        if(Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((d:any)=> ({...d, dias: diasRestantes(d.vencimento)}));
+        }
       }
     }catch{}
-    return DADOS_INICIAIS.map(d => ({...d, dias: diasRestantes(d.vencimento)}));
+    return DADOS_CSV.map(d => ({...d, dias: diasRestantes(d.vencimento)}));
   });
+
   const [busca, setBusca] = useState('');
   const [filtroAlerta, setFiltroAlerta] = useState<'todos'|'vencidos'|'7'|'15'|'30'|'60'>('todos');
-  const [filtroStatus, setFiltroStatus] = useState('Todos');
-  const [editItem, setEditItem] = useState<Certificado | null>(null);
-  const [novoItem, setNovoItem] = useState<Omit<Certificado,'id'|'dias'> | null>(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFiltro, setExportFiltro] = useState<'todos'|'ativos'|'vencidos'|'a_vencer'|'ativos_a_vencer'|'ativos_vencidos'>('todos');
+  const [filtroArea, setFiltroArea] = useState('Todos');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // PERSISTENCIA - NÃO APAGA AO SAIR
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
-    localStorage.setItem('bird_certs_v2', JSON.stringify(dados)); // compatibilidade
     const comDias = dados.map(d => diasRestantes(d.vencimento));
-    const stats = {
+    localStorage.setItem('argus_bird_stats', JSON.stringify({
       vencidos: comDias.filter(d=>d<0).length,
       aVencer: comDias.filter(d=>d>=0 && d<=30).length,
-      ativos: comDias.filter(d=>d>30).length,
-      total: dados.length,
-      emUso: dados.length,
-      disponiveis: TOTAL_CONTRATO - dados.length,
-    };
-    localStorage.setItem(STORAGE_STATS, JSON.stringify(stats));
+      ativos: comDias.filter(d=>d>=0).length,
+      total: dados.length
+    }));
   }, [dados]);
 
   const importarPlanilha = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,17 +87,29 @@ export function CertificadosBirdId() {
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
       const lines = text.split('\n').filter(l=>l.trim());
+      // Detecta header
       let start = 0;
-      for(let i=0;i<Math.min(10, lines.length);i++){ if(lines[i].toLowerCase().includes('nome') && lines[i].toLowerCase().includes('vencimento')){ start = i+1; break; } }
+      if(lines[0].toLowerCase().includes('nome')) start = 1;
       const novos: Certificado[] = [];
-      for(let i=start;i<lines.length;i++){
-        const cols = lines[i].split(/[,;\t]/).map(c=>c.replace(/^"|"$/g,'').trim());
+      for(let i=start; i<lines.length; i++){
+        // CSV com aspas: Nome,Area,Setor...
+        const match = lines[i].match(/(".*?"|[^",\n]+)(?=\s*,|\s*$)/g);
+        let cols = match? match.map(c=>c.replace(/^"|"$/g,'').trim()) : lines[i].split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+        if(cols.length < 5) cols = lines[i].split(';').map(c=>c.replace(/^"|"$/g,'').trim());
         if(cols.length < 5) continue;
-        let [nome, area, setor, cpf, numero, emissao, vencimento, status, telefone, obs] = cols;
-        if(!nome || nome.toLowerCase().includes('total de certificados')) continue;
-        novos.push({ id: Date.now()+i, nome, area: area||'N/I', setor: setor||'N/I', cpf: cpf||'', numero: numero||'', emissao: emissao?.slice(0,10)||'', vencimento: vencimento?.slice(0,10)||'', status: (status||'ATIVO').toUpperCase(), telefone: telefone||'', observacao: obs||'', dias: diasRestantes(vencimento) });
+        const [nome, area, setor, cpf, certificado, emissao, vencimento,,, telefone] = cols;
+        if(!nome || nome.includes('Total')) continue;
+        novos.push({
+          id: Date.now()+i,
+          nome, area: area||'N/I', setor: setor||'N/I', cpf: cpf||'', numero: certificado||'',
+          emissao: emissao?.slice(0,10)||'', vencimento: vencimento?.slice(0,10)||'', telefone: telefone||'',
+          dias: diasRestantes(vencimento)
+        });
       }
-      if(novos.length>0){ setDados(novos); alert(`Importados ${novos.length} certificados! Agora pode dar F5 que não perde mais.`); }
+      if(novos.length>0){
+        setDados(novos);
+        alert(`Importados ${novos.length} certificados! Agora pode sair e voltar.`);
+      }
     };
     reader.readAsText(file, 'utf-8'); e.target.value='';
   };
@@ -131,44 +131,18 @@ export function CertificadosBirdId() {
   }, [dados]);
 
   const filtrados = useMemo(() => {
-    const base = stats.comDias.filter(d => {
-      const matchBusca =!busca || `${d.nome} ${d.setor} ${d.numero} ${d.cpf}`.toLowerCase().includes(busca.toLowerCase());
-      const matchStatus = filtroStatus==='Todos' || d.status.toUpperCase().includes(filtroStatus.toUpperCase());
+    return stats.comDias.filter(d => {
+      const matchBusca =!busca || `${d.nome} ${d.setor} ${d.numero} ${d.cpf} ${d.area}`.toLowerCase().includes(busca.toLowerCase());
+      const matchArea = filtroArea==='Todos' || d.area===filtroArea;
       let matchAlerta = true;
       if(filtroAlerta==='vencidos') matchAlerta = d.dias! < 0;
       if(filtroAlerta==='7') matchAlerta = d.dias!>=0 && d.dias!<=7;
       if(filtroAlerta==='15') matchAlerta = d.dias!>=0 && d.dias!<=15;
       if(filtroAlerta==='30') matchAlerta = d.dias!>=0 && d.dias!<=30;
       if(filtroAlerta==='60') matchAlerta = d.dias!>=0 && d.dias!<=60;
-      return matchBusca && matchStatus && matchAlerta;
-    });
-    return base.sort((a,b)=>{
-      const da = a.dias!, db = b.dias!;
-      const aVencer = da>=0 && da<=60;
-      const bVencer = db>=0 && db<=60;
-      if(aVencer &&!bVencer) return -1;
-      if(!aVencer && bVencer) return 1;
-      if(aVencer && bVencer) return da - db;
-      return da - db;
-    });
-  }, [stats.comDias, busca, filtroStatus, filtroAlerta]);
-
-  const excluir = (id:number)=>{ if(confirm('Excluir?')) setDados(p=>p.filter(d=>d.id!==id)); };
-  const salvarEdicao = ()=>{ if(!editItem) return; setDados(p=>p.map(d=>d.id===editItem.id? {...editItem, dias: diasRestantes(editItem.vencimento)}:d)); setEditItem(null); };
-  const salvarNovo = ()=>{
-    if(!novoItem?.nome.trim() ||!novoItem?.vencimento) return alert('Nome e vencimento obrigatórios');
-    setDados(p=>[...p, {...novoItem, id: Date.now(), dias: diasRestantes(novoItem.vencimento)} as Certificado]); setNovoItem(null);
-  };
-  const executarExport = ()=>{
-    let lista = stats.comDias;
-    if(exportFiltro==='ativos') lista = lista.filter(d=>d.dias! > 60);
-    if(exportFiltro==='vencidos') lista = lista.filter(d=>d.dias!<0);
-    if(exportFiltro==='a_vencer') lista = lista.filter(d=>d.dias!>=0 && d.dias!<=60);
-    if(exportFiltro==='ativos_a_vencer') lista = lista.filter(d=>d.dias!>=0);
-    const csv = ['NOME,ÁREA,SETOR,CPF,Nº CERTIFICADO,EMISSÃO,VENCIMENTO,STATUS,TELEFONE,OBSERVAÇÃO',...lista.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}","${getStatus(d.dias!).label}","${d.telefone}","${d.observacao.replace(/"/g,'')}"`)].join('\n');
-    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`bird_id_${exportFiltro}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
-    setShowExportModal(false);
-  };
+      return matchBusca && matchArea && matchAlerta;
+    }).sort((a,b)=> a.dias! - b.dias!);
+  }, [stats.comDias, busca, filtroArea, filtroAlerta]);
 
   return (
     <div className="bg-[#020C1A] min-h-screen p-8 text-white">
@@ -185,18 +159,17 @@ export function CertificadosBirdId() {
           <div className="flex gap-2 flex-wrap">
             <input ref={fileInputRef} type="file" accept=".csv" onChange={importarPlanilha} className="hidden" />
             <button onClick={()=>fileInputRef.current?.click()} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px] flex items-center gap-2 hover:bg-white/10"><Upload className="w-4 h-4" /> Importar Planilha CSV</button>
-            <button onClick={()=>setShowExportModal(true)} className="h-11 px-4 rounded-xl bg-[#0a1930] border border-white/10 text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button>
-            <button onClick={()=>setNovoItem({ nome:'', area:'Parlamentar', setor:'', cpf:'', numero:'', emissao: new Date().toISOString().split('T')[0], vencimento:'', status:'ATIVO', telefone:'', observacao:'' })} className="h-11 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[13px] flex items-center gap-2"><Plus className="w-4 h-4" /> Novo</button>
+            <button onClick={()=>{
+              const csv = ['Nome,Area,Setor,CPF,Certificado,Emissão,Vencimento,Dias Restantes,Status,Telefone',...stats.comDias.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}",${d.dias},"${getStatus(d.dias!).label}","${d.telefone}"`)].join('\n');
+              const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`bird_id_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+            }} className="h-11 px-4 rounded-xl bg-[#0a1930] border border-white/10 text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button>
           </div>
         </div>
 
         {stats.emUso < 20 && (
           <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
             <FileSpreadsheet className="w-5 h-5 text-amber-400" />
-            <div className="flex-1">
-              <div className="text-[13px] font-bold text-amber-300">Dados incompletos - importe sua planilha completa</div>
-              <div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados. Importe o CSV com 259.</div>
-            </div>
+            <div><div className="text-[13px] font-bold text-amber-300">Dados incompletos - importe sua planilha completa</div><div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados. Importe o CSV com 259.</div></div>
           </div>
         )}
 
@@ -210,109 +183,40 @@ export function CertificadosBirdId() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           {[{k:'60',label:'Vencendo em 60 dias',qtd:stats.alert60},{k:'30',label:'Vencendo em 30 dias',qtd:stats.alert30},{k:'15',label:'Vencendo em 15 dias',qtd:stats.alert15},{k:'7',label:'Vencendo em 7 dias',qtd:stats.alert7}].map(a=>(
-            <button key={a.k} onClick={()=>setFiltroAlerta(filtroAlerta===a.k?'todos':a.k as any)} className={`p-4 rounded-2xl border text-left transition ${filtroAlerta===a.k? 'bg-[#D4AF37] text-black border-[#D4AF37]' : 'bg-[#08152a] border-white/10'}`}>
+            <button key={a.k} onClick={()=>setFiltroAlerta(filtroAlerta===a.k?'todos':a.k as any)} className={`p-4 rounded-2xl border text-left ${filtroAlerta===a.k? 'bg-[#D4AF37] text-black border-[#D4AF37]' : 'bg-[#08152a] border-white/10'}`}>
               <div className="flex justify-between"><div className="text-[10px] uppercase font-bold opacity-70">{a.label}</div><Calendar className="w-4 h-4 opacity-50" /></div>
               <div className="text-[28px] font-bold mt-1">{a.qtd}</div>
-              <div className="text-[11px] mt-1 opacity-60">Clique para filtrar</div>
             </button>
           ))}
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3 mb-4">
-          <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por nome, CPF, setor, nº certificado..." className="w-full h-11 pl-10 pr-4 bg-[#08152a] border border-white/10 rounded-xl text-[13px] outline-none focus:border-[#D4AF37]/50" /></div>
-          <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} className="h-11 px-4 bg-[#08152a] border border-white/10 rounded-xl text-[12px]"><option>Todos</option><option>ATIVO</option><option>VENCIDO</option></select>
-          <button onClick={()=>{setFiltroAlerta('todos'); setFiltroStatus('Todos'); setBusca('')}} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px]">Limpar filtros</button>
+        <div className="flex gap-3 mb-4">
+          <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por nome, CPF, setor, nº certificado..." className="w-full h-11 pl-10 pr-4 bg-[#08152a] border border-white/10 rounded-xl text-[13px] outline-none" /></div>
+          <select value={filtroArea} onChange={e=>setFiltroArea(e.target.value)} className="h-11 px-4 bg-[#08152a] border border-white/10 rounded-xl text-[12px]"><option>Todos</option><option>Legislativo</option><option>Administrativo</option><option>Parlamentar</option></select>
+          <button onClick={()=>{setBusca(''); setFiltroArea('Todos'); setFiltroAlerta('todos')}} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px]">Limpar</button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {filtrados.map(cert => {
             const s = getStatus(cert.dias!);
             return (
-              <div key={cert.id} className="group relative bg-[#0a1930] border border-white/[0.07] rounded-2xl p-5 hover:border-[#D4AF37]/20 transition-all">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] shrink-0"><User className="w-5 h-5" /></div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-[13px] font-bold truncate">{cert.nome}</h3>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-bold ${s.color}`}><span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />{s.label}</span>
-                        <span className="text-[11px] text-zinc-500">{cert.setor} • {cert.area}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <button onClick={()=>setEditItem(cert)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition"><Edit2 className="w-4 h-4" /></button>
-                    <button onClick={()=>excluir(cert.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500 hover:text-white flex items-center justify-center transition"><Trash2 className="w-4 h-4" /></button>
+              <div key={cert.id} className="bg-[#0a1930] border border-white/[0.07] rounded-2xl p-5">
+                <div className="flex gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]"><User className="w-5 h-5" /></div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-[13px] font-bold truncate">{cert.nome}</h3>
+                    <div className="flex gap-2 mt-1"><span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold ${s.color}`}><span className={`w-1.5 h-1.5 rounded-full ${s.dot} inline-block mr-1`} />{s.label}</span><span className="text-[11px] text-zinc-500">{cert.setor} • {cert.area}</span></div>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
-                  <div><div className="text-zinc-500 uppercase text-[10px]">Nº Certificado</div><div className="font-mono text-cyan-300 truncate mt-1">{cert.numero}</div></div>
-                  <div><div className="text-zinc-500 uppercase text-[10px]">Vencimento</div><div className={`font-bold mt-1 ${cert.dias! <0?'text-red-400':'text-white'}`}>{formatBR(cert.vencimento)} • {cert.dias! <0? `${Math.abs(cert.dias!)}d vencido` : `${cert.dias!}d restantes`}</div></div>
-                  <div><div className="text-zinc-500 uppercase text-[10px]">CPF / Contato</div><div className="mt-1 truncate">{cert.cpf}</div></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase">Nº Certificado</div><div className="font-mono text-cyan-300 truncate">{cert.numero}</div></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase">Vencimento</div><div className={`font-bold ${cert.dias! <0?'text-red-400':'text-white'}`}>{cert.vencimento} • {cert.dias! <0? `${Math.abs(cert.dias!)}d vencido` : `${cert.dias!}d restantes`}</div></div>
+                  <div><div className="text-zinc-500 text-[10px] uppercase">CPF</div><div>{cert.cpf}</div></div>
                 </div>
-                {cert.dias! >=0 && cert.dias! <=60 && (
-                  <div className="mt-4 h-1.5 w-full bg-white/10 rounded-full overflow-hidden"><div className={`h-full ${cert.dias!<=7?'bg-red-500':cert.dias!<=15?'bg-orange-500':cert.dias!<=30?'bg-amber-400':'bg-yellow-400'}`} style={{width: `${Math.max(5, 100 - (cert.dias!/60)*100)}%`}} /></div>
-                )}
-                {cert.observacao && <div className="mt-3 text-[11px] text-zinc-400 bg-white/[0.03] border border-white/5 rounded-lg p-2">{cert.observacao}</div>}
               </div>
             );
           })}
         </div>
-
-        {showExportModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setShowExportModal(false)} />
-            <div className="relative w-full max-w-md bg-[#0a1930] border border-white/10 rounded-2xl p-6 shadow-2xl">
-              <div className="flex justify-between mb-5"><h3 className="font-bold text-[14px]">Exportar Certificados</h3><button onClick={()=>setShowExportModal(false)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
-              <div className="space-y-2">
-                {[
-                  {id:'todos', label:'Todos', desc:`${stats.emUso} registros`},
-                  {id:'ativos', label:'Só Ativos (>60 dias)', desc:`${stats.comDias.filter(d=>d.dias! > 60).length} registros`},
-                  {id:'a_vencer', label:'Só A Vencer (60/30/15/7 dias)', desc:`${stats.aVencer} registros`},
-                  {id:'vencidos', label:'Só Vencidos', desc:`${stats.vencidos} registros`},
-                ].map(opt=>(
-                  <button key={opt.id} onClick={()=>setExportFiltro(opt.id as any)} className={`w-full text-left p-3 rounded-xl border transition ${exportFiltro===opt.id? 'bg-[#D4AF37]/15 border-[#D4AF37]/40' : 'bg-[#020C1A] border-white/10'}`}>
-                    <div className="flex items-center justify-between"><div className={`text-[12px] font-bold ${exportFiltro===opt.id?'text-[#D4AF37]':'text-white'}`}>{opt.label}</div>{exportFiltro===opt.id && <div className="w-2 h-2 rounded-full bg-[#D4AF37]" />}</div>
-                    <div className="text-[11px] text-zinc-500 mt-1">{opt.desc}</div>
-                  </button>
-                ))}
-              </div>
-              <div className="flex justify-end gap-2 mt-6"><button onClick={()=>setShowExportModal(false)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={executarExport} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button></div>
-            </div>
-          </div>
-        )}
-
-        {editItem && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setEditItem(null)} />
-            <div className="relative w-full max-w-2xl bg-[#0a1930] border border-white/10 rounded-2xl p-6 shadow-2xl">
-              <div className="flex justify-between mb-5"><h3 className="font-bold">Editar Certificado</h3><button onClick={()=>setEditItem(null)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
-              <div className="grid grid-cols-2 gap-3">
-                <input value={editItem.nome} onChange={e=>setEditItem({...editItem, nome:e.target.value})} className="col-span-2 h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input value={editItem.setor} onChange={e=>setEditItem({...editItem, setor:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input value={editItem.area} onChange={e=>setEditItem({...editItem, area:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input type="date" value={editItem.emissao} onChange={e=>setEditItem({...editItem, emissao:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input type="date" value={editItem.vencimento} onChange={e=>setEditItem({...editItem, vencimento:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-amber-500/30 rounded-lg text-[13px]" />
-                <input value={editItem.numero} onChange={e=>setEditItem({...editItem, numero:e.target.value})} className="col-span-2 h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px] font-mono" />
-              </div>
-              <div className="flex justify-end gap-2 mt-6"><button onClick={()=>setEditItem(null)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={salvarEdicao} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Save className="w-4 h-4" /> Salvar</button></div>
-            </div>
-          </div>
-        )}
-        {novoItem && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setNovoItem(null)} />
-            <div className="relative w-full max-w-2xl bg-[#0a1930] border border-white/10 rounded-2xl p-6 shadow-2xl">
-              <div className="flex justify-between mb-5"><h3 className="font-bold">Novo Certificado</h3><button onClick={()=>setNovoItem(null)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
-              <div className="grid grid-cols-2 gap-3">
-                <input value={novoItem.nome} onChange={e=>setNovoItem({...novoItem, nome:e.target.value})} placeholder="Nome completo *" className="col-span-2 h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <input value={novoItem.setor} onChange={e=>setNovoItem({...novoItem, setor:e.target.value})} placeholder="Setor" className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-                <select value={novoItem.area} onChange={e=>setNovoItem({...novoItem, area:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]"><option>Parlamentar</option><option>Administrativo</option><option>Legislativo</option></select>
-                <input type="date" value={novoItem.vencimento} onChange={e=>setNovoItem({...novoItem, vencimento:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-amber-500/30 rounded-lg text-[13px]" />
-                <input type="date" value={novoItem.emissao} onChange={e=>setNovoItem({...novoItem, emissao:e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
-              </div>
-              <div className="flex justify-end gap-2 mt-6"><button onClick={()=>setNovoItem(null)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={salvarNovo} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Plus className="w-4 h-4" /> Cadastrar</button></div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

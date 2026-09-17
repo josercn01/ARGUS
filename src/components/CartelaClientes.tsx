@@ -1,19 +1,16 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Users, Building2, Plus, Edit2, Trash2, X, Save, Upload, Download, Filter, Briefcase } from 'lucide-react';
+import { Search, Users, Building2, Plus, Edit2, Trash2, X, Save, Upload, Download, Briefcase } from 'lucide-react';
 
 type Cliente = {
   id: number;
   gerente: string;
   cliente: string;
   suplente?: string;
-  chefeGabinete?: string;
-  subChefe?: string;
   status: string;
 };
 
 const STORAGE_KEY = 'argus_cartela_clientes_v2';
 
-// DADOS DA SUA PLANILHA - 111 REGISTROS
 const DADOS_BASE: Cliente[] = [
   { id: 1, gerente: 'Bruna', cliente: 'Senador Angelo Coronel', status: 'ATIVO' },
   { id: 2, gerente: 'Bruna', cliente: 'Senador Paulo Paim', status: 'ATIVO' },
@@ -48,7 +45,7 @@ const DADOS_BASE: Cliente[] = [
   { id: 31, gerente: 'Danielle', cliente: 'BLOCO PARLAMENTAR DEMOCRACIA (MDB/UNIÃO/PODEMOS/PSDB) Lider Efraim Filho', status: 'ATIVO' },
   { id: 32, gerente: 'Danielle', cliente: 'LIDERANÇA DO PL', status: 'ATIVO' },
   { id: 33, gerente: 'Danielle', cliente: 'LIDERANÇA DO PARTIDO UNIÃO BRASIL', status: 'ATIVO' },
-  { id: 34, gerente: 'Danielle', cliente: 'Senador Flávio Arns - Liderança', status: 'ATIVO' },
+  { id: 34, gerente: 'Danielle', cliente: 'Senadora Augusta Brito', status: 'ATIVO' },
   { id: 35, gerente: 'Guilherme', cliente: 'Senador Iraja', status: 'ATIVO' },
   { id: 36, gerente: 'Guilherme', cliente: 'LIDERANÇA DO REPUBLICANOS', status: 'ATIVO' },
   { id: 37, gerente: 'Guilherme', cliente: 'LIDERANÇA DO PDT', status: 'ATIVO' },
@@ -139,17 +136,47 @@ export function CartelaClientes() {
     } catch {}
     return DADOS_BASE;
   });
-  const [busca, setBusca] = useState('');
-  const [filtroGerente, setFiltroGerente] = useState('Todos');
+
+  const [gerenteSelecionado, setGerenteSelecionado] = useState<string | null>(null);
+  const [buscaModal, setBuscaModal] = useState('');
   const [editItem, setEditItem] = useState<Cliente | null>(null);
   const [novoItem, setNovoItem] = useState<Partial<Cliente> | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFiltro, setExportFiltro] = useState('todos');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
   }, [dados]);
+
+  const stats = useMemo(() => {
+    const gerentes = [...new Set(dados.map(d => d.gerente))].sort();
+    return {
+      total: dados.length,
+      gerentes: gerentes.length,
+      porGerente: gerentes.map(g => ({
+        gerente: g,
+        total: dados.filter(d => d.gerente === g).length,
+        clientes: dados.filter(d => d.gerente === g).sort((a,b) => a.cliente.localeCompare(b.cliente))
+      })).sort((a,b) => b.total - a.total)
+    };
+  }, [dados]);
+
+  const clientesDoModal = useMemo(() => {
+    if (!gerenteSelecionado) return [];
+    let lista = gerenteSelecionado === 'TOTAL'? dados : dados.filter(d => d.gerente === gerenteSelecionado);
+    if (buscaModal) {
+      lista = lista.filter(c => `${c.cliente} ${c.suplente}`.toLowerCase().includes(buscaModal.toLowerCase()));
+    }
+    return lista.sort((a,b) => a.cliente.localeCompare(b.cliente));
+  }, [dados, gerenteSelecionado, buscaModal]);
+
+  const excluir = (id: number) => { if (confirm('Excluir cliente?')) setDados(p => p.filter(d => d.id!== id)); };
+  const salvarEdicao = () => { if (!editItem) return; setDados(p => p.map(d => d.id === editItem.id? editItem : d)); setEditItem(null); };
+  const salvarNovo = () => {
+    if (!novoItem?.cliente?.trim() ||!novoItem?.gerente?.trim()) return alert('Gerente e Cliente obrigatórios');
+    setDados(p => [...p, { id: Date.now(), gerente: novoItem.gerente!, cliente: novoItem.cliente!, suplente: novoItem.suplente || '', status: 'ATIVO' }]);
+    setNovoItem(null);
+  };
 
   const importarPlanilha = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -174,47 +201,18 @@ export function CartelaClientes() {
     reader.readAsText(file, 'utf-8'); e.target.value = '';
   };
 
-  const stats = useMemo(() => {
-    const gerentes = [...new Set(dados.map(d => d.gerente))];
-    return {
-      total: dados.length,
-      gerentes: gerentes.length,
-      porGerente: gerentes.map(g => ({ gerente: g, total: dados.filter(d => d.gerente === g).length })).sort((a,b) => b.total - a.total)
-    };
-  }, [dados]);
-
-  const filtrados = useMemo(() => {
-    return dados.filter(d => {
-      const mBusca =!busca || `${d.cliente} ${d.gerente} ${d.suplente}`.toLowerCase().includes(busca.toLowerCase());
-      const mGerente = filtroGerente === 'Todos' || d.gerente === filtroGerente;
-      return mBusca && mGerente;
-    }).sort((a,b) => {
-      if (a.gerente!== b.gerente) return a.gerente.localeCompare(b.gerente);
-      return a.cliente.localeCompare(b.cliente);
-    });
-  }, [dados, busca, filtroGerente]);
-
-  const excluir = (id: number) => { if (confirm('Excluir?')) setDados(p => p.filter(d => d.id!== id)); };
-  const salvarEdicao = () => { if (!editItem) return; setDados(p => p.map(d => d.id === editItem.id? editItem : d)); setEditItem(null); };
-  const salvarNovo = () => {
-    if (!novoItem?.cliente?.trim() ||!novoItem?.gerente?.trim()) return alert('Gerente e Cliente obrigatórios');
-    setDados(p => [...p, { id: Date.now(), gerente: novoItem.gerente!, cliente: novoItem.cliente!, suplente: novoItem.suplente || '', status: 'ATIVO' }]);
-    setNovoItem(null);
-  };
-
-  const executarExport = () => {
-    let lista = filtrados;
-    if (exportFiltro!== 'todos') lista = dados.filter(d => d.gerente === exportFiltro);
-    const csv = ['GERENTE,CLIENTE,SUPLENTE,STATUS',...lista.map(d => `"${d.gerente}","${d.cliente}","${d.suplente||''}","${d.status}"`)].join('\n');
+  const exportar = (gerente: string) => {
+    const lista = gerente === 'TOTAL'? dados : dados.filter(d => d.gerente === gerente);
+    const csv = ['GERENTE,CLIENTE,SUPLENTE,STATUS',...lista.map(d => `"${d.gerente}","${d.cliente}","${d.suplente || ''}","${d.status}"`)].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `cartela_${exportFiltro}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
-    setShowExportModal(false);
+    const a = document.createElement('a'); a.href = url; a.download = `cartela_${gerente}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
   };
 
   return (
     <div className="bg-[#020C1A] min-h-screen -m-8 p-8 text-white">
       <div className="max-w-[1600px] mx-auto">
+        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#8c6e1a] flex items-center justify-center text-black"><Building2 className="w-5 h-5" /></div>
@@ -232,71 +230,86 @@ export function CartelaClientes() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-          {stats.porGerente.slice(0,5).map(g => (
-            <div key={g.gerente} className="p-4 rounded-2xl bg-[#0a1930] border border-white/10">
-              <div className="text-[10px] text-zinc-500 uppercase flex items-center gap-1"><Briefcase className="w-3 h-3" /> {g.gerente}</div>
-              <div className="text-[26px] font-bold mt-1">{g.total}</div>
-              <div className="text-[11px] text-zinc-500 mt-1">clientes</div>
-            </div>
+        {/* CARDS APENAS GERENTES */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {stats.porGerente.map(g => (
+            <button
+              key={g.gerente}
+              onClick={() => { setGerenteSelecionado(g.gerente); setBuscaModal(''); }}
+              className="text-left p-4 rounded-2xl bg-[#0a1930] border border-white/10 hover:border-[#D4AF37]/40 hover:bg-[#0a1930]/80 transition-all group cursor-pointer"
+            >
+              <div className="text-[10px] text-zinc-500 uppercase flex items-center gap-1 group-hover:text-[#D4AF37] transition"><Briefcase className="w-3 h-3" /> {g.gerente}</div>
+              <div className="text-[28px] font-bold mt-2 group-hover:text-[#D4AF37] transition">{g.total}</div>
+              <div className="text-[11px] text-zinc-500 mt-1">clientes • clique para ver</div>
+            </button>
           ))}
-          <div className="p-4 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20">
-            <div className="text-[10px] text-[#D4AF37] uppercase">Total Geral</div>
-            <div className="text-[26px] font-bold text-[#D4AF37] mt-1">{stats.total}</div>
+          <button
+            onClick={() => { setGerenteSelecionado('TOTAL'); setBuscaModal(''); }}
+            className="text-left p-4 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 hover:bg-[#D4AF37]/15 hover:border-[#D4AF37]/40 transition-all group cursor-pointer"
+          >
+            <div className="text-[10px] text-[#D4AF37] uppercase">TOTAL GERAL</div>
+            <div className="text-[28px] font-bold text-[#D4AF37] mt-2">{stats.total}</div>
             <div className="text-[11px] text-[#D4AF37]/70 mt-1">{stats.gerentes} gerentes</div>
-          </div>
+          </button>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3 mb-4">
-          <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por cliente, gerente, suplente..." className="w-full h-11 pl-10 pr-4 bg-[#08152a] border border-white/10 rounded-xl text-[13px] outline-none focus:border-[#D4AF37]/50" /></div>
-          <select value={filtroGerente} onChange={e => setFiltroGerente(e.target.value)} className="h-11 px-4 bg-[#08152a] border border-white/10 rounded-xl text-[12px] min-w-[180px]">
-            <option>Todos</option>
-            {[...new Set(dados.map(d => d.gerente))].sort().map(g => <option key={g} value={g}>{g} ({dados.filter(d => d.gerente === g).length})</option>)}
-          </select>
-          <button onClick={() => { setFiltroGerente('Todos'); setBusca(''); }} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px]">Limpar</button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {filtrados.map(cli => (
-            <div key={cli.id} className="group bg-[#0a1930] border border-white/[0.07] rounded-2xl p-5 hover:border-[#D4AF37]/20 transition-all">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex gap-3 flex-1 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] shrink-0"><Users className="w-5 h-5" /></div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-[13px] font-bold truncate">{cli.cliente}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] font-bold">{cli.gerente}</span>
-                      {cli.suplente && <span className="text-[11px] text-zinc-500">Suplente: {cli.suplente}</span>}
+        {/* MODAL LISTA DE CLIENTES */}
+        {gerenteSelecionado && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setGerenteSelecionado(null)} />
+            <div className="relative w-full max-w-3xl bg-[#0a1930] border border-white/10 rounded-2xl flex flex-col max-h-[85vh]">
+              {/* Header Modal */}
+              <div className="p-6 border-b border-white/10 shrink-0">
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]"><Users className="w-5 h-5" /></div>
+                    <div>
+                      <h3 className="font-bold text-[16px]">{gerenteSelecionado === 'TOTAL'? 'Todos os Clientes' : `Clientes de ${gerenteSelecionado}`}</h3>
+                      <p className="text-[11px] text-zinc-500 mt-1">{clientesDoModal.length} cliente{clientesDoModal.length!== 1? 's' : ''} {buscaModal && `• filtrado por "${buscaModal}"`}</p>
                     </div>
                   </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => exportar(gerenteSelecionado)} className="h-9 px-3 rounded-lg bg-white/5 border border-white/10 text-[11px] flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Exportar</button>
+                    <button onClick={() => setGerenteSelecionado(null)} className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center"><X className="w-4 h-4" /></button>
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => setEditItem(cli)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => excluir(cli.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500 hover:text-white flex items-center justify-center transition"><Trash2 className="w-4 h-4" /></button>
+                <div className="relative mt-4">
+                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+                  <input value={buscaModal} onChange={e => setBuscaModal(e.target.value)} placeholder="Buscar cliente neste gerente..." className="w-full h-10 pl-10 pr-4 bg-[#020C1A] border border-white/10 rounded-xl text-[13px] outline-none focus:border-[#D4AF37]/50" />
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
 
-        {showExportModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowExportModal(false)} />
-            <div className="relative w-full max-w-md bg-[#0a1930] border border-white/10 rounded-2xl p-6">
-              <div className="flex justify-between mb-5"><h3 className="font-bold text-[14px]">Exportar Cartela</h3><button onClick={() => setShowExportModal(false)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                <button onClick={() => setExportFiltro('todos')} className={`w-full text-left p-3 rounded-xl border ${exportFiltro==='todos'?'bg-[#D4AF37]/15 border-[#D4AF37]/40':'bg-[#020C1A] border-white/10'}`}><div className="text-[12px] font-bold">Todos os gerentes</div><div className="text-[11px] text-zinc-500">{stats.total} clientes</div></button>
-                {stats.porGerente.map(g => (
-                  <button key={g.gerente} onClick={() => setExportFiltro(g.gerente)} className={`w-full text-left p-3 rounded-xl border ${exportFiltro===g.gerente?'bg-[#D4AF37]/15 border-[#D4AF37]/40':'bg-[#020C1A] border-white/10'}`}><div className="text-[12px] font-bold">{g.gerente}</div><div className="text-[11px] text-zinc-500">{g.total} clientes</div></button>
+              {/* Lista */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {clientesDoModal.map(cli => (
+                  <div key={cli.id} className="group flex items-center justify-between gap-3 p-4 rounded-xl bg-[#020C1A] border border-white/5 hover:border-white/10 transition">
+                    <div className="flex gap-3 flex-1 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] shrink-0"><Users className="w-4 h-4" /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium truncate">{cli.cliente}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37]">{cli.gerente}</span>
+                          {cli.suplente && <span className="text-[11px] text-zinc-500 truncate">Suplente: {cli.suplente}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button onClick={() => setEditItem(cli)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={() => excluir(cli.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400 flex items-center justify-center transition"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
                 ))}
+                {clientesDoModal.length === 0 && (
+                  <div className="text-center py-12 text-zinc-500 text-[13px]">Nenhum cliente encontrado</div>
+                )}
               </div>
-              <div className="flex justify-end gap-2 mt-6"><button onClick={() => setShowExportModal(false)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={executarExport} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Download className="w-4 h-4" /> Exportar CSV</button></div>
             </div>
           </div>
         )}
 
+        {/* MODAIS EDIT / NOVO / EXPORT */}
         {editItem && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setEditItem(null)} />
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setEditItem(null)} />
             <div className="relative w-full max-w-lg bg-[#0a1930] border border-white/10 rounded-2xl p-6">
               <div className="flex justify-between mb-5"><h3 className="font-bold">Editar Cliente</h3><button onClick={() => setEditItem(null)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
               <div className="grid gap-3">
@@ -310,15 +323,33 @@ export function CartelaClientes() {
         )}
 
         {novoItem && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setNovoItem(null)} />
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setNovoItem(null)} />
             <div className="relative w-full max-w-lg bg-[#0a1930] border border-white/10 rounded-2xl p-6">
               <div className="flex justify-between mb-5"><h3 className="font-bold">Novo Cliente</h3><button onClick={() => setNovoItem(null)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
               <div className="grid gap-3">
-                <select value={novoItem.gerente||''} onChange={e => setNovoItem({...novoItem, gerente: e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]"><option value="">Selecione Gerente</option>{[...new Set(dados.map(d=>d.gerente))].map(g => <option key={g} value={g}>{g}</option>)}<option value="Bruna">Bruna</option><option value="Claudilene">Claudilene</option><option value="Danielle">Danielle</option><option value="Guilherme">Guilherme</option><option value="Hermes">Hermes</option><option value="Hermínio">Hermínio</option><option value="Paulo DG">Paulo DG</option><option value="Ronaldo">Ronaldo</option><option value="Tatiane">Tatiane</option><option value="Wellber">Wellber</option></select>
-                <input value={novoItem.cliente||''} onChange={e => setNovoItem({...novoItem, cliente: e.target.value})} placeholder="Nome do Cliente / Senador *" className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
+                <select value={novoItem.gerente||''} onChange={e => setNovoItem({...novoItem, gerente: e.target.value})} className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]">
+                  <option value="">Selecione Gerente</option>
+                  {stats.porGerente.map(g => <option key={g.gerente} value={g.gerente}>{g.gerente}</option>)}
+                </select>
+                <input value={novoItem.cliente||''} onChange={e => setNovoItem({...novoItem, cliente: e.target.value})} placeholder="Nome do Cliente *" className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
                 <input value={novoItem.suplente||''} onChange={e => setNovoItem({...novoItem, suplente: e.target.value})} placeholder="Suplente (opcional)" className="h-10 px-3 bg-[#020C1A] border border-white/10 rounded-lg text-[13px]" />
               </div>
               <div className="flex justify-end gap-2 mt-6"><button onClick={() => setNovoItem(null)} className="h-10 px-5 rounded-xl bg-white/5 border border-white/10 text-[12px]">Cancelar</button><button onClick={salvarNovo} className="h-10 px-5 rounded-xl bg-[#D4AF37] text-black font-bold text-[12px] flex items-center gap-2"><Plus className="w-4 h-4" /> Cadastrar</button></div>
+            </div>
+          </div>
+        )}
+
+        {showExportModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowExportModal(false)} />
+            <div className="relative w-full max-w-md bg-[#0a1930] border border-white/10 rounded-2xl p-6">
+              <div className="flex justify-between mb-5"><h3 className="font-bold text-[14px]">Exportar Cartela</h3><button onClick={() => setShowExportModal(false)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><X className="w-4 h-4" /></button></div>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                <button onClick={() => { exportar('TOTAL'); setShowExportModal(false); }} className="w-full text-left p-3 rounded-xl bg-[#020C1A] border border-white/10 hover:border-[#D4AF37]/30"><div className="text-[12px] font-bold">Todos os gerentes</div><div className="text-[11px] text-zinc-500">{stats.total} clientes</div></button>
+                {stats.porGerente.map(g => (
+                  <button key={g.gerente} onClick={() => { exportar(g.gerente); setShowExportModal(false); }} className="w-full text-left p-3 rounded-xl bg-[#020C1A] border border-white/10 hover:border-[#D4AF37]/30"><div className="text-[12px] font-bold">{g.gerente}</div><div className="text-[11px] text-zinc-500">{g.total} clientes</div></button>
+                ))}
+              </div>
             </div>
           </div>
         )}

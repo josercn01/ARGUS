@@ -14,8 +14,8 @@ type Certificado = {
   dias?: number;
 };
 
-const STORAGE_KEY = 'bird_certs_v2'; // SUA KEY ORIGINAL
-const TOTAL_CONTRATO = 764; // 761 + 3 da sua print
+const STORAGE_KEY = 'bird_certs_v2';
+const TOTAL_CONTRATO = 764;
 
 function parseDate(venc: string): Date | null {
   if(!venc) return null;
@@ -38,7 +38,6 @@ function getStatus(dias: number){
   return { label:'ATIVO', color:'bg-emerald-500/10 border-emerald-500/30 text-emerald-300', dot:'bg-emerald-500' };
 }
 
-// DADOS REAIS DA SUA PLANILHA certificados_bird_id.csv
 const DADOS_CSV: Certificado[] = [
   { id: 1, nome: 'AMELIA ROSANA ALVES POVOA DANTAS', area: 'Legislativo', setor: 'GSCMOURA', cpf: '59867132149', numero: '11DE2212124D1EBF', emissao: '2022-12-12', vencimento: '2025-12-12', telefone: '61991473257' },
   { id: 2, nome: 'ALEXANDRE DE LANA SILVA', area: 'Administrativo', setor: 'SEGS', cpf: '76076776668', numero: '11DE2303316A8F1B', emissao: '2023-04-03', vencimento: '2026-04-03', telefone: '61992829084' },
@@ -55,7 +54,6 @@ export function CertificadosBirdId() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if(saved){
         const parsed = JSON.parse(saved);
-        // Se já salvou alguma vez, usa o salvo (mesmo que seja 259)
         if(Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((d:any)=> ({...d, dias: diasRestantes(d.vencimento)}));
         }
@@ -69,7 +67,6 @@ export function CertificadosBirdId() {
   const [filtroArea, setFiltroArea] = useState('Todos');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA - NÃO APAGA AO SAIR
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
     const comDias = dados.map(d => diasRestantes(d.vencimento));
@@ -81,24 +78,29 @@ export function CertificadosBirdId() {
     }));
   }, [dados]);
 
+  const apagarTodos = () => {
+    if(confirm(`Tem certeza que quer APAGAR TODOS os ${dados.length} certificados? Essa ação não pode ser desfeita.`)){
+      localStorage.removeItem(STORAGE_KEY);
+      setDados([]);
+    }
+  };
+
   const importarPlanilha = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if(!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
       const lines = text.split('\n').filter(l=>l.trim());
-      // Detecta header
       let start = 0;
       if(lines[0].toLowerCase().includes('nome')) start = 1;
       const novos: Certificado[] = [];
       for(let i=start; i<lines.length; i++){
-        // CSV com aspas: Nome,Area,Setor...
         const match = lines[i].match(/(".*?"|[^",\n]+)(?=\s*,|\s*$)/g);
         let cols = match? match.map(c=>c.replace(/^"|"$/g,'').trim()) : lines[i].split(',').map(c=>c.replace(/^"|"$/g,'').trim());
         if(cols.length < 5) cols = lines[i].split(';').map(c=>c.replace(/^"|"$/g,'').trim());
         if(cols.length < 5) continue;
         const [nome, area, setor, cpf, certificado, emissao, vencimento,,, telefone] = cols;
-        if(!nome || nome.includes('Total')) continue;
+        if(!nome || nome.toLowerCase().includes('total')) continue;
         novos.push({
           id: Date.now()+i,
           nome, area: area||'N/I', setor: setor||'N/I', cpf: cpf||'', numero: certificado||'',
@@ -108,7 +110,7 @@ export function CertificadosBirdId() {
       }
       if(novos.length>0){
         setDados(novos);
-        alert(`Importados ${novos.length} certificados! Agora pode sair e voltar.`);
+        alert(`Importados ${novos.length} certificados! Pode sair e voltar que fica salvo.`);
       }
     };
     reader.readAsText(file, 'utf-8'); e.target.value='';
@@ -159,6 +161,7 @@ export function CertificadosBirdId() {
           <div className="flex gap-2 flex-wrap">
             <input ref={fileInputRef} type="file" accept=".csv" onChange={importarPlanilha} className="hidden" />
             <button onClick={()=>fileInputRef.current?.click()} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px] flex items-center gap-2 hover:bg-white/10"><Upload className="w-4 h-4" /> Importar Planilha CSV</button>
+            <button onClick={apagarTodos} disabled={stats.emUso===0} className="h-11 px-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[12px] flex items-center gap-2 hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 className="w-4 h-4" /> Apagar todos</button>
             <button onClick={()=>{
               const csv = ['Nome,Area,Setor,CPF,Certificado,Emissão,Vencimento,Dias Restantes,Status,Telefone',...stats.comDias.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}",${d.dias},"${getStatus(d.dias!).label}","${d.telefone}"`)].join('\n');
               const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`bird_id_${new Date().toISOString().split('T')[0]}.csv`; a.click();
@@ -170,6 +173,14 @@ export function CertificadosBirdId() {
           <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
             <FileSpreadsheet className="w-5 h-5 text-amber-400" />
             <div><div className="text-[13px] font-bold text-amber-300">Dados incompletos - importe sua planilha completa</div><div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados. Importe o CSV com 259.</div></div>
+          </div>
+        )}
+
+        {stats.emUso===0 && (
+          <div className="mb-6 p-8 rounded-2xl bg-[#0a1930] border border-dashed border-white/10 flex flex-col items-center justify-center text-center">
+            <FileKey className="w-10 h-10 text-zinc-600 mb-3" />
+            <div className="text-[14px] font-bold text-zinc-300">Nenhum certificado carregado</div>
+            <div className="text-[12px] text-zinc-500 mt-1">Clique em Importar Planilha CSV para carregar os 259 certificados</div>
           </div>
         )}
 

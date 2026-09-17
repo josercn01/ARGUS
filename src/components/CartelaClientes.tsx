@@ -137,6 +137,7 @@ export function CartelaClientes() {
     return DADOS_BASE;
   });
 
+  const [buscaGlobal, setBuscaGlobal] = useState('');
   const [gerenteSelecionado, setGerenteSelecionado] = useState<string | null>(null);
   const [buscaModal, setBuscaModal] = useState('');
   const [editItem, setEditItem] = useState<Cliente | null>(null);
@@ -156,16 +157,28 @@ export function CartelaClientes() {
       porGerente: gerentes.map(g => ({
         gerente: g,
         total: dados.filter(d => d.gerente === g).length,
-        clientes: dados.filter(d => d.gerente === g).sort((a,b) => a.cliente.localeCompare(b.cliente))
       })).sort((a,b) => b.total - a.total)
     };
   }, [dados]);
+
+  // BUSCA GLOBAL INSTANTÂNEA - cliente ou gerente
+  const resultadosBusca = useMemo(() => {
+    if (!buscaGlobal.trim()) return [];
+    const termo = buscaGlobal.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return dados.filter(d => {
+      const clienteNorm = d.cliente.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const gerenteNorm = d.gerente.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const suplenteNorm = (d.suplente || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return clienteNorm.includes(termo) || gerenteNorm.includes(termo) || suplenteNorm.includes(termo);
+    }).sort((a,b) => a.cliente.localeCompare(b.cliente));
+  }, [dados, buscaGlobal]);
 
   const clientesDoModal = useMemo(() => {
     if (!gerenteSelecionado) return [];
     let lista = gerenteSelecionado === 'TOTAL'? dados : dados.filter(d => d.gerente === gerenteSelecionado);
     if (buscaModal) {
-      lista = lista.filter(c => `${c.cliente} ${c.suplente}`.toLowerCase().includes(buscaModal.toLowerCase()));
+      const t = buscaModal.toLowerCase();
+      lista = lista.filter(c => `${c.cliente} ${c.suplente}`.toLowerCase().includes(t));
     }
     return lista.sort((a,b) => a.cliente.localeCompare(b.cliente));
   }, [dados, gerenteSelecionado, buscaModal]);
@@ -196,7 +209,7 @@ export function CartelaClientes() {
           novos.push({ id: Date.now() + i, gerente: cols[0], cliente: cols[1], suplente: cols[2], status: 'ATIVO' });
         }
         if (novos.length > 0) { setDados(novos); alert(`Importados ${novos.length} clientes!`); }
-      } catch (err) { alert('Erro ao importar'); }
+      } catch { alert('Erro ao importar'); }
     };
     reader.readAsText(file, 'utf-8'); e.target.value = '';
   };
@@ -212,7 +225,6 @@ export function CartelaClientes() {
   return (
     <div className="bg-[#020C1A] min-h-screen -m-8 p-8 text-white">
       <div className="max-w-[1600px] mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#8c6e1a] flex items-center justify-center text-black"><Building2 className="w-5 h-5" /></div>
@@ -230,42 +242,91 @@ export function CartelaClientes() {
           </div>
         </div>
 
-        {/* CARDS APENAS GERENTES */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {stats.porGerente.map(g => (
-            <button
-              key={g.gerente}
-              onClick={() => { setGerenteSelecionado(g.gerente); setBuscaModal(''); }}
-              className="text-left p-4 rounded-2xl bg-[#0a1930] border border-white/10 hover:border-[#D4AF37]/40 hover:bg-[#0a1930]/80 transition-all group cursor-pointer"
-            >
-              <div className="text-[10px] text-zinc-500 uppercase flex items-center gap-1 group-hover:text-[#D4AF37] transition"><Briefcase className="w-3 h-3" /> {g.gerente}</div>
-              <div className="text-[28px] font-bold mt-2 group-hover:text-[#D4AF37] transition">{g.total}</div>
-              <div className="text-[11px] text-zinc-500 mt-1">clientes • clique para ver</div>
-            </button>
-          ))}
-          <button
-            onClick={() => { setGerenteSelecionado('TOTAL'); setBuscaModal(''); }}
-            className="text-left p-4 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 hover:bg-[#D4AF37]/15 hover:border-[#D4AF37]/40 transition-all group cursor-pointer"
-          >
-            <div className="text-[10px] text-[#D4AF37] uppercase">TOTAL GERAL</div>
-            <div className="text-[28px] font-bold text-[#D4AF37] mt-2">{stats.total}</div>
-            <div className="text-[11px] text-[#D4AF37]/70 mt-1">{stats.gerentes} gerentes</div>
-          </button>
+        {/* BARRA DE PESQUISA GLOBAL - NOVA */}
+        <div className="relative mb-6">
+          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <input
+            value={buscaGlobal}
+            onChange={e => setBuscaGlobal(e.target.value)}
+            placeholder="Buscar por cliente ou gerente... ex: 'Paulo', 'Tatiane', 'Moro', 'Liderança'"
+            className="w-full h-[52px] pl-11 pr-11 bg-[#08152a] border border-white/10 rounded-2xl text-[14px] outline-none focus:border-[#D4AF37]/50 focus:bg-[#0a1930] transition"
+          />
+          {buscaGlobal && (
+            <button onClick={() => setBuscaGlobal('')} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10"><X className="w-4 h-4" /></button>
+          )}
         </div>
 
-        {/* MODAL LISTA DE CLIENTES */}
+        {/* RESULTADO DA BUSCA GLOBAL */}
+        {buscaGlobal.trim()? (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[13px] text-zinc-400"><span className="text-white font-bold">{resultadosBusca.length}</span> resultado{resultadosBusca.length!==1?'s':''} para "<span className="text-[#D4AF37]">{buscaGlobal}</span>"</p>
+              <button onClick={() => setBuscaGlobal('')} className="text-[11px] px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">Limpar busca</button>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {resultadosBusca.map(cli => (
+                <div key={cli.id} className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-[#0a1930] border border-white/10 hover:border-[#D4AF37]/30 transition">
+                  <div className="flex gap-3 flex-1 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] shrink-0"><Users className="w-4 h-4" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-medium truncate">{cli.cliente}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] font-bold">{cli.gerente}</span>
+                        {cli.suplente && <span className="text-[11px] text-zinc-500 truncate">{cli.suplente}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button onClick={() => setEditItem(cli)} className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center justify-center transition"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => excluir(cli.id)} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400 flex items-center justify-center transition"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {resultadosBusca.length === 0 && (
+              <div className="text-center py-16 bg-[#0a1930] border border-white/5 rounded-2xl">
+                <div className="text-[13px] text-zinc-500">Nenhum cliente ou gerente encontrado para "{buscaGlobal}"</div>
+                <div className="text-[11px] text-zinc-600 mt-1">Tente buscar por "Bruna", "Moro", "Liderança", "Paulo DG"</div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* CARDS DE GERENTES - só aparece quando não está buscando */
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {stats.porGerente.map(g => (
+              <button
+                key={g.gerente}
+                onClick={() => { setGerenteSelecionado(g.gerente); setBuscaModal(''); }}
+                className="text-left p-4 rounded-2xl bg-[#0a1930] border border-white/10 hover:border-[#D4AF37]/40 hover:bg-[#0a1930]/80 transition-all group cursor-pointer"
+              >
+                <div className="text-[10px] text-zinc-500 uppercase flex items-center gap-1 group-hover:text-[#D4AF37] transition"><Briefcase className="w-3 h-3" /> {g.gerente}</div>
+                <div className="text-[28px] font-bold mt-2 group-hover:text-[#D4AF37] transition">{g.total}</div>
+                <div className="text-[11px] text-zinc-500 mt-1">clientes • clique para ver</div>
+              </button>
+            ))}
+            <button
+              onClick={() => { setGerenteSelecionado('TOTAL'); setBuscaModal(''); }}
+              className="text-left p-4 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 hover:bg-[#D4AF37]/15 hover:border-[#D4AF37]/40 transition-all group cursor-pointer"
+            >
+              <div className="text-[10px] text-[#D4AF37] uppercase">TOTAL GERAL</div>
+              <div className="text-[28px] font-bold text-[#D4AF37] mt-2">{stats.total}</div>
+              <div className="text-[11px] text-[#D4AF37]/70 mt-1">{stats.gerentes} gerentes</div>
+            </button>
+          </div>
+        )}
+
+        {/* MODAL POR GERENTE */}
         {gerenteSelecionado && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setGerenteSelecionado(null)} />
             <div className="relative w-full max-w-3xl bg-[#0a1930] border border-white/10 rounded-2xl flex flex-col max-h-[85vh]">
-              {/* Header Modal */}
               <div className="p-6 border-b border-white/10 shrink-0">
                 <div className="flex justify-between items-start gap-4">
                   <div className="flex gap-3">
                     <div className="w-11 h-11 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]"><Users className="w-5 h-5" /></div>
                     <div>
                       <h3 className="font-bold text-[16px]">{gerenteSelecionado === 'TOTAL'? 'Todos os Clientes' : `Clientes de ${gerenteSelecionado}`}</h3>
-                      <p className="text-[11px] text-zinc-500 mt-1">{clientesDoModal.length} cliente{clientesDoModal.length!== 1? 's' : ''} {buscaModal && `• filtrado por "${buscaModal}"`}</p>
+                      <p className="text-[11px] text-zinc-500 mt-1">{clientesDoModal.length} cliente{clientesDoModal.length!== 1? 's' : ''}</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -275,14 +336,12 @@ export function CartelaClientes() {
                 </div>
                 <div className="relative mt-4">
                   <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-                  <input value={buscaModal} onChange={e => setBuscaModal(e.target.value)} placeholder="Buscar cliente neste gerente..." className="w-full h-10 pl-10 pr-4 bg-[#020C1A] border border-white/10 rounded-xl text-[13px] outline-none focus:border-[#D4AF37]/50" />
+                  <input value={buscaModal} onChange={e => setBuscaModal(e.target.value)} placeholder="Buscar dentro deste gerente..." className="w-full h-10 pl-10 pr-4 bg-[#020C1A] border border-white/10 rounded-xl text-[13px] outline-none focus:border-[#D4AF37]/50" />
                 </div>
               </div>
-
-              {/* Lista */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {clientesDoModal.map(cli => (
-                  <div key={cli.id} className="group flex items-center justify-between gap-3 p-4 rounded-xl bg-[#020C1A] border border-white/5 hover:border-white/10 transition">
+                  <div key={cli.id} className="flex items-center justify-between gap-3 p-4 rounded-xl bg-[#020C1A] border border-white/5 hover:border-white/10 transition">
                     <div className="flex gap-3 flex-1 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] shrink-0"><Users className="w-4 h-4" /></div>
                       <div className="flex-1 min-w-0">
@@ -299,15 +358,12 @@ export function CartelaClientes() {
                     </div>
                   </div>
                 ))}
-                {clientesDoModal.length === 0 && (
-                  <div className="text-center py-12 text-zinc-500 text-[13px]">Nenhum cliente encontrado</div>
-                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* MODAIS EDIT / NOVO / EXPORT */}
+        {/* EDIT / NOVO / EXPORT MODAIS (mantidos) */}
         {editItem && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setEditItem(null)} />
             <div className="relative w-full max-w-lg bg-[#0a1930] border border-white/10 rounded-2xl p-6">

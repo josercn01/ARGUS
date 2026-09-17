@@ -9,7 +9,7 @@ import { MicrosoftApps } from '@/components/MicrosoftApps';
 import { AdobeApps } from '@/components/AdobeApps';
 import { SistemasCorporativos } from '@/components/SistemasCorporativos';
 import { CertificadosBirdId } from '@/components/CertificadosBirdId';
-import { CartelaClientes } from '@/components/CartelaClientes'; // <-- NOVO
+import { CartelaClientes } from '@/components/CartelaClientes';
 import { Loader2 } from 'lucide-react';
 
 export function App() {

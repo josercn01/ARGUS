@@ -9,6 +9,7 @@ import { MicrosoftApps } from '@/components/MicrosoftApps';
 import { AdobeApps } from '@/components/AdobeApps';
 import { SistemasCorporativos } from '@/components/SistemasCorporativos';
 import { CertificadosBirdId } from '@/components/CertificadosBirdId';
+import { CartelaClientes } from '@/components/CartelaClientes'; // <-- NOVO
 import { Loader2 } from 'lucide-react';
 
 export function App() {
@@ -39,6 +40,7 @@ export function App() {
           {activeTab === 'adobe-apps' && <AdobeApps />}
           {activeTab === 'sistemas-corporativos' && <SistemasCorporativos />}
           {activeTab === 'certificados-bird' && <CertificadosBirdId />}
+          {activeTab === 'cartela-clientes' && <CartelaClientes />}
         </div>
       </main>
     </div>

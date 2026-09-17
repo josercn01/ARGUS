@@ -136,7 +136,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
               COATEN
             </span>
           </div>
-          <p className="text-[10px] text-[#64748b] truncate">100 olhos • Gestão de Licenças e Acessos</p>
+          <p className="text-[10px] text-[#64748b] truncate">Gestão de Licenças e Acessos</p>
         </div>
       </div>
 

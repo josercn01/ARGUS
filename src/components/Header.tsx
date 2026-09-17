@@ -7,11 +7,20 @@ import {
   Cloud,
   Database,
   FileKey,
+  Users,
 } from 'lucide-react';
 import type { AuthUser, SystemRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
-export type TabKey = 'dashboard' | 'admin-locais' | 'permissoes' | 'microsoft-apps' | 'adobe-apps' | 'sistemas-corporativos' | 'certificados-bird';
+export type TabKey =
+  | 'dashboard'
+  | 'admin-locais'
+  | 'permissoes'
+  | 'microsoft-apps'
+  | 'adobe-apps'
+  | 'sistemas-corporativos'
+  | 'certificados-bird'
+  | 'cartela-clientes';
 
 interface HeaderProps {
   user: AuthUser | null;
@@ -29,6 +38,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
     { id: 'permissoes', label: 'Acessos e Permissões', icon: ShieldCheck, category: 'Principal' },
     { id: 'sistemas-corporativos', label: 'Sistemas Corporativos', icon: Database, category: 'Principal', sub: '48 sistemas mapeados' },
     { id: 'certificados-bird', label: 'Certificados Bird ID', icon: FileKey, category: 'Principal', sub: '57 vencidos • 3 a vencer' },
+    { id: 'cartela-clientes', label: 'Cartela de Clientes', icon: Users, category: 'Principal', sub: '111 clientes • 10 gerentes' },
     { id: 'microsoft-apps', label: 'Aplicativos Microsoft', icon: Cloud, category: 'Microsoft 365', sub: 'Admin Center M365 API' },
     { id: 'adobe-apps', label: 'Aplicativos Adobe', icon: Cloud, category: 'Microsoft 365', sub: 'Admin Console Adobe @senado' },
   ];
@@ -46,7 +56,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
               COATEN
             </span>
           </div>
-          <p className="text-[10px] text-[#64748b] truncate">Gestão de Licenças e Acessos</p>
+          <p className="text-[10px] text-[#64748b] truncate">100 olhos • Gestão de Licenças e Acessos</p>
         </div>
       </div>
 
@@ -65,7 +75,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
                   onClick={() => onTabChange(item.id)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
-                  ? 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
+                 ? 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
                       : 'text-[#94a3b8] hover:text-white hover:bg-[#001E33]'
                   }`}
                 >
@@ -94,7 +104,7 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
                   onClick={() => onTabChange(item.id)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
-                  ? 'bg-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+                 ? 'bg-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(0,229,255,0.4)]'
                       : 'text-[#94a3b8] hover:text-white hover:bg-cyan-500/10'
                   }`}
                 >
@@ -128,8 +138,8 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
         </div>
 
         <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-[#64748b] font-mono">
-          <span>SERETI-WEB</span>
-          <span className="text-[#D4AF37]">v2.4</span>
+          <span>ARGUS v3.0</span>
+          <span className="text-[#D4AF37]">100 OLHOS</span>
         </div>
       </div>
     </aside>

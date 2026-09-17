@@ -79,7 +79,7 @@ export function CertificadosBirdId() {
   }, [dados]);
 
   const apagarTodos = () => {
-    if(confirm(`Tem certeza que quer APAGAR TODOS os ${dados.length} certificados? Essa ação não pode ser desfeita.`)){
+    if(confirm(`Apagar TODOS os ${dados.length} certificados?`)){
       localStorage.removeItem(STORAGE_KEY);
       setDados([]);
     }
@@ -108,10 +108,7 @@ export function CertificadosBirdId() {
           dias: diasRestantes(vencimento)
         });
       }
-      if(novos.length>0){
-        setDados(novos);
-        alert(`Importados ${novos.length} certificados! Pode sair e voltar que fica salvo.`);
-      }
+      if(novos.length>0) setDados(novos);
     };
     reader.readAsText(file, 'utf-8'); e.target.value='';
   };
@@ -133,7 +130,7 @@ export function CertificadosBirdId() {
   }, [dados]);
 
   const filtrados = useMemo(() => {
-    return stats.comDias.filter(d => {
+    const base = stats.comDias.filter(d => {
       const matchBusca =!busca || `${d.nome} ${d.setor} ${d.numero} ${d.cpf} ${d.area}`.toLowerCase().includes(busca.toLowerCase());
       const matchArea = filtroArea==='Todos' || d.area===filtroArea;
       let matchAlerta = true;
@@ -143,7 +140,30 @@ export function CertificadosBirdId() {
       if(filtroAlerta==='30') matchAlerta = d.dias!>=0 && d.dias!<=30;
       if(filtroAlerta==='60') matchAlerta = d.dias!>=0 && d.dias!<=60;
       return matchBusca && matchArea && matchAlerta;
-    }).sort((a,b)=> a.dias! - b.dias!);
+    });
+
+    // ORDEM NOVA: A VENCER (0-60) -> ATIVOS (>60) -> VENCIDOS (<0)
+    // Dentro de cada grupo, quanto mais perto de vencer, na frente
+    return base.sort((a,b)=>{
+      const da = a.dias!, db = b.dias!;
+      const aVencer = da>=0 && da<=60;
+      const bVencer = db>=0 && db<=60;
+      const aAtivo = da>60;
+      const bAtivo = db>60;
+      const aVencido = da<0;
+      const bVencido = db<0;
+
+      if(aVencer &&!bVencer) return -1;
+      if(!aVencer && bVencer) return 1;
+      if(aVencer && bVencer) return da - db; // 2 dias antes de 15 dias
+
+      if(aAtivo &&!bAtivo &&!bVencer) return -1;
+      if(!aAtivo && bAtivo &&!aVencer) return 1;
+      if(aAtivo && bAtivo) return da - db; // 70 dias antes de 300 dias
+
+      if(aVencido && bVencido) return db - da; // -1 dia antes de -300 dias
+      return 0;
+    });
   }, [stats.comDias, busca, filtroArea, filtroAlerta]);
 
   return (
@@ -161,7 +181,7 @@ export function CertificadosBirdId() {
           <div className="flex gap-2 flex-wrap">
             <input ref={fileInputRef} type="file" accept=".csv" onChange={importarPlanilha} className="hidden" />
             <button onClick={()=>fileInputRef.current?.click()} className="h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-[12px] flex items-center gap-2 hover:bg-white/10"><Upload className="w-4 h-4" /> Importar Planilha CSV</button>
-            <button onClick={apagarTodos} disabled={stats.emUso===0} className="h-11 px-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[12px] flex items-center gap-2 hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 className="w-4 h-4" /> Apagar todos</button>
+            <button onClick={apagarTodos} disabled={stats.emUso===0} className="h-11 px-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[12px] flex items-center gap-2 hover:bg-red-500/20 disabled:opacity-30"><Trash2 className="w-4 h-4" /> Apagar todos</button>
             <button onClick={()=>{
               const csv = ['Nome,Area,Setor,CPF,Certificado,Emissão,Vencimento,Dias Restantes,Status,Telefone',...stats.comDias.map(d=>`"${d.nome}","${d.area}","${d.setor}","${d.cpf}","${d.numero}","${d.emissao}","${d.vencimento}",${d.dias},"${getStatus(d.dias!).label}","${d.telefone}"`)].join('\n');
               const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`bird_id_${new Date().toISOString().split('T')[0]}.csv`; a.click();
@@ -169,27 +189,12 @@ export function CertificadosBirdId() {
           </div>
         </div>
 
-        {stats.emUso < 20 && (
-          <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
-            <FileSpreadsheet className="w-5 h-5 text-amber-400" />
-            <div><div className="text-[13px] font-bold text-amber-300">Dados incompletos - importe sua planilha completa</div><div className="text-[11px] text-amber-200/70">Você tem apenas {stats.emUso} certificados. Importe o CSV com 259.</div></div>
-          </div>
-        )}
-
-        {stats.emUso===0 && (
-          <div className="mb-6 p-8 rounded-2xl bg-[#0a1930] border border-dashed border-white/10 flex flex-col items-center justify-center text-center">
-            <FileKey className="w-10 h-10 text-zinc-600 mb-3" />
-            <div className="text-[14px] font-bold text-zinc-300">Nenhum certificado carregado</div>
-            <div className="text-[12px] text-zinc-500 mt-1">Clique em Importar Planilha CSV para carregar os 259 certificados</div>
-          </div>
-        )}
-
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Disponíveis</div><div className="text-[26px] font-bold mt-1">{stats.disponiveis}</div></div>
           <div className="p-4 rounded-2xl bg-[#0a1930] border border-white/10"><div className="text-[10px] text-zinc-500 uppercase">Em Uso</div><div className="text-[26px] font-bold mt-1">{stats.emUso}</div><div className="text-[11px] text-[#D4AF37] mt-1">{stats.emUso} / {TOTAL_CONTRATO} utilizados</div></div>
-          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"><div className="text-[10px] text-emerald-400 uppercase flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Ativos</div><div className="text-[26px] font-bold text-emerald-300 mt-1">{stats.ativos}</div></div>
-          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20"><div className="text-[10px] text-amber-400 uppercase flex items-center gap-1"><Clock className="w-3 h-3" /> A Vencer</div><div className="text-[26px] font-bold text-amber-300 mt-1">{stats.aVencer}</div></div>
-          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20"><div className="text-[10px] text-red-400 uppercase flex items-center gap-1"><XCircle className="w-3 h-3" /> Vencidos</div><div className="text-[26px] font-bold text-red-400 mt-1">{stats.vencidos}</div></div>
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20"><div className="text-[10px] text-emerald-400 uppercase">Ativos</div><div className="text-[26px] font-bold text-emerald-300 mt-1">{stats.ativos}</div></div>
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20"><div className="text-[10px] text-amber-400 uppercase">A Vencer</div><div className="text-[26px] font-bold text-amber-300 mt-1">{stats.aVencer}</div></div>
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20"><div className="text-[10px] text-red-400 uppercase">Vencidos</div><div className="text-[26px] font-bold text-red-400 mt-1">{stats.vencidos}</div></div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -216,7 +221,7 @@ export function CertificadosBirdId() {
                   <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]"><User className="w-5 h-5" /></div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-[13px] font-bold truncate">{cert.nome}</h3>
-                    <div className="flex gap-2 mt-1"><span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold ${s.color}`}><span className={`w-1.5 h-1.5 rounded-full ${s.dot} inline-block mr-1`} />{s.label}</span><span className="text-[11px] text-zinc-500">{cert.setor} • {cert.area}</span></div>
+                    <div className="flex gap-2 mt-1"><span className={`text-[10px] px-2.5 py-1 rounded-full border font-bold ${s.color}`}>{s.label}</span><span className="text-[11px] text-zinc-500">{cert.setor} • {cert.area}</span></div>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">

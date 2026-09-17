@@ -9,7 +9,6 @@ import {
   FileKey,
   Users,
   Palette,
-  AlertTriangle,
 } from 'lucide-react';
 import type { AuthUser, SystemRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -39,7 +38,6 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
   const [lastLicSync, setLastLicSync] = useState<string | null>(null);
 
   useEffect(() => {
-    // Lê cartela real do storage
     try {
       const cartela = localStorage.getItem('argus_cartela_clientes_v2');
       if (cartela) {
@@ -48,13 +46,14 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
         setCartelaStats({ total: parsed.length, gerentes });
       }
       const bird = localStorage.getItem('argus_bird_stats');
-      if (bird) setBirdStats(JSON.parse(bird));
-
+      if (bird) {
+        const s = JSON.parse(bird);
+        setBirdStats({ vencidos: s.vencidos || 0, aVencer: s.aVencer || 0 });
+      }
       const sync = localStorage.getItem('argus_m365_last_sync_v3');
       if (sync) setLastLicSync(new Date(Number(sync)).toLocaleDateString('pt-BR'));
     } catch {}
 
-    // Atualiza quando outra aba mudar
     const onStorage = () => {
       try {
         const cartela = localStorage.getItem('argus_cartela_clientes_v2');
@@ -63,13 +62,18 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
           const gerentes = new Set(parsed.map((c: any) => c.gerente)).size;
           setCartelaStats({ total: parsed.length, gerentes });
         }
+        const bird = localStorage.getItem('argus_bird_stats');
+        if (bird) {
+          const s = JSON.parse(bird);
+          setBirdStats({ vencidos: s.vencidos || 0, aVencer: s.aVencer || 0 });
+        }
       } catch {}
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, [activeTab]);
 
-  const navPrincipal: { id: TabKey; label: string; icon: React.ElementType; sub: string; alert?: boolean }[] = [
+  const navPrincipal: { id: TabKey; label: string; icon: React.ElementType; sub: string }[] = [
     { id: 'dashboard', label: 'Gestão de Licenças', icon: LayoutDashboard, sub: 'Visão geral ARGUS' },
     { id: 'admin-locais', label: 'Admin Locais', icon: Monitor, sub: 'Estações e privilégios' },
     { id: 'permissoes', label: 'Acessos e Permissões', icon: ShieldCheck, sub: 'Grupos e políticas' },
@@ -79,7 +83,6 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
       label: 'Certificados Bird ID',
       icon: FileKey,
       sub: `${birdStats.vencidos} vencidos • ${birdStats.aVencer} a vencer`,
-      alert: birdStats.vencidos > 0
     },
     {
       id: 'cartela-clientes',
@@ -103,23 +106,17 @@ export function Header({ user, activeTab, onTabChange }: HeaderProps) {
         onClick={() => onTabChange(item.id)}
         className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer text-left ${
           isActive
-           ? isCloud
-             ? 'bg-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+          ? isCloud
+            ? 'bg-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(0,229,255,0.4)]'
               : 'bg-[#D4AF37] text-[#001726] font-bold shadow-md'
             : 'text-[#94a3b8] hover:text-white hover:bg-[#001E33]'
         }`}
       >
         <Icon className={`w-4 h-4 shrink-0 ${isActive? (isCloud? 'text-white' : 'text-[#001726]') : isCloud? 'text-cyan-400' : 'text-[#D4AF37]'}`} />
         <div className="flex-1 overflow-hidden">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate">{item.label}</span>
-            {item.alert &&!isActive && <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />}
-          </div>
-          <div className={`text-[9px] font-normal truncate flex items-center gap-1 ${isActive? 'opacity-80' : 'opacity-60'}`}>
+          <div className="truncate">{item.label}</div>
+          <div className="text-[9px] font-normal truncate">
             {item.sub}
-            {item.id === 'certificados-bird' && item.alert && (
-              <span className="ml-1 px-1 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 text-[8px]">ATENÇÃO</span>
-            )}
           </div>
         </div>
       </button>

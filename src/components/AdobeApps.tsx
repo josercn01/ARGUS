@@ -36,13 +36,14 @@ export function AdobeApps() {
     setSyncing(true);
     setMsg('Buscando na Adobe Admin Console...');
     
-    // Chamada direta para o nome correto da função no Supabase
+    // Chamada direta para o nome exato da função publicado no Supabase
     const { error } = await supabase.functions.invoke('supabase-functions-adobe-licenses-index-ts');
     
     if (error) {
       setMsg('Erro ao sincronizar: ' + error.message);
     } else {
       await carregar();
+      setMsg(`Sincronizado com sucesso em ${new Date().toLocaleTimeString('pt-BR')}`);
     }
     setSyncing(false);
   };
@@ -85,14 +86,14 @@ export function AdobeApps() {
                 a.download = 'adobe_licencas.csv'; 
                 a.click(); 
               }} 
-              className="h-9 px-4 bg-[#0e213f] border border-white/10 rounded-lg text-[12px] flex items-center gap-2"
+              className="h-9 px-4 bg-[#0e213f] border border-white/10 rounded-lg text-[12px] flex items-center gap-2 hover:bg-[#162f59] transition-colors"
             >
               <Download className="w-4 h-4" /> Exportar
             </button>
             <button 
               onClick={sincronizar} 
               disabled={syncing} 
-              className="h-9 px-4 bg-[#D4AF37] text-black rounded-lg text-[12px] font-bold flex items-center gap-2"
+              className="h-9 px-4 bg-[#D4AF37] text-black rounded-lg text-[12px] font-bold flex items-center gap-2 hover:bg-[#e6c143] transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Atualizando...' : 'Atualizar'}

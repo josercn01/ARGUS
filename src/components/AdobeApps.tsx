@@ -24,41 +24,27 @@ export function AdobeApps() {
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState(`Dados da console - ${new Date().toLocaleString('pt-BR')} | Org: 2DED2FE5... | Tempo Real ATIVO`);
 
-  const carregar = async () => {
-    const { data } = await supabase.from('adobe_licencas').select('*').order('nome');
-    if (data && data.length > 0) {
-      setDados(data as any);
-      setMsg(`Sincronizado com Adobe Admin Console - ${new Date(data[0].updated_at).toLocaleString('pt-BR')} - Tempo Real`);
-    }
-  };
-
   const sincronizar = async () => {
     setSyncing(true);
     setMsg('Buscando na Adobe Admin Console...');
     
-    // Chamada direta para o nome exato da função publicado no Supabase
-    const { error } = await supabase.functions.invoke('supabase-functions-adobe-licenses-index-ts');
+    // Chamada direta para a Edge Function recolhendo os dados retornados
+    const { data, error } = await supabase.functions.invoke('supabase-functions-adobe-licenses-index-ts');
     
     if (error) {
       setMsg('Erro ao sincronizar: ' + error.message);
-    } else {
-      await carregar();
+    } else if (data && data.licenses) {
+      setDados(data.licenses); // Atualiza instantaneamente a tabela com os dados reais
       setMsg(`Sincronizado com sucesso em ${new Date().toLocaleTimeString('pt-BR')}`);
+    } else {
+      setMsg('Nenhum dado retornado pela Adobe.');
     }
+    
     setSyncing(false);
   };
 
   useEffect(() => {
-    carregar();
-    const ch = supabase.channel('adobe-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'adobe_licencas' }, (p) => {
-      if (p.eventType !== 'DELETE') setDados(prev => {
-        const i = prev.findIndex(x => x.id === (p.new as any).id);
-        if (i >= 0) { const c = [...prev]; c[i] = p.new as any; return c; }
-        return [...prev, p.new as any];
-      });
-    }).subscribe();
-    const id = setInterval(carregar, 60000);
-    return () => { supabase.removeChannel(ch); clearInterval(id); };
+    sincronizar(); // Executa a sincronização logo ao abrir a tela
   }, []);
 
   return (
